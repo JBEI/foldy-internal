@@ -117,7 +117,7 @@ text-unidecode
 toml
 tomli
 tqdm
-typed-ast
+#typed-ast
 typing-extensions
 urllib3
 uvicorn
