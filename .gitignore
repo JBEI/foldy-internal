@@ -148,3 +148,6 @@ backend/src/integration_tests/testdata/000001/embed/*
 backend/src/notebooks/test_evolve.ipynb
 backend/src/integration_tests/testdata/*/evolve/*
 .boltz/
+backend\EvolveTest\kelsic_esm2_t36_3B_UR50D.csv
+backend\EvolveTest\TEM_esm1b_t33_650M_UR50S.csv
+backend\EvolveTest\TEM_esm2_t33_650M_UR50D.csv
