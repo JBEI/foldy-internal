@@ -1,3 +1,0 @@
-[submodule "worker/alphafold"]
-	path = worker/alphafold
-	url = git@github.com:JBEI/alphafold.git
