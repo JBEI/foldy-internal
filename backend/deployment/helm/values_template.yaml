@@ -1,0 +1,48 @@
+# Default values for Foldy.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+GoogleProjectId: ${GOOGLE_PROJECT_ID}
+
+# The region and zone for your installation.
+GoogleCloudRegion: us-central1
+GoogleCloudZone: us-central1-c
+
+ImageVersion: v1
+ServiceAccount: ${GOOGLE_SERVICE_ACCOUNT_ID}
+SecurityPolicy: ""
+
+# Domain for foldy, like "foldy.lbl.gov".
+FoldyDomain: ${FOLDY_DOMAIN}
+
+# Domain for Foldy's certificate, in most cases the same as FoldyDomain.
+FoldyCertificateDomain: ${FOLDY_CERTIFICATE_DOMAIN}
+
+# Email domain to allow access, eg "lbl.gov" will allow all users with "@lbl.gov" addresses to access.
+FoldyUserEmailDomain: ${FOLDY_USER_EMAIL_DOMAIN}
+
+# CSV list of users who should be upgraded to admins once they log in.
+FoldyAdminUpgradeList:
+
+# Name of the cloud bucket for Foldy (eg: "gs://myfolds/mysubdir").
+FoldyGstorageDir: ${GOOGLE_STORAGE_DIRECTORY}
+
+# Google Cloud Static IP Address.
+StaticIpName: ${GOOGLE_CLOUD_STATIC_IP_NAME}
+
+# ID of the GKE cluster.
+GkeClusterId: ${GKE_CLUSTER_ID}
+
+# Google cloud artifact repository name.
+ArtifactRepo: ${GOOGLE_ARTIFACT_REPO}
+
+# Name of the institution, displayed in the page.
+Institution: ${INSTITUTION}
+
+Secrets:
+  SECRET_KEY:
+  GOOGLE_CLIENT_ID:
+  GOOGLE_CLIENT_SECRET:
+  EMAIL_USERNAME:
+  EMAIL_PASSWORD:
+  DATABASE_URL: "postgresql://postgres:${GOOGLE_SQL_DB_PASSWORD}@${GOOGLE_SQL_DB_PRIVATE_IP}/postgres"

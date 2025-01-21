@@ -1,0 +1,121 @@
+version: "3.6"
+
+services:
+  frontend:
+    build:
+      context: frontend/
+      target: build-stage
+      args:
+        - BACKEND_URL=http://localhost:8080
+        - INSTITUTION=Local
+        - HOST=0.0.0.0
+    networks:
+      - default
+    ports:
+      - 127.0.0.1:3000:3000
+    volumes:
+      - ./frontend/src:/app/src
+
+  backend:
+    build: backend/
+    platform: linux/amd64
+    depends_on:
+      - db
+      - redis
+    environment:
+      - FLASK_APP=main.py
+      - ENV=development
+      - DEBUG=True
+      - SECRET_KEY=superrandomandveryhardtoguessstring
+      - OAUTH_REDIRECT_URI=http://localhost:8080/api/authorize
+      - BACKEND_URL=http://localhost:8080
+      - FRONTEND_URL=http://localhost:3000
+      - DATABASE_URL=postgresql+psycopg2://user:password@db:5432/postgres
+      - RQ_REDIS_URL=redis://redis:6379/0
+      - DISABLE_OAUTH_AUTHENTICATION=True
+      - FOLDY_ADMIN_UPGRADE_LIST=tester@test.edu
+      - FOLDY_STORAGE_TYPE=Local
+      - FOLDY_LOCAL_STORAGE_DIR=/src/integration_tests/testdata
+    networks:
+      - default
+    ports:
+      - 127.0.0.1:8080:8080
+    volumes:
+      - ./backend/src/main.py:/src/main.py
+      - ./backend/src/app:/src/app
+      - ./backend/src/integration_tests:/src/integration_tests
+      - ./backend/src/migrations:/src/migrations
+    restart: always
+    entrypoint: python /src/main.py
+
+  worker_esm:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile.esm
+    platform: linux/amd64
+    depends_on:
+      - db
+      - redis
+    environment:
+      - FLASK_APP=rq_worker_main.py
+      - ENV=development
+      - DEBUG=True
+      - FRONTEND_URL=http://localhost:3000
+      - DATABASE_URL=postgresql+psycopg2://user:password@db:5432/postgres
+      - RQ_REDIS_URL=redis://redis:6379/0
+      - FOLDY_STORAGE_TYPE=Local
+      - FOLDY_LOCAL_STORAGE_DIR=/backend/src/integration_tests/testdata
+    networks:
+      - default
+    volumes:
+      - ./backend/src/rq_worker_main.py:/backend/src/rq_worker_main.py
+      - ./backend/src/app:/backend/src/app
+      - ./backend/src/integration_tests:/backend/src/integration_tests
+      - ./backend/src/migrations:/backend/src/migrations
+    restart: always
+    entrypoint: /opt/conda/envs/worker/bin/python -m flask rq worker cpu esm
+
+  worker_boltz:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile.boltz
+    platform: linux/amd64
+    depends_on:
+      - db
+      - redis
+    environment:
+      - FLASK_APP=rq_worker_main.py
+      - ENV=development
+      - DEBUG=True
+      - FRONTEND_URL=http://localhost:3000
+      - DATABASE_URL=postgresql+psycopg2://user:password@db:5432/postgres
+      - RQ_REDIS_URL=redis://redis:6379/0
+      - FOLDY_STORAGE_TYPE=Local
+      - FOLDY_LOCAL_STORAGE_DIR=/backend/src/integration_tests/testdata
+    networks:
+      - default
+    volumes:
+      - ./backend/src/rq_worker_main.py:/backend/src/rq_worker_main.py
+      - ./backend/src/app:/backend/src/app
+      - ./backend/src/integration_tests:/backend/src/integration_tests
+      - ./backend/src/migrations:/backend/src/migrations
+      - ./.boltz:/.boltz
+    restart: always
+    entrypoint: /opt/conda/envs/worker/bin/python -m flask rq worker boltz
+
+  db:
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: dbname
+    image: postgres:15.6
+    networks:
+      - default
+    ports:
+      - 127.0.0.1:5432:5432
+    restart: always
+
+  redis:
+    image: "redis:7.2-alpine"
+    ports:
+      - 127.0.0.1:6379:6379
