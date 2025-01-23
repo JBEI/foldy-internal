@@ -151,3 +151,4 @@ backend/src/integration_tests/testdata/*/evolve/*
 backend\EvolveTest\kelsic_esm2_t36_3B_UR50D.csv
 backend\EvolveTest\TEM_esm1b_t33_650M_UR50S.csv
 backend\EvolveTest\TEM_esm2_t33_650M_UR50D.csv
+backend\EvolveTest\TEM_esmc_600m_WT.csv
