@@ -188,6 +188,7 @@ def digivolve(wt_aa_seq,dataset,exp_activity_file_path,embeddings_dir, embedding
         print(path)
         embeddings_path = os.path.join(embeddings_dir, path)
         raw_embedding_df = pd.read_csv(embeddings_path)
+        cleaned_embeddings_df = clean_embeddings_df(exp_activity_df,raw_embedding_df)
         #sample for initial round
 
         #print(f'There are {len(initial_round_activity)} variants')
@@ -199,7 +200,7 @@ def digivolve(wt_aa_seq,dataset,exp_activity_file_path,embeddings_dir, embedding
             if rounds % 10 == 0:
                 print(f"Starting {path} round {rounds}")
             while True:
-                initial_round_var_df = raw_embedding_df.sample(num_var)
+                initial_round_var_df = cleaned_embeddings_df.sample(num_var)
                 if not initial_round_var_df['seq_id'].isin(top_ten_df.values.flatten()).any():
                     break
             initial_round_activity = pd.merge(exp_activity_df,initial_round_var_df,on='seq_id', how='inner')
@@ -207,7 +208,7 @@ def digivolve(wt_aa_seq,dataset,exp_activity_file_path,embeddings_dir, embedding
 
             round_variants, top_ten_variants_found = evolve_simulation(
                 wt_aa_seq,initial_round_activity,
-                raw_embedding_df,exp_activity_df,
+                cleaned_embeddings_df,exp_activity_df,
                 ninety_percent_df,
                 ninetyfive_percent_df,
                 top_ten_df,
