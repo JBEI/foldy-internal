@@ -124,68 +124,66 @@ def evaluate_predictions(predicted_activity_df,exp_activity_df,round_activity_df
         print(f"Failed to Evaluate Predictions")
         raise
     return next_round_activity
-def evolve_simulation(wt_aa_seq,initial_round_activity,raw_embedding_df,exp_activity_df,ninety_percent_df,ninetyfive_percent_df,top_ten_df,model_type,num_var):
+def evolve_simulation(wt_aa_seq,initial_round_activity,raw_embedding_df,exp_activity_df,benchmarks,top_benchmark,model_type,num_var):
         round_num=0
         round_variants = []
-        ninety_found = False
-        ninetyfive_found = False
-                     
+        benchmarks_hit = {benchmark: False for benchmark in benchmarks}
+        #print(benchmarks_hit)
+        evolution_done = False             
         #num_top_var_df = pd.merge(top_percent_df,current_round_activity_df, on='seq_id',how='inner')
         #print(f'current_round_activity_df is {current_round_activity_df.shape}')    
-        while True:
-            if round_num == 0:
-                round_num += 1
+        while not evolution_done:
+            #print(benchmarks)
+            round_num += 1
+            print(round_num,end="\r",flush=True)
+            if round_num == 1:
                 predicted_activity_df = train_model(wt_aa_seq,initial_round_activity,raw_embedding_df,model_type)
-                current_round_activity_df = evaluate_predictions(predicted_activity_df,exp_activity_df,initial_round_activity,num_var)
-                if ninety_percent_df['seq_id'].isin(current_round_activity_df.values.flatten()).any() and not ninety_found:
-                    round_variants.append(round_num)
-                    ninety_found = True
-                if ninetyfive_percent_df['seq_id'].isin(current_round_activity_df.values.flatten()).any() and not ninetyfive_found:
-                    round_variants.append(round_num)
-                    ninetyfive_found = True
-                if top_ten_df['seq_id'].isin(current_round_activity_df.values.flatten()).any():
-                    round_variants.append(round_num)
-                    break                   
+                current_round_activity_df = evaluate_predictions(predicted_activity_df,exp_activity_df,initial_round_activity,num_var)   
             else:
-                round_num += 1
-                #print(round_num)
                 predicted_activity_df = train_model(wt_aa_seq,current_round_activity_df,raw_embedding_df,model_type)
                 current_round_activity_df = evaluate_predictions(predicted_activity_df,exp_activity_df,current_round_activity_df,num_var)
-                if ninety_percent_df['seq_id'].isin(current_round_activity_df.values.flatten()).any() and not ninety_found:
+            for benchmark in benchmarks:
+                #print(benchmark)
+                #display(benchmarks[benchmark])
+                benchmark_df = benchmarks[benchmark]
+                #print(f'First round {benchmark}')
+                if benchmark_df['seq_id'].isin(current_round_activity_df['seq_id']).any() and not benchmarks_hit[benchmark]:
+                    #print(f'{benchmark} and round {round_num}')
                     round_variants.append(round_num)
-                    ninety_found = True
-                if ninetyfive_percent_df['seq_id'].isin(current_round_activity_df.values.flatten()).any() and not ninetyfive_found:
-                    round_variants.append(round_num)
-                    ninetyfive_found = True
-                if top_ten_df['seq_id'].isin(current_round_activity_df.values.flatten()).any():
-                    round_variants.append(round_num)
-                    break
-        top_ten_variants_found =  pd.merge(top_ten_df,current_round_activity_df, on='seq_id',how='inner')
-        top_ten_variants_found = top_ten_variants_found[['seq_id']]
+                    benchmarks_hit[benchmark] = True
+                    if benchmark == top_benchmark:
+                        #print(f'{benchmark} and round {round_num}')
+                        evolution_done = True
         #round_variants = pd.DataFrame(round_variants)
+        #print(round_variants)
         #print(f'Found {len(top_ten_variants_found)} top variants after {round_num} rounds')
-        return round_variants, top_ten_variants_found
+        return round_variants
 
 def clean_embeddings_df(dms_df,embeddings_df):
     clean_embeddings_df = pd.merge(embeddings_df,dms_df,on='seq_id',how='inner')
     clean_embeddings_df = clean_embeddings_df[['seq_id','embedding']]
     return clean_embeddings_df
 
-def digivolve(wt_aa_seq,dataset,exp_activity_file_path,embeddings_dir, embeddings_paths,num_var,rounds_evo,model_type):
+def digivolve(wt_aa_seq,prot_name,wt_activity,benchmarks,dataset,exp_activity_file_path,embeddings_dir, embeddings_paths,num_var,rounds_evo,model_type):
     #Set up dataframes
     exp_activity_df = pd.read_excel(exp_activity_file_path)
-    ninety_percent_activity = exp_activity_df['activity'].quantile(.9)
-    ninetyfive_percent_activity = exp_activity_df['activity'].quantile(.95)
-    ninety_percent_df = exp_activity_df[exp_activity_df['activity'] >= ninety_percent_activity]
-    ninetyfive_percent_df = exp_activity_df[exp_activity_df['activity'] >= ninetyfive_percent_activity]
-    top_ten_df = ninety_percent_df.sort_values('activity',ascending=False)
-    top_ten_df = top_ten_df.head(10)
-    
+    above_wt_df = exp_activity_df[exp_activity_df['activity'] > wt_activity]
+    for benchmark in benchmarks:
+        if benchmark == 'Above Wt':
+            benchmarks[benchmark] = above_wt_df
+            continue
+        benchmark_activity = above_wt_df['activity'].quantile(benchmarks[benchmark])
+        #print(f'{benchmark} has cutoff {benchmark_activity}')
+        df = exp_activity_df[exp_activity_df['activity'] >= benchmark_activity]
+        benchmarks[benchmark] = df
+    #display(benchmarks)
     evolve_df = pd.DataFrame()
-    benchmarks = ['90 percentile', '95 percentile', 'top ten']
+    top_benchmark = list(benchmarks)[-1]
+    top_benchmark_df = benchmarks[top_benchmark]
+    #print(f'This is the top benchmark {top_benchmark}')
     #display('Top Ten', top_ten_df)
     for path in embeddings_paths:
-        print(path)
+        #print(path)
         embeddings_path = os.path.join(embeddings_dir, path)
         raw_embedding_df = pd.read_csv(embeddings_path)
         cleaned_embeddings_df = clean_embeddings_df(exp_activity_df,raw_embedding_df)
@@ -197,21 +195,19 @@ def digivolve(wt_aa_seq,dataset,exp_activity_file_path,embeddings_dir, embedding
         path_results = {}
         round_results =[]
         for rounds in range(rounds_evo):
-            if rounds % 10 == 0:
-                print(f"Starting {path} round {rounds}")
+            print(f"Starting {path} round {(rounds+1)}")
             while True:
                 initial_round_var_df = cleaned_embeddings_df.sample(num_var)
-                if not initial_round_var_df['seq_id'].isin(top_ten_df.values.flatten()).any():
+                if not initial_round_var_df['seq_id'].isin(top_benchmark_df.values.flatten()).any():
                     break
             initial_round_activity = pd.merge(exp_activity_df,initial_round_var_df,on='seq_id', how='inner')
             initial_round_activity = initial_round_activity[['seq_id','activity']]
 
-            round_variants, top_ten_variants_found = evolve_simulation(
+            round_variants = evolve_simulation(
                 wt_aa_seq,initial_round_activity,
                 cleaned_embeddings_df,exp_activity_df,
-                ninety_percent_df,
-                ninetyfive_percent_df,
-                top_ten_df,
+                benchmarks,
+                top_benchmark,
                 model_type,
                 num_var)
             round_results.append(round_variants)
@@ -219,7 +215,8 @@ def digivolve(wt_aa_seq,dataset,exp_activity_file_path,embeddings_dir, embedding
         path_results[path] = round_results
 
         path_results_df = pd.DataFrame(path_results)
-        evolve_df = pd.concat([evolve_df,path_results_df], axis = 1) 
+        evolve_df = pd.concat([evolve_df,path_results_df], axis = 1)
+        #display (path_results_df)
         #print(f'{path} embeddings gave {path_results}')
     #display(evolve_df)
     def average_lists_across_rows(column):
@@ -249,21 +246,19 @@ def digivolve(wt_aa_seq,dataset,exp_activity_file_path,embeddings_dir, embedding
 
     # Create a new DataFrame with the averaged lists and SEMs
     result_df = pd.DataFrame([averaged_data, sem_data])
-
+    #display(result_df)
     #print(result_df)
-    plot_evolution(result_df,benchmarks)
     results_path = os.path.join(embeddings_dir,dataset)
     try:
         os.mkdir(results_path)
     except OSError as error:
         print(error)
-    comp_dir = os.path.join(embeddings_dir, dataset, f'{num_var}_{dataset}_Model_Comparisons_{datetime.now().strftime('%d%H%M%S')}.xlsx')
+    plot_evolution(result_df,benchmarks,(results_path+"/"+prot_name))
+
+    comp_dir = os.path.join(embeddings_dir,dataset, f'{num_var}_{dataset}_Model_Comparisons_{datetime.now().strftime('%d%H%M')}.xlsx')
     result_df.to_excel(comp_dir, index=False)
 
-
-
-
-def plot_evolution(result_df,benchmarks):
+def plot_evolution(result_df,benchmarks,save_path=None):
     """
     Plot evolution results for multiple embedding models.
     
@@ -280,10 +275,12 @@ def plot_evolution(result_df,benchmarks):
     fig, ax = plt.subplots(figsize=(10, 6))
 
     # Number of bars per column
-    num_bars = len(averaged_lists.iloc[0])
+
+    num_bars = len(benchmarks.keys())
+
 
     # Width of the bars
-    width = 0.2
+    width = .8 / result_df.shape[1]
 
     # X-axis positions
     x = np.arange(num_bars)
@@ -298,55 +295,12 @@ def plot_evolution(result_df,benchmarks):
     ax.set_ylabel('Average Round to find variant')
     ax.set_title('Embeddings Comparison')
     ax.set_xticks(x + (len(averaged_lists) - 1) * width / 2)
-    ax.set_xticklabels(benchmarks)
-    ax.legend()
+    ax.set_xticklabels(benchmarks.keys())
 
+    ax.legend()
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+        print(f"Plot saved to {save_path}")
     # Show the plot
     plt.tight_layout()
     plt.show()
-
-def plot_evolution_line(evo_imgs, embeddings_paths, figsize=(14, 5), colors=None, markersize=8):
-    """
-    Plot evolution results for multiple embedding models on the same graph.
-    
-    Args:
-        evo_imgs: List of (means, std_errors) tuples for each model
-        embeddings_paths: List of embedding model names/paths
-        figsize: Figure size tuple
-        colors: Optional list of colors for bars
-        
-    Returns:
-        fig: Matplotlib figure object
-    """
-    if not evo_imgs or not embeddings_paths:
-        raise ValueError("evo_imgs and embeddings_paths must not be empty")
-    
-    if len(evo_imgs) != len(embeddings_paths):
-        raise ValueError("evo_imgs and embeddings_paths must have the same length")
-    
-    if colors is None:
-        colors = plt.cm.tab20(np.linspace(0, 1, len(evo_imgs)))
-        
-    fig, ax = plt.subplots(figsize=figsize)
-    
-    max_y_value = 0
-    
-    for i, ((means, std_errors), label, color) in enumerate(zip(evo_imgs, embeddings_paths, colors)):
-        x_indices = np.arange(1, len(means) + 1)
-        
-        ax.errorbar(x_indices, means, yerr=std_errors, capsize=5, label=label, color=color, marker='o', linestyle='-',markersize=markersize)
-        
-        # Update max_y_value for setting y-axis limit
-        max_y_value = max(max_y_value, max(means) + max(std_errors))
-    
-    ax.set_xlabel('Rounds')
-    ax.set_ylabel('Top Variants')
-    ax.set_title('Evolution Results for Multiple Embedding Models')
-    ax.set_xticks(x_indices)
-    ax.set_xticklabels([f'Round {k}' for k in x_indices])
-    ax.legend()
-    ax.grid(axis='y', linestyle='--', alpha=0.7)
-    ax.set_ylim(0, max_y_value * 1.1)
-    
-    plt.tight_layout()
-
