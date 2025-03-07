@@ -3,8 +3,8 @@ import { startEmbeddings } from "../../services/backend.service";
 import UIkit from 'uikit';
 import { Embedding, Invokation } from '../../types/types';
 import { FaDownload, FaRedo } from 'react-icons/fa';
-import { getFile } from '../../api/fileApi';
-import fileDownload from 'js-file-download';
+import { downloadFileStraightToFilesystem, getFile } from '../../api/fileApi';
+import { ESMModelPicker } from './ESMModelPicker';
 
 interface EmbedTabProps {
     foldId: number;
@@ -18,6 +18,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, jobs, embeddings, setErrorT
     const [dmsStartingSeqIds, setDmsStartingSeqIds] = useState<string>('WT');
     const [extraSequenceIDs, setExtraSequenceIDs] = useState<string>('');
     const [showEmbeddingSection, setShowEmbeddingSection] = useState<boolean>(false);
+    const [model, setModel] = useState<string>('esmc_300m');
 
     const handleDmsStartingSeqIDsTextareaChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
         setDmsStartingSeqIds(event.target.value);
@@ -27,7 +28,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, jobs, embeddings, setErrorT
         setExtraSequenceIDs(event.target.value);
     };
 
-    const handleStartDmsEmbeddings = async (model: string) => {
+    const handleStartDmsEmbeddings = async () => {
         const dmsStartingSeqIdsArray: string[] = dmsStartingSeqIds
             .split('\n')
             .map(line => line.trim())
@@ -74,18 +75,11 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, jobs, embeddings, setErrorT
     const downloadEmbedding = (embedding: Embedding) => {
         const paddedFoldId = foldId.toString().padStart(6, '0');
         const embeddingPath = `embed/${paddedFoldId}_embeddings_${embedding.embedding_model}_${embedding.name}.csv`;
-        console.log(`Downloading embedding ${embedding.id} at path ${embeddingPath}`);
-        getFile(embedding.fold_id, embeddingPath).then(
-            (fileBlob: Blob) => {
-                const newFname = embeddingPath.split('/').pop() || 'embeddings.csv';
-                UIkit.notification(`Downloading ${embeddingPath} with file name ${newFname}!`);
-                fileDownload(fileBlob, newFname);
-            },
-            (e) => {
-                console.log(e);
-                setErrorText(e.toString());
-            }
-        );
+        UIkit.notification(`Downloading embedding ${embedding.id} at path ${embeddingPath}`);
+
+        downloadFileStraightToFilesystem(embedding.fold_id, embeddingPath, (progress: number) => {
+            console.log(`Downloading ${embeddingPath}: ${progress}%`);
+        });
     };
 
     const rerunEmbedding = async (embedding: Embedding) => {
@@ -95,6 +89,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, jobs, embeddings, setErrorT
         setDmsStartingSeqIds(embedding.dms_starting_seq_ids.split(',').join('\n'));
         setExtraSequenceIDs(embedding.extra_seq_ids.split(',').join('\n'));
         setShowEmbeddingSection(true);
+        setModel(embedding.embedding_model);
     };
 
     return (
@@ -102,7 +97,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, jobs, embeddings, setErrorT
             {/* Description Section */}
             <section style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
                 <h3 style={{ marginBottom: '10px' }}>DMS Embedding Overview</h3>
-                <p>
+                <div>
                     This tab allows you to embed protein sequences using large language
                     models like <a href="https://github.com/evolutionaryscale/esm">ESMC</a>.
                     These embeddings can be used to do low-N directed evolution, as in the
@@ -127,7 +122,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, jobs, embeddings, setErrorT
                     <p>
                         <code>Estimated cost:</code>~$100 for a DMS of a 500AA protein.
                     </p>
-                </p>
+                </div>
             </section>
 
             {/* Batch Status Section */}
@@ -227,19 +222,20 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, jobs, embeddings, setErrorT
                                 ></textarea>
                             </div>
                         </div>
+
+                        <ESMModelPicker
+                            value={model}
+                            onChange={setModel}
+                        />
+
                         <div style={{ marginTop: '20px' }}>
                             <button
                                 className="uk-button uk-button-primary"
-                                onClick={() => handleStartDmsEmbeddings("esmc_300m")}
+                                onClick={() => handleStartDmsEmbeddings()}
                             >
-                                Start Embedding (300M model)
+                                Start Embedding
                             </button>
-                            <button
-                                className="uk-button uk-button-primary uk-margin-left"
-                                onClick={() => handleStartDmsEmbeddings("esmc_600m")}
-                            >
-                                Start Embedding (600M model)
-                            </button>
+
                         </div>
                     </div>
                 )}

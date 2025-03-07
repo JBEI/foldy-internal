@@ -3,24 +3,16 @@ import ParsePdb, { ParsedPdb } from "parse-pdb";
 import React, { Component, RefObject } from "react";
 import { AiOutlineFolder, AiOutlineFolderOpen } from "react-icons/ai";
 import { FaDownload } from "react-icons/fa";
-import FileBrowser from "react-keyed-file-browser";
-import {
-    Component as NGLComponent,
-    RepresentationCollection as NGLRepresentationCollection,
-    Stage,
-    StructureComponent,
-} from "react-ngl/dist/@types/ngl/declarations/ngl";
+import { FileBrowser, FileList, FileNavbar, FileToolbar, ChonkyActions, ChonkyFileActionData } from 'chonky';
 import { useParams } from "react-router-dom";
 import UIkit from "uikit";
 import {
     deleteDock,
     getDockSdf,
-    getFold,
     getFoldPdb,
     getFoldPfam,
     getInvokation,
     queueJob,
-    updateFold,
 } from "../../services/backend.service";
 import { FoldyMascot } from "../../util/foldyMascot";
 import { VariousColorSchemes, getColorsForAnnotations } from "../../util/plots";
@@ -30,13 +22,16 @@ import "./FoldView.scss";
 import PaeTab from "./PaeTab";
 import JobsTab from "./JobsTab";
 import SequenceTab, { SubsequenceSelection } from "./SequenceTab";
-import * as NGL from 'ngl/dist/ngl.js';
 import fileDownload from "js-file-download";
+import NaturalnessTab from "./NaturalnessTab";
 import EmbedTab from "./EmbedTab";
 import EvolveTab from "./EvolveTab";
-import { Annotations, FileInfo, Fold, FoldPdb, Invokation } from "src/types/types";
+import { Annotations, FileInfo, Fold, FoldPdb, Invokation } from "../../types/types";
 import { removeLeadingSlash } from "../../api/commonApi";
-import { getFile, getFileList } from "../../api/fileApi";
+import { downloadFileStraightToFilesystem, getFile, getFileList } from "../../api/fileApi";
+import { getFold, updateFold } from "../../api/foldApi";
+import StructurePane, { Selection } from "./StructurePane";
+import FileTab from "./FileTab";
 
 const REFRESH_STATE_PERIOD = 5000;
 const REFRESH_STATE_MAX_ITERS = 200;
@@ -121,12 +116,12 @@ interface FoldProps {
     userType: string | null;
 }
 
-interface DisplayedDock {
-    sdf: Blob;
-    frame: number;
-    nglComponent: StructureComponent;
-    boxComponents: NGLComponent[];
-}
+// interface DisplayedDock {
+//     sdf: Blob;
+//     frame: number;
+//     nglComponent: StructureComponent;
+//     boxComponents: NGLComponent[];
+// }
 
 interface FoldState {
     foldData: Fold | null;
@@ -136,8 +131,6 @@ interface FoldState {
     jobs: Invokation[] | null;
     pdb: FoldPdb | null;
     parsedPdb: ParsedPdb | null;
-    stage: Stage | null;
-    stageRef: RefObject<any>;
 
     // Defines our current color "mode".
     colorScheme: string;
@@ -145,23 +138,25 @@ interface FoldState {
     pfamAnnotations: Annotations | null;
     pfamColors: VariousColorSchemes | null;
 
-    // Docking stuff.
-    displayedDocks: { [ligandName: string]: DisplayedDock };
+    // // Docking stuff.
+    // displayedDocks: { [ligandName: string]: DisplayedDock };
 
-    // Nglviewer and other view management.
-    pdbRepr: NGLRepresentationCollection | null;
-    selectionRepr: NGLRepresentationCollection[] | null;
+    // // Nglviewer and other view management.
+    // pdbRepr: NGLRepresentationCollection | null;
+    // selectionRepr: NGLRepresentationCollection[] | null;
     pdbFailedToLoad: boolean;
     paeIsOnScreen: boolean;
     contactIsOnScreen: boolean;
     showSplitScreen: boolean;
     numRefreshes: number;
-    isRocking: boolean;
+
+    selectedSubsequence: Selection | null;
+    currentFolderPath: string;
 }
 
 // From UIkit's definition of a "medium" window: https://getuikit.com/docs/visibility
 const WINDOW_WIDTH_FOR_SPLIT_SCREEN = 960;
-
+const MAX_JOBS_TO_REFRESH = 5;
 class InternalFoldView extends Component<FoldProps, FoldState> {
     interval: NodeJS.Timeout | null = null;
 
@@ -174,34 +169,30 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
             jobs: null,
             pdb: null,
             parsedPdb: null,
-            stage: null,
-            stageRef: React.createRef(),
 
             colorScheme: "pfam",  // pLDDT
 
             pfamAnnotations: null,
             pfamColors: null,
 
-            displayedDocks: {},
+            // displayedDocks: {},
 
-            pdbRepr: null,
-            selectionRepr: null,
+            // pdbRepr: null,
+            // selectionRepr: null,
             pdbFailedToLoad: false,
             paeIsOnScreen: false,
             contactIsOnScreen: false,
             showSplitScreen: window.innerWidth >= WINDOW_WIDTH_FOR_SPLIT_SCREEN,
             numRefreshes: 0,
-            isRocking: true,
+
+            selectedSubsequence: null,
+            currentFolderPath: '/',
         };
     }
 
     preventDefault = (e: any) => e.preventDefault();
 
     handleResize = () => {
-        if (this.state.stage) {
-            this.state.stage.handleResize();
-        }
-
         const newShowSplitScreen =
             window.innerWidth >= WINDOW_WIDTH_FOR_SPLIT_SCREEN;
         if (newShowSplitScreen !== this.state.showSplitScreen) {
@@ -228,6 +219,14 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                             (currentJob && currentJob.state !== foldJob.state);
                     })
                     .map(job => job.id);
+
+                if (jobsToRefresh.length > MAX_JOBS_TO_REFRESH) {
+                    UIkit.notification(`Not streaming job logs because there are too many jobs (${jobsToRefresh.length} > ${MAX_JOBS_TO_REFRESH}))`, {
+                        status: 'warning',
+                        timeout: 1000,
+                    });
+                    return;
+                }
 
                 // Create final job list
                 const finalJobs = [...this.state.foldData.jobs].map(foldJob => {
@@ -330,10 +329,10 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         }
                         this.setState({
                             pfamAnnotations: pfam,
-                            pfamColors: getColorsForAnnotations(
-                                this.state.foldData.sequence,
-                                pfam
-                            ),
+                            // pfamColors: getColorsForAnnotations(
+                            //     this.state.foldData.sequence,
+                            //     pfam
+                            // ),
                         });
                     },
                     (e) => {
@@ -359,44 +358,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         }
 
                         console.log(`PDB is ${pdb.pdb_string.length} characters long.`);
-                        var stage = new NGL.Stage("viewport", { backgroundColor: "white" });
-
-                        var stringBlob = new Blob([pdb.pdb_string], { type: "text/plain" });
-
-                        // Load this here, since apparently it's not accessible within the below code...
-                        const nglColorScheme = this.getNglColorSchemeName(
-                            this.state.colorScheme
-                        );
-                        stage.loadFile(stringBlob, { ext: "pdb" }).then((o: any) => {
-                            const pdbRepr = o.addRepresentation("cartoon", {
-                                colorScheme: nglColorScheme,
-                            });
-                            var duration = 1000; // optional duration for animation, defaults to zero
-                            o.autoView(duration);
-
-                            const selectionRepr1 = o.addRepresentation("licorice", {
-                                // Start out with nothing selected - so make an impossible selection.
-                                sele: "1 and 2",
-                                // color: "#F866AF",  // Hot pink.
-                                color: "red",
-                            });
-
-                            const selectionRepr2 = o.addRepresentation("cartoon", {
-                                // Start out with nothing selected - so make an impossible selection.
-                                sele: "1 and 2",
-                                // color: "#F866AF",  // Hot pink.
-                                color: "red",
-                            });
-
-                            this.setState({ pdbRepr: pdbRepr, selectionRepr: [selectionRepr1, selectionRepr2] });
-                        });
-                        stage.setRock(false);
-                        this.state.stageRef.current.addEventListener(
-                            "wheel",
-                            this.preventDefault,
-                            { passive: false }
-                        );
-                        this.setState({ stage: stage });
                     },
                     (e) => {
                         // TODO(jbr): In this case, have Foldy pop up saying the structure isn't available.
@@ -413,10 +374,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
     }
 
     componentWillUnmount() {
-        this.state.stageRef.current.removeEventListener(
-            "wheel",
-            this.preventDefault
-        );
         window.removeEventListener("resize", this.handleResize);
 
         if (this.interval) {
@@ -424,54 +381,20 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
         }
     }
 
+    setSelectedSubsequence = (selection: Selection | null) => {
+        this.setState({
+            selectedSubsequence: selection,
+        });
+    }
+
     render() {
         var structurePane = (
             <div key="structure" style={{ height: "100%" }}>
-                {this.state.pdb ? null : (
-                    <div className="uk-text-center">
-                        {this.state.pdbFailedToLoad ? (
-                            <FoldyMascot
-                                text={"Looks like your structure isn't ready."}
-                                moveTextAbove={false}
-                            />
-                        ) : (
-                            <div uk-spinner="ratio: 4"></div>
-                        )}
-                    </div>
-                )}
-
-                <div
-                    className="uk-text-center"
-                    id="viewport"
-                    style={{ width: "100%", height: "100%" }}
-                    ref={this.state.stageRef}
-                >
-                    <div
-                        style={{
-                            display: "inline",
-                            position: "absolute",
-                            top: "5px",
-                            left: "25px",
-                            zIndex: 99,
-                            borderRadius: "4px",
-                        }}
-                    >
-                        <button
-                            className="uk-button uk-button-small uk-button-default uk-margin-small-right"
-                            onClick={this.changeColor}
-                            style={{ backgroundColor: "white" }}
-                        >
-                            Color: {this.state.colorScheme.split("|").pop()}
-                        </button>
-                        <button
-                            className="uk-button uk-button-small uk-button-default"
-                            style={{ backgroundColor: "white" }}
-                            onClick={() => this.toggleRocking()}
-                        >
-                            Rock
-                        </button>
-                    </div>
-                </div>
+                <StructurePane
+                    pdbString={this.state.pdb?.pdb_string ?? null}
+                    pdbFailedToLoad={this.state.pdbFailedToLoad}
+                    selection={this.state.selectedSubsequence}
+                />
             </div>
         );
 
@@ -504,6 +427,9 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                     <a>Dock</a>
                 </li>
                 <li>
+                    <a>Naturalness</a>
+                </li>
+                <li>
                     <a>Embed</a>
                 </li>
                 <li>
@@ -523,15 +449,19 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                             foldName={this.state.foldData?.name}
                             foldTags={this.state.foldData?.tags}
                             foldOwner={this.state.foldData?.owner}
+                            foldDiffusionSamples={this.state.foldData?.diffusion_samples}
                             foldCreateDate={this.state.foldData?.create_date}
                             foldPublic={this.state.foldData?.public}
                             foldModelPreset={this.state.foldData?.af2_model_preset}
                             foldDisableRelaxation={this.state.foldData?.disable_relaxation}
+                            yaml_config={this.state.foldData.yaml_config}
                             sequence={this.state.foldData.sequence}
                             colorScheme={this.state.colorScheme}
                             setPublic={this.setPublic}
                             setDisableRelaxation={this.setDisableRelaxation}
                             setFoldName={this.setFoldName}
+                            setFoldModelPreset={this.setFoldModelPreset}
+                            setYamlConfig={this.setYamlConfig}
                             addTag={this.addTag}
                             deleteTag={this.deleteTag}
                             handleTagClick={this.handleTagClick}
@@ -546,37 +476,13 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                 </li>
 
                 <li key="filesli">
-                    <h3>Quick Access</h3>
-                    <form className="uk-margin-bottom">
-                        <fieldset className="uk-fieldset">
-                            <div>
-                                <button
-                                    type="button"
-                                    className="uk-button uk-button-primary uk-margin-left uk-form-small"
-                                    onClick={this.maybeDownloadPdb}
-                                    disabled={
-                                        !(this.state.foldData?.name && this.state.pdb?.pdb_string)
-                                    }
-                                >
-                                    Download Best PDB
-                                </button>
-                            </div>
-                        </fieldset>
-                    </form>
-
-                    {/* TODO: Implement a file download.
-      https://github.com/TimboKZ/chonky-website/blob/master/2.x_storybook/src/demos/S3Browser.tsx
-      https://uptick.github.io/react-keyed-file-browser/
-      */}
-                    <h3>Files</h3>
-                    <FileBrowser
+                    <FileTab
+                        foldId={this.props.foldId}
+                        foldName={this.state.foldData?.name || null}
+                        pdbString={this.state.pdb?.pdb_string || null}
+                        maybeDownloadPdb={this.maybeDownloadPdb}
                         files={this.state.files}
-                        icons={{
-                            Folder: <AiOutlineFolder />,
-                            FolderOpen: <AiOutlineFolderOpen />,
-                            Download: <FaDownload />,
-                        }}
-                        onDownloadFile={this.downloadFile}
+                        setErrorText={this.props.setErrorText}
                     />
                 </li>
 
@@ -606,16 +512,28 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         docks={this.state.foldData ? this.state.foldData.docks : null}
                         jobs={this.state.foldData ? this.state.foldData.jobs : null}
                         setErrorText={this.props.setErrorText}
-                        displayedLigandNames={Object.keys(this.state.displayedDocks)}
-                        ranks={Object.fromEntries(
-                            Object.entries(this.state.displayedDocks).map(([key, value]) => [
-                                key,
-                                value.frame + 1,
-                            ])
-                        )}
+                        displayedLigandNames={[]}  // Object.keys(this.state.displayedDocks)
+                        // ranks={Object.fromEntries(
+                        //     Object.entries(this.state.displayedDocks).map(([key, value]) => [
+                        //         key,
+                        //         value.frame + 1,
+                        //     ])
+                        // )}
+                        ranks={{}}
                         displayLigandPose={this.displayLigandPose}
                         shiftFrame={this.shiftFrame}
                         deleteLigandPose={this.deleteLigandPose}
+                    />
+                </li>
+
+                <li key="Logitli">
+                    <NaturalnessTab
+                        foldId={this.props.foldId}
+                        foldName={this.state.foldData?.name || null}
+                        jobs={this.state.jobs}
+                        logits={this.state.foldData?.logits || null}
+                        setSelectedSubsequence={this.setSelectedSubsequence}
+                        setErrorText={this.props.setErrorText}
                     />
                 </li>
 
@@ -780,10 +698,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
     };
 
     changeColor = () => {
-        if (!this.state.stage) {
-            return;
-        }
-
         var newColorScheme: string;
         if (this.state.colorScheme === "pLDDT") {
             newColorScheme = "chainname";
@@ -795,9 +709,9 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
 
         var nglViewerColorScheme = this.getNglColorSchemeName(newColorScheme);
 
-        if (this.state.pdbRepr) {
-            this.state.pdbRepr.setColor(nglViewerColorScheme);
-        }
+        // if (this.state.pdbRepr) {
+        //     this.state.pdbRepr.setColor(nglViewerColorScheme);
+        // }
         this.setState({ colorScheme: newColorScheme });
     };
 
@@ -821,109 +735,109 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
 
     actionToStageName = [
         ["Rewrite fasta files", "write_fastas"],
-        ["Rerun PFAM Sequence Annotation", "annotate"],
-        ["Rerun whole pipeline", "both"],
+        ["Rerun Sequence Annotation", "annotate"],
+        ["Refold", "both"],
         ["AlphaFold2: Rerun MSA computation", "features"],
         ["AlphaFold2: Rerun Structure Prediction", "models"],
         ["AlphaFold2: Rerun Decompress Pickles job", "decompress_pkls"],
         ["Send notification email", "email"],
     ];
 
-    displayLigandPose = (ligandName: string) => {
-        if (ligandName in this.state.displayedDocks) {
-            UIkit.notification(`Hiding ${ligandName}`);
-            this.state.stage?.removeComponent(
-                this.state.displayedDocks[ligandName].nglComponent
-            );
+    // displayLigandPose = (ligandName: string) => {
+    //     if (ligandName in this.state.displayedDocks) {
+    //         UIkit.notification(`Hiding ${ligandName}`);
+    //         this.state.stage?.removeComponent(
+    //             this.state.displayedDocks[ligandName].nglComponent
+    //         );
 
-            for (const boxComponent of this.state.displayedDocks[ligandName]
-                .boxComponents) {
-                this.state.stage?.removeComponent(boxComponent);
-            }
+    //         for (const boxComponent of this.state.displayedDocks[ligandName]
+    //             .boxComponents) {
+    //             this.state.stage?.removeComponent(boxComponent);
+    //         }
 
-            const newDisplayedDocks = this.state.displayedDocks;
-            delete newDisplayedDocks[ligandName];
-            this.setState({ displayedDocks: newDisplayedDocks });
-            return;
-        }
+    //         const newDisplayedDocks = this.state.displayedDocks;
+    //         delete newDisplayedDocks[ligandName];
+    //         this.setState({ displayedDocks: newDisplayedDocks });
+    //         return;
+    //     }
 
-        const dock = this.state.foldData?.docks?.find(
-            (e) => e.ligand_name === ligandName
-        );
-        if (!dock) {
-            console.error(`No ligand found with name ${ligandName}`);
-            return;
-        }
+    //     const dock = this.state.foldData?.docks?.find(
+    //         (e) => e.ligand_name === ligandName
+    //     );
+    //     if (!dock) {
+    //         console.error(`No ligand found with name ${ligandName}`);
+    //         return;
+    //     }
 
-        UIkit.notification(`Displaying SDF file for ${ligandName}`);
-        getDockSdf(this.props.foldId, ligandName).then(
-            (sdf: Blob) => {
-                if (!this.state.stage || !this.state.parsedPdb) {
-                    return;
-                }
+    //     UIkit.notification(`Displaying SDF file for ${ligandName}`);
+    //     getDockSdf(this.props.foldId, ligandName).then(
+    //         (sdf: Blob) => {
+    //             if (!this.state.stage || !this.state.parsedPdb) {
+    //                 return;
+    //             }
 
-                var boxComponents = new Array<NGLComponent>();
+    //             var boxComponents = new Array<NGLComponent>();
 
-                if (dock.bounding_box_residue && dock.bounding_box_radius_angstrom) {
-                    // TODO: Parse PDB to get the residues selected:
-                    // https://www.npmjs.com/package/parse-pdb
+    //             if (dock.bounding_box_residue && dock.bounding_box_radius_angstrom) {
+    //                 // TODO: Parse PDB to get the residues selected:
+    //                 // https://www.npmjs.com/package/parse-pdb
 
-                    const resCenter = getResidueCenter(
-                        this.state.parsedPdb,
-                        dock.bounding_box_residue
-                    );
-                    if (resCenter) {
-                        for (const edge of getCubeEdges(
-                            resCenter,
-                            dock.bounding_box_radius_angstrom
-                        )) {
-                            // https://nglviewer.org/ngl/api/class/src/stage/stage.js~Stage.html
-                            // https://nglviewer.org/ngl/api/class/src/component/component.js~Component.html
-                            // https://nglviewer.org/ngl/api/class/src/component/shape-component.js~ShapeComponent.html
-                            // https://nglviewer.org/ngl/api/class/src/geometry/shape.js~Shape.html
+    //                 const resCenter = getResidueCenter(
+    //                     this.state.parsedPdb,
+    //                     dock.bounding_box_residue
+    //                 );
+    //                 if (resCenter) {
+    //                     for (const edge of getCubeEdges(
+    //                         resCenter,
+    //                         dock.bounding_box_radius_angstrom
+    //                     )) {
+    //                         // https://nglviewer.org/ngl/api/class/src/stage/stage.js~Stage.html
+    //                         // https://nglviewer.org/ngl/api/class/src/component/component.js~Component.html
+    //                         // https://nglviewer.org/ngl/api/class/src/component/shape-component.js~ShapeComponent.html
+    //                         // https://nglviewer.org/ngl/api/class/src/geometry/shape.js~Shape.html
 
-                            var shape = new NGL.Shape("shape");
-                            shape.addCylinder(edge.start, edge.end, [0.5, 0.5, 0.5], 0.1);
-                            var shapeComponent =
-                                this.state.stage.addComponentFromObject(shape);
-                            if (shapeComponent) {
-                                // @ts-ignore
-                                shapeComponent.addRepresentation("buffer");
-                                boxComponents.push(shapeComponent);
-                            }
-                        }
-                    }
-                }
+    //                         var shape = new NGL.Shape("shape");
+    //                         shape.addCylinder(edge.start, edge.end, [0.5, 0.5, 0.5], 0.1);
+    //                         var shapeComponent =
+    //                             this.state.stage.addComponentFromObject(shape);
+    //                         if (shapeComponent) {
+    //                             // @ts-ignore
+    //                             shapeComponent.addRepresentation("buffer");
+    //                             boxComponents.push(shapeComponent);
+    //                         }
+    //                     }
+    //                 }
+    //             }
 
-                this.state.stage // @ts-ignore
-                    .loadFile(sdf, { ext: "sdf", asTrajectory: true }) // @ts-ignore
-                    .then((o: any) => {
-                        o.addRepresentation("ball+stick");
-                        o.signals.trajectoryAdded.add((e: any) => {
-                            console.log("TRAJECTORY ADDED");
-                        });
-                        // How to set a frame: https://github.com/nglviewer/ngl/blob/4ab8753c38995da675e9efcae2291a298948ccca/examples/js/gui.js
-                        // All I have to do is get the trajectories: https://github.com/nglviewer/ngl/blob/4ab8753c38995da675e9efcae2291a298948ccca/src/trajectory/trajectory.ts
-                        // The above example uses an trajectoryadded listener, or something like that, which does exist on my repr...
-                        // After figuring it out I found a working example...: https://nglviewer.org/mdsrv/embedded.html
-                        o.addTrajectory(null, {});
+    //             this.state.stage // @ts-ignore
+    //                 .loadFile(sdf, { ext: "sdf", asTrajectory: true }) // @ts-ignore
+    //                 .then((o: any) => {
+    //                     o.addRepresentation("ball+stick");
+    //                     o.signals.trajectoryAdded.add((e: any) => {
+    //                         console.log("TRAJECTORY ADDED");
+    //                     });
+    //                     // How to set a frame: https://github.com/nglviewer/ngl/blob/4ab8753c38995da675e9efcae2291a298948ccca/examples/js/gui.js
+    //                     // All I have to do is get the trajectories: https://github.com/nglviewer/ngl/blob/4ab8753c38995da675e9efcae2291a298948ccca/src/trajectory/trajectory.ts
+    //                     // The above example uses an trajectoryadded listener, or something like that, which does exist on my repr...
+    //                     // After figuring it out I found a working example...: https://nglviewer.org/mdsrv/embedded.html
+    //                     o.addTrajectory(null, {});
 
-                        const newDisplayedDocks = this.state.displayedDocks;
-                        newDisplayedDocks[ligandName] = {
-                            sdf: sdf,
-                            frame: 0,
-                            nglComponent: o,
-                            boxComponents: boxComponents,
-                        };
+    //                     const newDisplayedDocks = this.state.displayedDocks;
+    //                     newDisplayedDocks[ligandName] = {
+    //                         sdf: sdf,
+    //                         frame: 0,
+    //                         nglComponent: o,
+    //                         boxComponents: boxComponents,
+    //                     };
 
-                        this.setState({ displayedDocks: newDisplayedDocks });
-                    });
-            },
-            (e) => {
-                this.props.setErrorText(e.toString());
-            }
-        );
-    };
+    //                     this.setState({ displayedDocks: newDisplayedDocks });
+    //                 });
+    //         },
+    //         (e) => {
+    //             this.props.setErrorText(e.toString());
+    //         }
+    //     );
+    // };
 
     deleteLigandPose = (ligandId: number, ligandName: string) => {
         UIkit.modal
@@ -932,21 +846,21 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
             )
             .then(
                 () => {
-                    if (ligandName in this.state.displayedDocks) {
-                        this.state.stage?.removeComponent(
-                            this.state.displayedDocks[ligandName].nglComponent
-                        );
+                    // if (ligandName in this.state.displayedDocks) {
+                    //     this.state.stage?.removeComponent(
+                    //         this.state.displayedDocks[ligandName].nglComponent
+                    //     );
 
-                        for (const boxComponent of this.state.displayedDocks[ligandName]
-                            .boxComponents) {
-                            this.state.stage?.removeComponent(boxComponent);
-                        }
+                    //     for (const boxComponent of this.state.displayedDocks[ligandName]
+                    //         .boxComponents) {
+                    //         this.state.stage?.removeComponent(boxComponent);
+                    //     }
 
-                        const newDisplayedDocks = this.state.displayedDocks;
-                        delete newDisplayedDocks[ligandName];
-                        this.setState({ displayedDocks: newDisplayedDocks });
-                        return;
-                    }
+                    //     const newDisplayedDocks = this.state.displayedDocks;
+                    //     delete newDisplayedDocks[ligandName];
+                    //     this.setState({ displayedDocks: newDisplayedDocks });
+                    //     return;
+                    // }
 
                     deleteDock(ligandId).then(
                         () => {
@@ -964,31 +878,23 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
     };
 
     shiftFrame = (ligandName: string, shift: number) => {
-        if (ligandName in this.state.displayedDocks) {
-            const disp = this.state.displayedDocks[ligandName];
-            var newFrame = disp.frame + shift;
-            if (disp.nglComponent.trajList.length) {
-                if (newFrame < 0) {
-                    newFrame = 0;
-                }
-                if (newFrame > disp.nglComponent.structure.frames.length) {
-                    newFrame = disp.nglComponent.structure.frames.length - 1;
-                }
-                disp.nglComponent.trajList[0].setFrame(newFrame);
-            }
+        // if (ligandName in this.state.displayedDocks) {
+        //     const disp = this.state.displayedDocks[ligandName];
+        //     var newFrame = disp.frame + shift;
+        //     if (disp.nglComponent.trajList.length) {
+        //         if (newFrame < 0) {
+        //             newFrame = 0;
+        //         }
+        //         if (newFrame > disp.nglComponent.structure.frames.length) {
+        //             newFrame = disp.nglComponent.structure.frames.length - 1;
+        //         }
+        //         disp.nglComponent.trajList[0].setFrame(newFrame);
+        //     }
 
-            const newDisplayedDocks = this.state.displayedDocks;
-            newDisplayedDocks[ligandName].frame = newFrame;
-            this.setState({ displayedDocks: newDisplayedDocks });
-        }
-    };
-
-    toggleRocking = () => {
-        const newIsRocking = !this.state.isRocking;
-        if (this.state.stage) {
-            this.state.stage.setRock(newIsRocking);
-        }
-        this.setState({ isRocking: newIsRocking });
+        //     const newDisplayedDocks = this.state.displayedDocks;
+        //     newDisplayedDocks[ligandName].frame = newFrame;
+        //     this.setState({ displayedDocks: newDisplayedDocks });
+        // }
     };
 
     setPublic = (is_public: boolean) => {
@@ -1054,6 +960,36 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
             });
     };
 
+    setFoldModelPreset = () => {
+        UIkit.modal
+            .prompt("New fold model:", "")
+            .then((newFoldModelPreset: string | null) => {
+                if (!newFoldModelPreset) {
+                    return;
+                }
+                updateFold(this.props.foldId, { af2_model_preset: newFoldModelPreset }).then(
+                    () => {
+                        this.refreshFoldDataFromBackend();
+                        UIkit.notification("Updated fold model.");
+                    },
+                    (e) => {
+                        this.props.setErrorText(e);
+                    }
+                );
+            });
+    };
+
+    setYamlConfig = async (yaml: string) => {
+        await updateFold(this.props.foldId, { yaml_config: yaml }).then(
+            () => {
+                this.refreshFoldDataFromBackend();
+            },
+            (e) => {
+                this.props.setErrorText(e);
+            }
+        );
+    };
+
     addTag = (tagToAdd: string) => {
         const tags = this.state.foldData?.tags;
         if (!tags) {
@@ -1070,6 +1006,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
             }
         );
     };
+
     deleteTag = (tagToDelete: string) => {
         UIkit.modal.confirm("Delete tag?").then(
             () => {
@@ -1093,54 +1030,56 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
             }
         );
     };
+
     handleTagClick = (tagToOpen: string) => {
         window.open(`/tag/${tagToOpen}`, "_self");
-    };
-    setSelectedSubsequence = (sele: SubsequenceSelection) => {
-        // Selection language described here:
-        // https://nglviewer.org/ngl/api/manual/usage/selection-language.html
-        // Convert chain index to a chain name, which is just "A" or "B" for NGL,
-        // for some reason.
-        const nglChainName = String.fromCharCode(65 + sele.chainIdx);
-        const selectionString = `${sele.startResidue}-${sele.endResidue}:${nglChainName}`;
-        if (this.state.selectionRepr) {
-            console.log(`Settings selection to "${selectionString}"`);
-            for (const singleRepr of this.state.selectionRepr) {
-                singleRepr.setSelection(selectionString); // and :${chain}`);
-            }
-        } else {
-            console.log("No selectionRepr found.");
-        }
     };
 
     downloadFile = (keys: string[]) => {
         console.log(keys);
         for (let key of keys) {
             UIkit.notification(`Getting ${key} from server...`);
-            getFile(this.props.foldId, removeLeadingSlash(key)).then(
-                (fileBlob: Blob) => {
-                    const newFname = key.split("/").pop();
-                    if (!newFname) {
-                        this.props.setErrorText(`No file name found for ${key}`);
-                        return;
-                    }
-                    console.log(`Downloading ${key} with file name ${newFname}!!!`);
-                    fileDownload(fileBlob, newFname);
-                },
-                (e) => {
-                    this.props.setErrorText(e.toString());
-                }
-            );
+            downloadFileStraightToFilesystem(this.props.foldId, removeLeadingSlash(key), (progress: number) => {
+                console.log(`Downloading ${key}: ${progress}%`);
+            });
+            // getFile(this.props.foldId, removeLeadingSlash(key)).then(
+            //     (fileBlob: Blob) => {
+            //         const newFname = key.split("/").pop();
+            //         if (!newFname) {
+            //             this.props.setErrorText(`No file name found for ${key}`);
+            //             return;
+            //         }
+            //         console.log(`Downloading ${key} with file name ${newFname}!!!`);
+            //         fileDownload(fileBlob, newFname);
+            //     },
+            //     (e) => {
+            //         this.props.setErrorText(e.toString());
+            //     }
+            // );
         }
     };
 
     formatStartTime = (jobstarttime: string | null) => {
-        return jobstarttime
-            ? new Date(jobstarttime).toLocaleString("en-US", {
+        if (!jobstarttime) return "Not Started / Unknown";
+
+
+        try {
+            // Parse the UTC time string into a Date object
+            const date = new Date(jobstarttime);
+
+            if (isNaN(date.getTime())) {
+                console.warn(`Invalid date value ${jobstarttime}`);
+                return "Invalid date";
+            }
+            return new Intl.DateTimeFormat('en-US', {
                 timeStyle: "short",
                 dateStyle: "short",
-            })
-            : "Not Started / Unknown";
+                timeZone: "America/Los_Angeles"
+            }).format(date);
+        } catch (error) {
+            console.error(`Error formatting date ${jobstarttime}:`, error);
+            return "Error";
+        }
     };
 
     formatRunTime = (jobRunTime: number | null) => {

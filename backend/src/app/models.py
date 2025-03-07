@@ -8,6 +8,7 @@ from datetime import datetime, UTC
 from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
 from sqlalchemy import func
 from sqlalchemy.orm import deferred
+from sqlalchemy import Index
 
 from app.database import Column, PkModel, db, reference_col, relationship
 
@@ -24,7 +25,7 @@ class Invokation(PkModel):
 
     type = Column(db.String(80), nullable=False)
     state = Column(db.String(80), nullable=True)
-    starttime = Column(db.DateTime, nullable=True)
+    starttime = Column(db.DateTime(timezone=True), nullable=True)
     timedelta = Column(db.Interval, nullable=True)
 
     command = Column(db.Text, nullable=True)
@@ -44,7 +45,9 @@ class User(PkModel):
     email = Column(db.String(80), unique=True, nullable=False)
     created_at = Column(db.DateTime, nullable=False, default=datetime.now(UTC))
     access_type = Column(db.String(80), nullable=True)
-    # fold = relationship("Fold", backref="user",lazy='dynamic')
+    attributes = Column(db.JSON, nullable=True, default=dict)  # Add this line
+
+    folds = relationship("Fold", back_populates="user")
 
     def __init__(self, email, access_type):
         """Create a new user."""
@@ -63,11 +66,24 @@ class Fold(PkModel):
 
     __tablename__ = "roles"
 
+    # 2/13/25: Dashboard queries are taking >10 seconds at times, so we are
+    # adding indices to try to speed them up. Unclear at this time if it will
+    # help.
+    __table_args__ = (
+        Index("ix_roles_user_id", "user_id"),
+        Index("ix_roles_public", "public"),
+        Index("ix_roles_yaml_config", "yaml_config"),
+        # Indexing a large text column (like 'sequence') depends on your DB engine;
+        # if it supports text indexing, you can enable it, but for large fields you may
+        # want more specialized search solutions. If you still want a simple index:
+        # Index("ix_roles_sequence", "sequence"),
+    )
+
     # Id is created automatically.
 
     name = Column(db.String(80), unique=True, nullable=False)
     user_id = reference_col("users", nullable=True)
-    user = relationship("User", backref="folds")
+    user = relationship("User", back_populates="folds")
     tagstring = Column(db.String(80), nullable=True)
     create_date = Column("create_date", db.DateTime, default=func.now())
     public = Column(db.Boolean, nullable=True)
@@ -86,6 +102,13 @@ class Fold(PkModel):
         cascade="all,delete-orphan",
     )
 
+    logits = relationship(
+        "Logit",
+        back_populates="fold",
+        passive_deletes=True,
+        cascade="all,delete-orphan",
+    )
+
     evolutions = relationship(
         "Evolution",
         back_populates="fold",
@@ -100,6 +123,10 @@ class Fold(PkModel):
         cascade="all,delete-orphan",
     )
 
+    # New, good, Boltz input.
+    yaml_config = Column(db.String, nullable=True)
+    diffusion_samples = Column(db.Integer, nullable=True)
+    # Old AF2 inputs.
     sequence = Column(db.Text)
     af2_model_preset = Column(db.String, nullable=True)
     disable_relaxation = Column(db.Boolean, nullable=True)
@@ -143,6 +170,28 @@ class Dock(PkModel):
     pose_confidences = Column(db.String, nullable=True)
 
 
+class Logit(PkModel):
+    """A logit run."""
+
+    __tablename__ = "logits"
+
+    name = Column(db.String, nullable=False)
+
+    fold_id = Column(
+        db.Integer, db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE")
+    )
+    fold = relationship("Fold", back_populates="logits")
+
+    logit_model = Column(db.String, nullable=False)
+    use_structure = Column(db.Boolean, nullable=True)
+    get_depth_two_logits = Column(db.Boolean, nullable=True)
+
+    invokation_id = Column(
+        db.Integer,
+        db.ForeignKey("invokation.id", ondelete="CASCADE", onupdate="CASCADE"),
+    )
+
+
 class Embedding(PkModel):
     """An embedding run."""
 
@@ -180,7 +229,16 @@ class Evolution(PkModel):
     )
     fold = relationship("Fold", back_populates="evolutions")
 
-    embedding_files = Column(db.String)  # A list of embedding file paths.
+    # Two options: "finetuning" on rank or "randomforest" on logits.
+    mode = Column(db.String, nullable=True)
+
+    # If mode == randomforest, then this is the fixed embeddings to use.
+    embedding_files = Column(
+        db.String, nullable=True
+    )  # A list of embedding file paths.
+
+    # If mode == finetuning, then this is the model checkpoint to use.
+    finetuning_model_checkpoint = Column(db.String, nullable=True)
 
     # State tracking.
     invokation_id = Column(

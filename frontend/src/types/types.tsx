@@ -1,7 +1,15 @@
+import { BoltzYamlHelper } from "../util/boltzYamlHelper";
+
 export interface FoldInput {
     name: string;
     tags: string[];
-    sequence: string;
+
+    yaml_config: string | null;
+    diffusion_samples: number | null;
+    yaml_helper: BoltzYamlHelper | null;
+
+    // Old inputs.
+    sequence: string | null;
     af2_model_preset: string | null;
     disable_relaxation: boolean | null;
 }
@@ -14,6 +22,7 @@ export interface Fold extends FoldInput {
     state: string | null;
     jobs: Invokation[] | null;
     docks: Dock[] | null;
+    logits: Logit[] | null;
     embeddings: Embedding[] | null;
     evolutions: Evolution[] | null;
 }
@@ -98,6 +107,16 @@ export interface Dock extends DockInput {
     pose_confidences: string | null;
 }
 
+export interface Logit {
+    id: number;
+    name: string;
+    fold_id: number;
+    logit_model: string;
+    use_structure: boolean | null;
+    get_depth_two_logits: boolean | null;
+    invokation_id: number;
+}
+
 export interface Embedding {
     id: number;
     name: string;
@@ -112,7 +131,9 @@ export interface Evolution {
     id: number;
     name: string;
     fold_id: number;
+    mode: "finetuning" | "randomforest";
     embedding_files: string | null;
+    finetuning_model_checkpoint: string | null;
     invokation_id: number | null;
 }
 

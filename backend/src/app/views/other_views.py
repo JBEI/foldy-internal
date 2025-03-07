@@ -1,5 +1,6 @@
 import io
 import re
+import time
 
 from flask import Response, stream_with_context
 from flask import current_app, request, send_file, make_response
@@ -13,7 +14,7 @@ from sqlalchemy.sql.elements import and_
 from werkzeug.exceptions import BadRequest
 
 from app.jobs import other_jobs
-from app.jobs import embed_jobs
+from app.jobs import esm_jobs
 from app.models import Dock, Fold, Invokation
 from app.extensions import db, rq
 from app.util import start_stage, get_job_type_replacement, make_new_folds
@@ -55,7 +56,9 @@ full_invokation_fields = ns.clone(
                 r.timedelta.total_seconds() if r and r.timedelta else None
             ),
         ),
-        "starttime": fields.DateTime(readonly=True, required=False),
+        "starttime": fields.DateTime(
+            format="iso8601Z", dt_format="iso8601", readonly=True, required=False
+        ),
     },
 )
 
@@ -82,6 +85,19 @@ dock_fields = ns.model(
     },
 )
 
+logit_fields = ns.model(
+    "LogitFields",
+    {
+        "id": fields.Integer(required=False),
+        "name": fields.String(required=True),
+        "fold_id": fields.Integer(required=False),
+        "logit_model": fields.String(required=True),
+        "use_structure": fields.Boolean(required=False),
+        "get_depth_two_logits": fields.Boolean(required=False),
+        "invokation_id": fields.Integer(required=False),
+    },
+)
+
 embedding_fields = ns.model(
     "EmbeddingFields",
     {
@@ -101,7 +117,9 @@ evolution_fields = ns.model(
         "id": fields.Integer(required=True),
         "name": fields.String(required=True),
         "fold_id": fields.Integer(required=True),
+        "mode": fields.String(required=True),
         "embedding_files": fields.String(),
+        "finetuning_model_checkpoint": fields.String(),
         "invokation_id": fields.Integer(),
     },
 )
@@ -115,15 +133,41 @@ fold_fields = ns.model(
         "name": fields.String(),
         "owner": fields.String(attribute="user.email", required=False),
         "tags": fields.List(fields.String()),
-        "create_date": fields.DateTime(readonly=True, required=False),
+        "create_date": fields.DateTime(
+            format="iso8601Z", dt_format="iso8601", readonly=True, required=False
+        ),
         "public": fields.Boolean(required=False),
-        "sequence": fields.String(),
-        "af2_model_preset": fields.String(required=False),
+        "yaml_config": fields.String(required=False),
+        "diffusion_samples": fields.Integer(required=False),
         "disable_relaxation": fields.Boolean(required=False),
         "jobs": fields.List(fields.Nested(simple_invokation_fields)),
-        "docks": fields.List(fields.Nested(dock_fields)),
-        "embeddings": fields.List(fields.Nested(embedding_fields)),
-        "evolutions": fields.List(fields.Nested(evolution_fields)),
+        "docks": fields.List(
+            fields.Nested(dock_fields),
+            attribute=lambda x: (
+                [] if getattr(x, "_skip_embedded_fields", False) else x.docks
+            ),
+        ),
+        "logits": fields.List(
+            fields.Nested(logit_fields),
+            attribute=lambda x: (
+                [] if getattr(x, "_skip_embedded_fields", False) else x.logits
+            ),
+        ),
+        "embeddings": fields.List(
+            fields.Nested(embedding_fields),
+            attribute=lambda x: (
+                [] if getattr(x, "_skip_embedded_fields", False) else x.embeddings
+            ),
+        ),
+        "evolutions": fields.List(
+            fields.Nested(evolution_fields),
+            attribute=lambda x: (
+                [] if getattr(x, "_skip_embedded_fields", False) else x.evolutions
+            ),
+        ),
+        # Old AF2 inputs.
+        "sequence": fields.String(required=False),
+        "af2_model_preset": fields.String(required=False),
     },
 )
 
@@ -170,6 +214,7 @@ class FoldsResource(Resource):
     @ns.expect(get_folds_parser)
     @ns.marshal_list_with(fold_fields, skip_none=True)
     def get(self):
+        start_time = time.time()
         args = get_folds_parser.parse_args()
         print(args, flush=True)
 
@@ -184,6 +229,14 @@ class FoldsResource(Resource):
         manager.setup()
 
         folds = manager.get_folds_with_state(filter, tag, only_public, page, per_page)
+        num_jobs = sum([len(fold.jobs) for fold in folds])
+        num_docks = sum([len(fold.docks) for fold in folds])
+        print(
+            f"Returning {len(folds)} folds with {num_jobs} jobs and {num_docks} docks in {time.time() - start_time} seconds",
+            flush=True,
+        )
+        for fold in folds:
+            fold._skip_embedded_fields = True
         return folds
 
     # TODO(jbr): Figure out what is causing this call to fail and add validation.

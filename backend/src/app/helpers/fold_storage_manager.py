@@ -18,13 +18,14 @@ import numpy as np
 from redis import Redis
 from rq.job import Retry
 from sqlalchemy.sql.elements import or_
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from werkzeug.exceptions import BadRequest
 from pathlib import Path, PurePosixPath
 
 from app.models import Dock, Fold, Invokation, User
 from app.extensions import compress, db, rq
 from app.helpers.sequence_util import back_translate
+from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 
 
 class StorageAccessor:
@@ -35,7 +36,7 @@ class StorageAccessor:
         """Write contents to a file under the specified fold directory."""
         raise NotImplementedError
 
-    def get_binary(self, file_path):
+    def get_binary(self, fold_id, file_path):
         raise NotImplementedError
 
     def get_blob(self, fold_id, file_path):
@@ -77,6 +78,15 @@ class LocalBlob:
             bool: True if the file exists, False otherwise.
         """
         return os.path.exists(self.file_path)
+
+    def size(self):
+        """
+        Returns the size of the file in bytes.
+
+        Returns:
+            int: Size of the file in bytes.
+        """
+        return os.path.getsize(self.file_path)
 
 
 class LocalStorageAccessor(StorageAccessor):
@@ -309,6 +319,8 @@ class GcloudStorageAccessor(StorageAccessor):
         padded_fold_id = f"{fold_id:06d}"
         local_absolute_folder_path = Path(local_absolute_folder_path)
 
+        bucket = self.client.bucket(self.bucket_name)
+
         for root, _, files in os.walk(local_absolute_folder_path):
             for file in files:
                 local_file_path = os.path.join(root, file)
@@ -323,9 +335,9 @@ class GcloudStorageAccessor(StorageAccessor):
                         f"{padded_fold_id}/{relative_folder_path}/{relative_file_path}"
                     )
 
-                print(f"Uploaded {local_path} to {gcloud_path}", flush=True)
+                print(f"Uploaded {local_file_path} to {gcloud_path}", flush=True)
                 blob = bucket.blob(gcloud_path)
-                blob.upload_from_filename(local_path)
+                blob.upload_from_filename(local_file_path)
 
 
 class FoldStorageManager:
@@ -380,9 +392,11 @@ class FoldStorageManager:
             return "(^|,)" + term + "(,|$)"
 
         query = (
-            db.session.query(Fold)
+            db.session.query(Fold).join(Fold.user)
+            # 2/13/25: Tried replacing joinedload with selectinload to try to speed up the query.
+            # Local testing actually shows that selectinload is slower than joinedload.
             .options(joinedload(Fold.jobs), joinedload(Fold.docks))
-            .join(Fold.user)
+            # .options(selectinload(Fold.jobs), selectinload(Fold.docks))
         )
 
         if tag:
@@ -396,7 +410,13 @@ class FoldStorageManager:
                 query = query.filter(
                     or_(
                         Fold.name.ilike(formatted_term),
-                        Fold.sequence.ilike(formatted_term),
+                        # 2/13/25:  For now we don't search on sequence or yaml_config
+                        # because the Dashboard is taking >10 seconds to load which is no good.
+                        # We are not sure that this search is the cause of the problem,
+                        # an alternative hypothesis is the joins with jobs and docks is the issue.
+                        # But we exclude this search for now to see if it helps.
+                        # Fold.sequence.ilike(formatted_term),
+                        # Fold.yaml_config.ilike(formatted_term),
                         User.email.ilike(formatted_term),
                         Fold.tagstring.op("~")(get_tag_regex(term)),
                     )
@@ -411,6 +431,7 @@ class FoldStorageManager:
         if page and per_page:
             iterable = query.paginate(page=page, per_page=per_page).items
 
+        # folds = [fold for fold in iterable if fold is not None]
         folds = []
         for fold in iterable:
             if not fold:
@@ -422,25 +443,45 @@ class FoldStorageManager:
             #     # sql query.
             #     job.log = None
             folds.append(fold)
+
+        # if not include_logs:
+        #   for job in fold.jobs:
+        #     # Since the log field is deferred, this will keep the
+        #     # response marshalling from accidentally triggering another
+        #     # sql query.
+        #     job.log = None
+
         return folds
 
-    def write_fastas(self, id, sequence):
+    def write_fastas(self, id, yaml_config_str):
         """Raises an exception if writing fails."""
+        config = BoltzYamlHelper(yaml_config_str)
+
         padded_fold_id = "%06d" % id
         aa_blob_path = f"{padded_fold_id}.fasta"
         dna_blob_path = f"{padded_fold_id}_dna.fasta"
 
-        if ":" in sequence or ";" in sequence:
-            monomers = [m.split(":") for m in sequence.split(";")]
-            aa_fasta_entries = [f"> {m[0]}|protein\n{m[1]}" for m in monomers]
-            aa_contents = "\n\n".join(aa_fasta_entries)
+        aa_fasta_entries = [
+            f"> {id}\n{aa_seq}" for id, aa_seq in config.get_protein_sequences()
+        ]
+        aa_contents = "\n\n".join(aa_fasta_entries)
+        dna_fasta_entries = [
+            f"> {id}\n{back_translate(aa_seq)}"
+            for id, aa_seq in config.get_protein_sequences()
+        ]
+        dna_contents = "\n\n".join(dna_fasta_entries)
 
-            dna_contents = "\n\n".join(
-                [f"> {m[0]}\n{back_translate(m[1])}" for m in monomers]
-            )
-        else:
-            aa_contents = f"> {padded_fold_id}\n{sequence}"
-            dna_contents = f"> {padded_fold_id}\n{back_translate(sequence)}"
+        # if ":" in sequence or ";" in sequence:
+        #     monomers = [m.split(":") for m in sequence.split(";")]
+        #     aa_fasta_entries = [f"> {m[0]}|protein\n{m[1]}" for m in monomers]
+        #     aa_contents = "\n\n".join(aa_fasta_entries)
+
+        #     dna_contents = "\n\n".join(
+        #         [f"> {m[0]}\n{back_translate(m[1])}" for m in monomers]
+        #     )
+        # else:
+        #     aa_contents = f"> {padded_fold_id}\n{sequence}"
+        #     dna_contents = f"> {padded_fold_id}\n{back_translate(sequence)}"
 
         self.storage_manager.write_file(id, aa_blob_path, aa_contents)
         self.storage_manager.write_file(id, dna_blob_path, dna_contents)

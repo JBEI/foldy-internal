@@ -31,6 +31,7 @@ from app.helpers.jobs_util import (
     try_run_job_with_logging,
     get_torch_cuda_is_available_and_add_logs,
 )
+from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 
 
 def cif_to_pdb(cif_file: str, structure_id: str):
@@ -62,6 +63,16 @@ def cif_to_pdb(cif_file: str, structure_id: str):
     return pdb_file_contents.read()
 
 
+def try_check_smiles_string_validity(smiles_string, add_log):
+    """Try to check if a smiles string is valid."""
+    try:
+        mol = Chem.MolFromSmiles(smiles_string)
+        if mol is None:
+            add_log(f"Invalid SMILES: {smiles_string}")
+    except Exception as e:
+        add_log(f"Error checking SMILES: {smiles_string} {e}")
+
+
 def run_boltz(fold_id, invokation_id):
     """Run boltz workflow."""
     fold = Fold.get_by_id(fold_id)
@@ -76,9 +87,15 @@ def run_boltz(fold_id, invokation_id):
             "Starting Boltz execution...",
         )
 
+        boltz_yaml_helper = BoltzYamlHelper(fold.yaml_config)
+
+        for ligand in boltz_yaml_helper.get_ligands():
+            if "smiles" in ligand:
+                try_check_smiles_string_validity(ligand["smiles"], add_log)
+
         # Create a foldstoragemanager.
         padded_fold_id = "%06d" % fold_id
-        fasta_relative_path = f"{padded_fold_id}.fasta"
+        # fasta_relative_path = f"{padded_fold_id}.fasta"
 
         # Make a temporary directory for running Boltz.
         with TemporaryDirectory() as temp_dir:
@@ -87,27 +104,50 @@ def run_boltz(fold_id, invokation_id):
             # Download the fasta file to the temporary directory.
             fsm = FoldStorageManager()
             fsm.setup()
-            binary_fasta_str = fsm.storage_manager.get_binary(
-                fold_id, fasta_relative_path
-            )
-            fasta_file_path = Path(temp_dir) / fasta_relative_path
-            fasta_file_path.write_bytes(binary_fasta_str)
-            add_log(f'Fasta file contents: {binary_fasta_str.decode("utf-8")}')
+            # binary_fasta_str = fsm.storage_manager.get_binary(
+            #     fold_id, fasta_relative_path
+            # )
+            # fasta_file_path = Path(temp_dir) / fasta_relative_path
+            # fasta_file_path.write_bytes(binary_fasta_str)
+            yaml_file_str = fold.yaml_config
+            yaml_file_path = Path(temp_dir) / "input.yml"
+            yaml_file_path.write_text(yaml_file_str)
+            fsm.storage_manager.write_file(fold_id, "boltz_input.yaml", yaml_file_str)
+            add_log(f"YAML file contents: {yaml_file_str}")
+
+            diffusion_samples = fold.diffusion_samples or 1
 
             # Run Boltz.
+            #
+            # Note that we keep running out of shared memory (shm) when running Boltz
+            # on A100s on Google Cloud.
+            #
+            # We increased shared memory to 20Gi but it didn't help.
+            #
+            # Based on the comments in this issue, it seems like we can improve
+            # performance by reducing the number of dataworkers.
+            # https://github.com/pytorch/pytorch/issues/5040#issuecomment-439590544
+            #
+            # Boltz API: https://github.com/jwohlwend/boltz/blob/main/docs/prediction.md
             gpu_available = get_torch_cuda_is_available_and_add_logs(add_log)
             accelerator = "gpu" if gpu_available else "cpu"
             boltz_command = [
                 "/opt/conda/envs/worker/bin/boltz",
                 "predict",
-                str(fasta_file_path),
+                str(yaml_file_path),
                 "--out_dir",
                 str(temp_dir),
                 "--use_msa_server",
+                "--diffusion_samples",
+                str(diffusion_samples),
                 "--accelerator",
                 accelerator,
                 "--cache",
-                "/.boltz",
+                "/hf-cache/",
+                "--num_workers",
+                "0",  # Should this be 1 or 0? 1 seems to work ok, but zero doesnt spin up any workers (a behavior which seems to cause a "pin memory" issue for foldy-in-a-box).
+                "--write_full_pae",
+                "--write_full_pde",
             ]
             add_log(
                 f"Running boltz with command: {boltz_command}",

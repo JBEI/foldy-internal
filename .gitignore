@@ -143,13 +143,9 @@ db_creation_resources.yaml
 **/node_modules
 **/secrets
 
-# The embeddings... because they're huge.
-backend/src/integration_tests/testdata/000001/embed/*
-backend/src/notebooks/test_evolve.ipynb
+# Generally don't commit the local directory for foldy
+backend/src/integration_tests/testdata/
+backend/src/notebooks/jacob/data/*
 backend/src/integration_tests/testdata/*/evolve/*
 .boltz/
-backend\EvolveTest\kelsic_esm2_t36_3B_UR50D.csv
-backend\EvolveTest\TEM_esm1b_t33_650M_UR50S.csv
-backend\EvolveTest\TEM_esm2_t33_650M_UR50D.csv
-backend\EvolveTest\TEM_esmc_600m_WT.csv
-backend/EvolveTest/**
+backend/EvolveTest

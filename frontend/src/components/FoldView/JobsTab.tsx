@@ -7,12 +7,25 @@ interface JobsTabProps {
 
 const JobsTab: React.FC<JobsTabProps> = ({ jobs }) => {
     const formatStartTime = (jobstarttime: string | null) => {
-        return jobstarttime
-            ? new Date(jobstarttime).toLocaleString("en-US", {
+        if (!jobstarttime) return "Not Started / Unknown";
+
+        try {
+            // Parse the UTC time string into a Date object
+            const date = new Date(jobstarttime);
+
+            if (isNaN(date.getTime())) {
+                console.warn(`Invalid date value ${jobstarttime}`);
+                return "Invalid date";
+            }
+            return new Intl.DateTimeFormat('en-US', {
                 timeStyle: "short",
                 dateStyle: "short",
-            })
-            : "Not Started / Unknown";
+                timeZone: "America/Los_Angeles"
+            }).format(date);
+        } catch (error) {
+            console.error(`Error formatting date ${jobstarttime}:`, error);
+            return "Error";
+        }
     };
 
     const formatRunTime = (jobRunTime: number | null) => {

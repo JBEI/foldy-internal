@@ -1,13 +1,16 @@
 import re
 import random
 from collections import defaultdict
-from dnachisel import biotools
 from re import fullmatch
+import json
 
+from dnachisel import biotools
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.neural_network import MLPRegressor
 from werkzeug.exceptions import BadRequest
 
-
-import numpy as np
 
 VALID_AMINO_ACIDS = "ACDEFGHIKLMNPQRSTVWY"
 # We are tolerant of selenocysteine and other non-standard amino acids.
@@ -25,8 +28,19 @@ def get_loci_set(seq_id):
     return {get_locus_from_allele_id(allele) for allele in seq_id.split("_")}
 
 
+def allele_set_to_seq_id(allele_set):
+    """Converts the allele set to a standard ID (eg: {A12T, G3W}->"G3W_A12T")."""
+    if allele_set == {""} or len(allele_set) == 0:
+        return "WT"
+    allele_list = sorted(
+        list(allele_set), key=lambda allele: (int(allele[1:-1]), allele[-1])
+    )
+    return "_".join(allele_list)
+
+
 def maybe_get_allele_id_error_message(wt_aa_seq, allele_id):
     """Returns an error message if allele id is invalid, otherwise None."""
+    assert type(wt_aa_seq) == str, f"wt_aa_seq must be a string, got {type(wt_aa_seq)}"
     fn = re.compile(r"([A-Z])(\d+)([A-Z])")
     m = fn.match(allele_id)
     if not m:
@@ -104,14 +118,7 @@ def get_seq_ids_for_deep_mutational_scan(
             return []
         return seq_id.split("_")
 
-    def allele_set_to_seq_id(allele_set):
-        """Converts the allele set to a standard ID (eg: {A12T, G3W}->"G3W_A12T")."""
-        if allele_set == {""} or len(allele_set) == 0:
-            return "WT"
-        allele_list = sorted(
-            list(allele_set), key=lambda allele: (int(allele[1:-1]), allele[-1])
-        )
-        return "_".join(allele_list)
+    assert type(wt_aa_seq) == str, f"wt_aa_seq must be a string, got {type(wt_aa_seq)}"
 
     # Validate inputs.
     for starting_seq_id in dms_starting_seq_ids:
@@ -190,11 +197,11 @@ def seq_id_to_seq(wt_aa_seq, seq_id):
 
 
 def process_and_validate_evolve_input_files(
-    wt_aa_seq, raw_activity_df, raw_embedding_df
+    wt_aa_seq, raw_activity_df, raw_embedding_df=None
 ):
     """Prepares raw inputs for EvolvePRO logic, raises ValueError if inputs are invalid."""
     activity_df = raw_activity_df.copy()
-    embedding_df = raw_embedding_df.copy()
+    embedding_df = raw_embedding_df.copy() if raw_embedding_df is not None else None
 
     if "seq_id" not in activity_df.columns:
         raise ValueError(
@@ -204,14 +211,15 @@ def process_and_validate_evolve_input_files(
         raise ValueError(
             f"Activity file must contain a 'activity' column, got {activity_df.columns}"
         )
-    if "seq_id" not in embedding_df.columns:
-        raise ValueError(
-            f"Embedding file must contain a 'seq_id' column, got {embedding_df.columns}"
-        )
-    if "embedding" not in embedding_df.columns:
-        raise ValueError(
-            f"Embedding file must contain a 'embedding' column, got {embedding_df.columns}"
-        )
+    if embedding_df is not None:
+        if "seq_id" not in embedding_df.columns:
+            raise ValueError(
+                f"Embedding file must contain a 'seq_id' column, got {embedding_df.columns}"
+            )
+        if "embedding" not in embedding_df.columns:
+            raise ValueError(
+                f"Embedding file must contain a 'embedding' column, got {embedding_df.columns}"
+            )
 
     # activity_df.replace({"seq_id": {np.nan: ""}}, inplace=True)  # "WT": "",
     for seq_id in activity_df.seq_id:
@@ -221,7 +229,10 @@ def process_and_validate_evolve_input_files(
 
     # embedding_df.fillna({"seq_id": ""}, inplace=True)
 
-    return activity_df, embedding_df
+    if embedding_df is None:
+        return activity_df
+    else:
+        return activity_df, embedding_df
 
 
 def get_measured_and_unmeasured_mutant_seq_ids(activity_df, embedding_df):
@@ -242,6 +253,108 @@ def get_measured_and_unmeasured_mutant_seq_ids(activity_df, embedding_df):
     measured_mutants = list(activity_mutants.intersection(embedding_mutants))
     unmeasured_mutants = list(embedding_mutants - activity_mutants)
     return measured_mutants, unmeasured_mutants
+
+
+def train_and_predict_activities(
+    activity_df: pd.DataFrame, embedding_df: pd.DataFrame, mode: str
+) -> tuple[list, list, RandomForestRegressor, pd.DataFrame]:
+    """Train a Random Forest model on measured mutants and predict activities for all mutants.
+
+    Args:
+        activity_df: DataFrame containing measured activities with mutant seq_ids as index
+        embedding_df: DataFrame containing embeddings for all mutants (measured + unmeasured)
+
+    Returns:
+        Tuple containing:
+        - measured_mutants: list of measured mutant seq_ids
+        - unmeasured_mutants: list of unmeasured mutant seq_ids
+        - model: trained RandomForestRegressor model
+        - predicted_activity_df: DataFrame containing predictions for all mutants with columns:
+          * seq_id: mutant identifier
+          * predicted_activity: model predictions
+          * relevant_measured_mutants: space-separated list of measured mutants sharing loci
+          * actual_activity: measured activity (if available)
+    """
+    # Get measured and unmeasured mutant sets
+    measured_mutants, unmeasured_mutants = get_measured_and_unmeasured_mutant_seq_ids(
+        activity_df, embedding_df
+    )
+
+    # Prepare training data
+    X_train = np.vstack(
+        [json.loads(x) for x in embedding_df.loc[activity_df.index].embedding]
+    )
+    y_train = activity_df.activity.to_numpy()
+
+    model = None
+    if mode == "randomforest":
+        model = RandomForestRegressor(
+            n_estimators=100,
+            criterion="friedman_mse",
+            max_depth=None,
+            min_samples_split=2,
+            min_samples_leaf=1,
+            min_weight_fraction_leaf=0.0,
+            max_features=1.0,
+            max_leaf_nodes=None,
+            min_impurity_decrease=0.0,
+            bootstrap=True,
+            oob_score=False,
+            n_jobs=None,
+            random_state=1,
+            verbose=0,
+            warm_start=False,
+            ccp_alpha=0.0,
+            max_samples=None,
+        )
+    elif mode == "mlp":
+        model = MLPRegressor(
+            random_state=1, max_iter=5000, hidden_layer_sizes=(100, 50)
+        )
+    else:
+        raise ValueError(f"Invalid model choice: {mode}")
+    model.fit(X_train, y_train)
+
+    # Prepare prediction data for all mutants
+    all_mutants_embedding_array = np.vstack(
+        [
+            json.loads(x)
+            for x in embedding_df.loc[measured_mutants + unmeasured_mutants].embedding
+        ]
+    )
+
+    # Make predictions
+    y_all_pred = model.predict(all_mutants_embedding_array)
+
+    # Create results DataFrame
+    predicted_activity_df = pd.DataFrame(
+        {
+            "seq_id": measured_mutants + unmeasured_mutants,
+            "predicted_activity": y_all_pred,
+        }
+    )
+    predicted_activity_df.index = predicted_activity_df.seq_id
+
+    # Add relevant measured mutants
+    predicted_activity_df["relevant_measured_mutants"] = (
+        predicted_activity_df.seq_id.apply(
+            lambda seq_id: " ".join(
+                [m for m in measured_mutants if get_loci_set(m) & get_loci_set(seq_id)]
+            )
+        )
+    )
+
+    # Add actual activities where available
+    predicted_activity_df["actual_activity"] = predicted_activity_df.join(
+        activity_df.groupby(level=0).activity.mean(), how="left"
+    ).activity
+
+    return (
+        measured_mutants,
+        unmeasured_mutants,
+        model,
+        predicted_activity_df.sort_values("predicted_activity", ascending=False),
+    )
 
 
 def get_cross_validation_holdout_sets(
