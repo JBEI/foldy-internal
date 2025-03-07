@@ -1,7 +1,7 @@
 import time
 from io import BytesIO
 from datetime import datetime, UTC, timedelta
-import traceback
+import random
 import json
 from tqdm.notebook import tqdm
 import pandas as pd
@@ -20,8 +20,10 @@ from IPython.display import clear_output
 import re
 from scipy.stats import spearmanr
 from sklearn.neural_network import MLPRegressor
+from sklearn.model_selection import train_test_split
+import numpy as np
+from evolve.ranked_mlp import MLPRegressorWithRankedLoss
 
-#from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.sequence_util import (
     get_measured_and_unmeasured_mutant_seq_ids,
     get_loci_set,
@@ -47,6 +49,7 @@ def train_model(wt_aa_seq,raw_activity_df,raw_embedding_df,model,plot=False):
     measured_mutants, unmeasured_mutants = (
                 get_measured_and_unmeasured_mutant_seq_ids(activity_df, embedding_df)
             )
+    
     X_train = np.vstack(
                 [json.loads(x) for x in embedding_df.loc[activity_df.index].embedding]
             )
@@ -330,29 +333,10 @@ def digivolveZS(wt_aa_seq,prot_name,
     return evolve_df
 def evolve_multi(wt_aa_seq, initial_round_activity, mutant_dfs, exp_activity_df, 
                  benchmarks, top_benchmark, layers,
-                 num_var, max_rounds, scope, depth, progressive):
-    """
-    Performs evolutionary optimization of protein sequences.
-    
-    Args:
-        wt_aa_seq: Wild-type amino acid sequence
-        initial_round_activity: DataFrame with initial activity data
-        mutant_dfs: Dictionary of DataFrames containing mutant information
-        exp_activity_df: DataFrame with experimental activity data
-        benchmarks: Dictionary of benchmark DataFrames
-        top_benchmark: Key of the benchmark that triggers termination when found
-        model_type: Type of model to use for prediction
-        num_var: Number of variants to evaluate per round
-        max_rounds: Maximum number of rounds to run
-        scope: Maximum mutation scope to consider
-        depth: Depth of mutations to include in combined dataset
-        progressive: If integer, gradually increases scope every N rounds
-        
-    Returns:
-        tuple: (round_variants, var_found, spearman_df)
-    """
+                 num_var, max_rounds, scope, depth, progressive,ranked=None,cloning_failure=None):
+
     # Initialize variables
-    round_num = 0
+    round_num = 1
     round_variants = []
     benchmarks_hit = {benchmark: False for benchmark in benchmarks}
     evolution_done = False
@@ -365,7 +349,11 @@ def evolve_multi(wt_aa_seq, initial_round_activity, mutant_dfs, exp_activity_df,
     var_found = pd.DataFrame()
     spearman_correlations = []
     current_layers = layers.copy()
-    
+    # Set Model
+    if ranked:
+        model_type = MLPRegressorWithRankedLoss(random_state=1,max_iter=500,hidden_layer_sizes=current_layers)
+    else:
+        model_type = MLPRegressor(random_state=1,max_iter=5000, hidden_layer_sizes=current_layers)
     # Set up mutation scope
     if progressive:
         max_rounds = max_rounds + (progressive * (depth - 1))
@@ -383,7 +371,17 @@ def evolve_multi(wt_aa_seq, initial_round_activity, mutant_dfs, exp_activity_df,
     else:
         for i in range(1, depth + 1):
             combined_df = pd.concat([combined_df, mutant_dfs[f"mut_{i}"]])
-    
+                    # Track found variants
+    found_var_activities = initial_round_activity.copy()
+    found_var_activities['round_found'] = round_num
+    var_found = pd.concat([var_found, found_var_activities], ignore_index=True)
+    # Check if benchmarks are hit
+    for benchmark in benchmarks:
+        benchmark_df = benchmarks[benchmark]
+        if benchmark_df['seq_id'].isin(found_var_activities['seq_id']).any() and not benchmarks_hit[benchmark]:
+            #print(f"{benchmark} in round {round_num}") 
+            round_variants.append(round_num)
+            benchmarks_hit[benchmark] = True          
     try:
         with tqdm(total=max_rounds, desc="Evolution Progress", leave=False) as pbar:
             while not evolution_done and round_num < max_rounds:
@@ -391,10 +389,10 @@ def evolve_multi(wt_aa_seq, initial_round_activity, mutant_dfs, exp_activity_df,
                 pbar.update(1)
                 
                 # Train model and predict activities
-                model_type = MLPRegressor(random_state=1,max_iter=5000, hidden_layer_sizes=current_layers)
+
                 predicted_activity_df = train_model(wt_aa_seq, current_round_activity_df,
                                                   scope_mutants, model_type)
-                
+                #print(predicted_activity_df)
                 # Handle progressive scope increase if enabled
                 if progressive:
                     if current_scope < depth and not(round_num % rounds):                      
@@ -402,16 +400,20 @@ def evolve_multi(wt_aa_seq, initial_round_activity, mutant_dfs, exp_activity_df,
                         scope_mutants = pd.concat([scope_mutants, mutant_dfs[f"mut_{current_scope}"]])
                         #current_layers[0] = len(scope_mutants)
 
-                    
                     validation_df = pd.merge(
                         predicted_activity_df[['seq_id', 'predicted_activity']], 
                         exp_activity_df[['seq_id', 'activity']], 
                         on='seq_id', 
                         how='inner'
                     )
-                    
-                    actual_activities = predicted_activity_df[predicted_activity_df["actual_activity"].isna()].head(num_var)
+
+                    if cloning_failure:
+                        good_clones = round(num_var*random.uniform(cloning_failure,1.0))
+                        actual_activities = predicted_activity_df[predicted_activity_df["actual_activity"].isna()].head(good_clones)
+                    else:
+                        actual_activities = predicted_activity_df[predicted_activity_df["actual_activity"].isna()].head(num_var)
                     found_var_activities = pd.merge(actual_activities, combined_df, on='seq_id', how='inner')
+                    #display(found_var_activities.head(3))
                 else:
                     # Train on combined dataset for validation
                     multi_predicted_activity_df = train_model(wt_aa_seq, current_round_activity_df,
@@ -465,7 +467,6 @@ def evolve_multi(wt_aa_seq, initial_round_activity, mutant_dfs, exp_activity_df,
                             pbar.clear()
                             pbar.close()
                             evolution_done = True
-                            
                             break
     finally:
         # Process results
@@ -474,9 +475,10 @@ def evolve_multi(wt_aa_seq, initial_round_activity, mutant_dfs, exp_activity_df,
                 round_variants.append(None)
         
         # Group found variants by seq_id and round
-        round_info = var_found.groupby('seq_id')['round_found'].apply(list).reset_index()
-        other_cols = var_found.drop(columns=['round_found']).drop_duplicates(subset='seq_id', keep='first')
-        var_found = pd.merge(other_cols, round_info, on='seq_id')
+        if not progressive:
+            round_info = var_found.groupby('seq_id')['round_found'].apply(list).reset_index()
+            other_cols = var_found.drop(columns=['round_found']).drop_duplicates(subset='seq_id', keep='first')
+            var_found = pd.merge(other_cols, round_info, on='seq_id')
         
         # Calculate performance metrics
         good_var = len(benchmarks['90th Percentile'].merge(var_found, on='seq_id'))
@@ -486,23 +488,25 @@ def evolve_multi(wt_aa_seq, initial_round_activity, mutant_dfs, exp_activity_df,
         spearman_df = pd.DataFrame(spearman_correlations)
         
         # Calculate and report best variant and correlation
-        best_var = round(var_found['percentile'].max(), 3)
+        best_3_index= var_found['percentile'].nlargest(3).index
+        average_percentile = (var_found.loc[best_3_index, 'activity']).mean()
+        average_round = (var_found.loc[best_3_index, 'round_found']).mean()
+
         #print(f"best var = {best_var}")
         
         max_spearman = round(spearman_df['correlation'].max(), 3) if not spearman_df.empty else 0
         #print(f"maxSpear = {max_spearman}")
         
-        round_variants.append(best_var)
-        round_variants.append(round(var_found['activity'].max(), 3))
-        round_variants.append(max_spearman)
+        round_variants.append(average_percentile)
+        round_variants.append(average_round)
         
 
         #print('\033[1A\033[K', end='')
         
     return round_variants, var_found, spearman_df
-def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, exp_activity_file_path,
-                   embeddings_dir, embeddings_paths, num_var, layers, logits_path, 
-                   scope, depth, progressive=None, full=None, show=None,):
+def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, raw_exp_activity_df,raw_embedding_df,
+                   embeddings_dir, embeddings_paths, num_var, layers, logits_df, 
+                   scope, depth, progressive=None, full=None, show=None,ranked=None,cloning_failure = None):
     """
     Process protein sequences for directed evolution using multiple embedding paths.
     
@@ -526,12 +530,12 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, exp_activity_fil
         DataFrame containing evolution results
     """
     # Load and preprocess experimental activity data
-    raw_exp_activity_df = optimize_memory_with_checks(pd.read_excel(exp_activity_file_path))
+    #raw_exp_activity_df = optimize_memory_with_checks(raw_exp_activity_df)
     #exp_activity_df = raw_exp_activity_df.sort_values('activity', ascending=False)
-    raw_exp_activity_df['activity'] = normalize_dataset(raw_exp_activity_df['activity'], wt_activity)
+    #raw_exp_activity_df['activity'] = normalize_dataset(raw_exp_activity_df['activity'], wt_activity)
     
     # Load logits data
-    logits_df = optimize_memory_with_checks(pd.read_csv(logits_path))
+    #logits_df = optimize_memory_with_checks(pd.read_csv(logits_path))
     
     # Initialize containers for results
     mutant_dfs = {}
@@ -551,17 +555,19 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, exp_activity_fil
     }
     
     # Process each embedding path
-    for path in tqdm(embeddings_paths, desc=f"Processing {dataset}"):
+    for path in tqdm(embeddings_paths, desc=f"Processing {dataset}",leave=False):
             # Load and process embeddings
+            #embeddings_path = os.path.join(embeddings_dir, path)
+            #raw_embedding_df = pd.read_csv(embeddings_path)
             for round_num in tqdm(range(10), desc=f"Evolution rounds for {dataset}", leave=False):
 
                 #print(f"{dataset} round {round_num}")
-                embeddings_path = os.path.join(embeddings_dir, path)
-                raw_embedding_df = pd.read_csv(embeddings_path)
+
                 if full:
                     exp_activity_sample = raw_exp_activity_df.copy()
+                    cloning_failure = cloning_failure
                 else:
-                    exp_activity_sample = raw_exp_activity_df.sample(int((len(raw_exp_activity_df) // 2 )))
+                    exp_activity_sample = raw_exp_activity_df.sample(int((len(raw_exp_activity_df) * 0.8 )))
                 # Filter for variants above wild-type activity
                 above_wt_df = exp_activity_sample[exp_activity_sample['activity'] >= rel_wt_activity]
 
@@ -592,6 +598,8 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, exp_activity_fil
                 max_rounds = 10
 
                 # Process logits for single mutants
+                if cloning_failure:
+                    num_var = round(num_var*random.uniform(cloning_failure,1))
                 clean_logits_df = pd.merge(logits_df, mutant_dfs['mut_1'], on='seq_id', how='inner')
                 logits_WTM_df = clean_logits_df.sort_values('wt_marginal', ascending=False)
                 WTM_vars = logits_WTM_df.head(num_var)
@@ -601,17 +609,18 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, exp_activity_fil
                 round_variants, top_variants, spearman_df = evolve_multi(
                     wt_aa_seq, initial_round_activity, mutant_dfs, exp_activity_sample, 
                     benchmarks_reset, top_benchmark, layers,
-                    num_var, max_rounds, scope, depth, progressive
+                    num_var, max_rounds, scope, depth, progressive,ranked
                 )
                 #print(round_variants)
                 round_results.append(round_variants)
                 
                 # Process top variants
                 top_variants = top_variants.sort_values('percentile', ascending=False)
-                top_variants = top_variants[['seq_id', 'percentile', 'round_found', 
-                                             'predicted_activity', 'relevant_measured_mutants', 'activity']]
-                round_dict.update({f'round_{round_num+1}_variants': list(zip(top_variants['seq_id'], top_variants['relevant_measured_mutants']))})
+                top_variants = top_variants[['seq_id', 'percentile', 'round_found','relevant_measured_mutants','activity']]
+                round_dict[f'round_{round_num+1}_variants'] = list(zip(top_variants['seq_id'], top_variants['relevant_measured_mutants']))
                 spearman_round_dict.update({f'round_{round_num+1}_spearman' : spearman_df})
+            #rounds_df = pd.DataFrame(round_dict)
+            #display(rounds_df.head(3))
     # Store results for this path
     path_results[dataset] = round_results
     # Combine results if we have data
@@ -621,9 +630,8 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, exp_activity_fil
         # Update benchmarks with additional metrics
         start_benchmarks.update({
             'Number of 90% Variants': 0,
-            'Best Variant Percentile': 0,
-            'Best Variant Fold Better': 0,
-            'Max Spearman': 0
+            'Top 3 Var fold improvement': 0,
+            'Avg round to top 3': 0,
         })
     
     # Save results
@@ -635,11 +643,11 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, exp_activity_fil
 
         raw_comp_dir = os.path.join(results_path, f'FolDE_{dataset}.xlsx')
         try:
-            df = pd.DataFrame(round_dict)
-            df.to_excel(os.path.join(results_path, f'VarsFound_{dataset}.xlsx'))
+            rounds_df.to_excel(os.path.join(results_path, f'VarsFound_{dataset}.xlsx'))
         except Exception as e:
             print(f"Error saving variant DataFrames: {str(e)}")
         evolve_df.to_excel(raw_comp_dir, index=False)
+        top_variants = top_variants.sort_values('activity', ascending=False)
         top_variants.to_excel(os.path.join(results_path, f'TopVar_{dataset}.xlsx'))
         #spearman_df.to_excel(os.path.join(results_path, f'Spearman_{dataset}.xlsx'))
         
@@ -653,8 +661,7 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, exp_activity_fil
             evolve_df, 
             start_benchmarks,
             variable_string,
-            os.path.join(results_path, f"{prot_name}_{variable_string}"),
-            show,color_by_count=True
+            os.path.join(results_path, f"{prot_name}_{variable_string}"),color_by_count=True
         )
     else:
         print("No results to save for strategy")
@@ -795,7 +802,7 @@ def graph_and_save_spearman(spearman_dict, results_path, prot_name, dataset,save
                 ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
     
             plt.tight_layout()
-    
+            plt.show()
             # Also save a high-quality vector version
             plt.savefig(os.path.join(results_path, f"{prot_name}_avg_spearman.svg"), bbox_inches='tight', format='svg')
             #print(f"Saved vector version to {os.path.join(results_path, f'{prot_name}_avg_spearman.svg')}")
@@ -817,7 +824,7 @@ def convert_to_list(value):
         except (ValueError, SyntaxError):
             return value
     return value
-def plot_evolution_boxplot(df_input, benchmarks, new_variable, save_path=None, show=None, color_by_count=False):
+def plot_evolution_boxplot(df_input, benchmarks, new_variable, save_path=None, label = None, show=None, color_by_count=False):
     """
     Create boxplots comparing different embeddings across benchmarks.
     
@@ -925,6 +932,9 @@ def plot_evolution_boxplot(df_input, benchmarks, new_variable, save_path=None, s
         # Create a colormap for different sources
         source_colors = plt.cm.tab10(np.linspace(0, 1, max(n_sources, 10)))
         
+        # Create a colormap for different embeddings - NEW
+        embedding_colors = plt.cm.Dark2(np.linspace(0, 1, max(len(embeddings_list), 8)))
+        
         # Plot each group separately with opacity based on count
         for i, benchmark in enumerate(benchmarks_list):
             # Skip benchmarks that have no data at all
@@ -964,12 +974,28 @@ def plot_evolution_boxplot(df_input, benchmarks, new_variable, save_path=None, s
                     else:
                         opacity = 0.8  # Default opacity if not coloring by count
                     
-                    # Get base color for this source - use k as index to source_colors
-                    base_color = source_colors[k % len(source_colors)]
+                    # Get color for this embedding - CHANGED
+                    embedding_color = embedding_colors[j % len(embedding_colors)]
+                    
+                    # If multiple sources, adjust the color slightly
+                    if n_sources > 1:
+                        # Mix embedding color with source color
+                        base_color = embedding_color
+                        source_influence = 0.3  # How much the source affects the color
+                        source_color = source_colors[k % len(source_colors)]
+                        
+                        # Blend colors
+                        r = (1-source_influence) * base_color[0] + source_influence * source_color[0]
+                        g = (1-source_influence) * base_color[1] + source_influence * source_color[1]
+                        b = (1-source_influence) * base_color[2] + source_influence * source_color[2]
+                        color = (r, g, b, opacity)
+                    else:
+                        # Just use embedding color
+                        color = (*embedding_color[:3], opacity)
                     
                     # Position for this box (offset by embedding and source)
                     # Adjust the position calculation to account for multiple sources
-                    width_factor = 0.8 / (len(embeddings_list) * n_sources)
+                    width_factor = 0.9 / (len(embeddings_list) * n_sources)
                     offset = j * n_sources + k
                     total_groups = len(embeddings_list) * n_sources
                     pos = i + (offset - total_groups/2 + 0.5) * width_factor
@@ -982,24 +1008,57 @@ def plot_evolution_boxplot(df_input, benchmarks, new_variable, save_path=None, s
                     
                     # Set the color with appropriate opacity
                     for patch in boxplot['boxes']:
-                        patch.set_facecolor((*base_color[:3], opacity))
+                        patch.set_facecolor(color)
                     
                     # Set other elements with appropriate opacity
                     for element in ['whiskers', 'caps', 'medians']:
                         for line in boxplot[element]:
                             line.set_alpha(opacity)
-                            line.set_color(base_color[:3])  # Use only RGB components
+                            line.set_color(color[:3])  # Use only RGB components
+                    if label:
+                        # Calculate mean value
+                        mean_val = np.mean(subset['Rounds'])
+
+                        # Add labels for mean and count
+                        # Position the mean label slightly above the boxplot elements
+                        mean_y = mean_val
+
+                        # Add mean value label
+                        ax.text(pos, mean_y, f'{mean_val:.2f}', 
+                               ha='center', va='top', fontsize=10,
+                               bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=1))
+
+                        # Add count label at the bottom of the box
+                        # Get the y-coordinate for the bottom of the box
+                        box_stats = np.percentile(subset['Rounds'], [25, 75])
+                        box_height = box_stats[1] - box_stats[0]
+                        count_y = box_stats[0] - box_height * 0.5  # Position below the box
+
+                        # Add count label with a smaller font and different style
+                        ax.text(pos, count_y, f'n={count}', 
+                               ha='center', va='center', fontsize=6,
+                               color='black', fontweight='bold',
+                               bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=1))
         
         # Set x-ticks for all benchmarks, even those without data
         ax.set_xticks(range(len(benchmarks_list)))
-        ax.set_xticklabels(benchmarks_list, rotation=45)
-        
+
+        # Use manual wrapping for more control
+        from textwrap import fill
+        max_width = 15  # Adjust this value based on your needs
+        wrapped_labels = [fill(label, width=max_width) for label in benchmarks_list]
+        ax.set_xticklabels(wrapped_labels, rotation=45, ha='right')
+
+        # Adjust bottom margin to make room for labels
+        plt.subplots_adjust(bottom=0.25)  # Adjust this value based on label height
         # Create a custom legend for embeddings and sources
         from matplotlib.patches import Patch
         
-        # Create legend for embeddings
-        embedding_legend = [Patch(facecolor='white', edgecolor='black', 
-                                label=f"{emb}") for emb in embeddings_list]
+        # Create legend for embeddings - UPDATED to use embedding colors
+        embedding_legend = [Patch(facecolor=embedding_colors[j % len(embedding_colors)], 
+                                 edgecolor='black', 
+                                 label=f"{emb}") 
+                           for j, emb in enumerate(embeddings_list)]
         
         # Only add source legend if there are multiple sources
         all_legend_elements = embedding_legend.copy()
@@ -1018,39 +1077,15 @@ def plot_evolution_boxplot(df_input, benchmarks, new_variable, save_path=None, s
         
         ax.legend(handles=all_legend_elements, title="Legend", loc='upper right')
         
-        if color_by_count:
-            # Create a custom colorbar to show opacity scale
-            from matplotlib.cm import ScalarMappable
-            from matplotlib.colors import Normalize
-            
-            # Create a separate axis for the opacity legend
-            opacity_ax = fig.add_axes([0.92, 0.3, 0.02, 0.4])  # [left, bottom, width, height]
-            
-            # Create a gradient image
-            gradient = np.linspace(0, 1, 256).reshape(256, 1)
-            gradient = np.vstack((gradient, gradient))
-            
-            # Display the gradient image
-            opacity_ax.imshow(gradient, aspect='auto', cmap=plt.cm.gray_r)
-            
-            # Configure the opacity legend
-            opacity_ax.set_title('Count')
-            opacity_ax.set_xticks([])
-            opacity_ax.set_yticks([0, 255])
-            opacity_ax.set_yticklabels([0, max_count])
-        
-        ax.set_title(f'Embeddings {new_variable} Comparison')
+        ax.set_title(f'{new_variable} Comparison')
         ax.set_xlabel('Benchmark')
         ax.set_ylabel('Rounds')
         ax.set_ylim(-1, 20)
         
         plt.tight_layout()
-        
+        plt.show()
         if save_path:
-            plt.savefig(save_path + '_boxplot.png', bbox_inches='tight')
-            print(f"Plot saved to {save_path}_boxplot.png")
-        if show:
-            plt.show()
+            plt.savefig(save_path + '_boxplot.svg', bbox_inches='tight')
     else:
         print("Unable to create plot: insufficient or invalid data")
 def string_to_array(embedding_string):
