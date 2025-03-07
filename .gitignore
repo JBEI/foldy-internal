@@ -148,3 +148,5 @@ backend/src/integration_tests/testdata/
 backend/src/notebooks/jacob/data/*
 backend/src/integration_tests/testdata/*/evolve/*
 .boltz/
+
+backend/EvolveTest
