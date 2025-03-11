@@ -149,5 +149,7 @@ backend/src/notebooks/jacob/data/*
 backend/src/integration_tests/testdata/*/evolve/*
 .boltz/
 
+backend/EvolveTest
+
 CLAUDE.md
 CLAUDE_NOTES.md
