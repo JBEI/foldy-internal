@@ -1,8 +1,8 @@
 # Foldy
 
-[![Frontend Tests](https://github.com/JBEI/foldy/actions/workflows/frontend-tests.yml/badge.svg)](https://github.com/JBEI/foldy/actions/workflows/frontend-tests.yml)
-[![Python CI](https://github.com/JBEI/foldy/actions/workflows/python-app.yml/badge.svg)](https://github.com/JBEI/foldy/actions/workflows/python-app.yml)
-[![codecov](https://codecov.io/gh/JBEI/foldy/branch/main/graph/badge.svg)](https://codecov.io/gh/JBEI/foldy)
+[![Frontend Tests](https://github.com/JBEI/foldy-internal/actions/workflows/frontend-tests.yml/badge.svg)](https://github.com/JBEI/foldy-internal/actions/workflows/frontend-tests.yml)
+[![Python CI](https://github.com/JBEI/foldy-internal/actions/workflows/python-app.yml/badge.svg)](https://github.com/JBEI/foldy-internal/actions/workflows/python-app.yml)
+[![codecov](https://codecov.io/gh/JBEI/foldy-internal/branch/main/graph/badge.svg)](https://codecov.io/gh/JBEI/foldy-internal)
 
 <p align="center">
   Foldy is a webtool for doing computational structural biology, centered around protein structure prediction with AlphaFold.
