@@ -22,6 +22,7 @@ croniter
 cryptography
 cssselect
 cssutils
+dask
 dnachisel
 docker
 docopt
@@ -70,11 +71,13 @@ MarkupSafe
 marshmallow
 mccabe
 mypy-extensions
+mypy
 notebook
 numpy==1.26.0
 openpyxl
 packaging
 pandas==2.2.2
+pandas-stubs
 pathspec
 pg8000
 platformdirs

@@ -131,7 +131,7 @@ dmypy.json
 .vscode
 
 # Secrets
-cluster_config.yaml
+cluster_config.yamlok 
 config.yaml
 prod_secrets.yaml
 dev_secrets.env
@@ -148,3 +148,6 @@ backend/src/integration_tests/testdata/
 backend/src/notebooks/jacob/data/*
 backend/src/integration_tests/testdata/*/evolve/*
 .boltz/
+
+CLAUDE.md
+CLAUDE_NOTES.md

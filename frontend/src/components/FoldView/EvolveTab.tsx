@@ -6,15 +6,15 @@ import { FaDownload, FaRedo } from 'react-icons/fa';
 import fileDownload from 'js-file-download';
 import { removeLeadingSlash } from '../../api/commonApi';
 import { getFile } from '../../api/fileApi';
+import { notify } from '../../services/NotificationService';
 interface EvolveTabProps {
     foldId: number;
     jobs: Invokation[] | null;
     files: FileInfo[] | null;
     evolutions: Evolution[] | null;
-    setErrorText: (error: string) => void;
 }
 
-const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, jobs, files, evolutions, setErrorText }) => {
+const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, jobs, files, evolutions }) => {
     const [evolutionName, setEvolutionName] = useState<string>('');
     const [showForm, setShowForm] = useState<boolean>(false);
     const [activityFile, setActivityFile] = useState<File | null>(null);
@@ -87,12 +87,12 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, jobs, files, evolutions, 
         getFile(evolution.fold_id, predictedActivityPath).then(
             (fileBlob: Blob) => {
                 const newFname = `${evolution.name}_predicted_activity.csv`;
-                UIkit.notification(`Downloading ${predictedActivityPath} with file name ${newFname}!`);
+                notify.info(`Downloading ${predictedActivityPath} with file name ${newFname}!`);
                 fileDownload(fileBlob, newFname);
             },
             (e) => {
                 console.log(e);
-                setErrorText(e.toString());
+                notify.error(e.toString());
             }
         );
     };

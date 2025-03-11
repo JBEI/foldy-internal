@@ -2,7 +2,18 @@ import io
 import re
 import time
 import logging
-from typing import Dict, Any, List, Tuple, Union, Optional, BinaryIO, Generator, Iterator, cast
+from typing import (
+    Dict,
+    Any,
+    List,
+    Tuple,
+    Union,
+    Optional,
+    BinaryIO,
+    Generator,
+    Iterator,
+    cast,
+)
 
 from flask import Response, stream_with_context
 from flask import current_app, request, send_file, make_response
@@ -306,10 +317,10 @@ def convert_array_to_json_string(table: np.ndarray) -> str:
 
     Useful when array.tolist would take up too much space
     (which is the case for big contact maps and PAE).
-    
+
     Args:
         table: 2D numpy array containing data to convert
-        
+
     Returns:
         String with JSON array format representation of data
     """
@@ -337,28 +348,71 @@ class PaeResource(Resource):
     # @ns.marshal_with(pae_fields)
     def get(self, fold_id: int, model_number: int) -> Response:
         """Get predicted aligned error (PAE) matrix for a fold model.
-        
+
         Args:
             fold_id: ID of the fold
             model_number: Model number to retrieve
-            
+
         Returns:
             Response with PAE matrix in JSON format
         """
-        manager = FoldStorageManager()
-        manager.setup()
-        pae = manager.get_model_pae(fold_id, model_number)
+        try:
+            manager = FoldStorageManager()
+            manager.setup()
 
-        # Note that using "tolist" and then json.dumps (or jsonify) would take
-        # up too much memory, so we convert to json manually.
-        json_resp = '{ "pae": ' + convert_array_to_json_string(pae) + " }"
-        resp = make_response(
-            json_resp,
-        )
-        resp.headers["Content-Type"] = "application/json"
-        resp.status_code = 200
+            print(
+                f"Retrieving PAE data for fold_id={fold_id}, model_number={model_number}",
+                flush=True,
+            )
 
-        return resp
+            try:
+                pae = manager.get_model_pae(fold_id, model_number)
+
+                # Check if the PAE data is valid
+                if pae is None:
+                    print(
+                        f"PAE data is None for fold_id={fold_id}, model_number={model_number}",
+                        flush=True,
+                    )
+                    return make_response({"error": "PAE data not found"}, 404)
+
+                if not isinstance(pae, np.ndarray):
+                    print(f"PAE data is not a numpy array: {type(pae)}", flush=True)
+                    return make_response({"error": "Invalid PAE data format"}, 500)
+
+                if pae.ndim != 2 or pae.shape[0] != pae.shape[1]:
+                    print(f"PAE data has invalid shape: {pae.shape}", flush=True)
+                    return make_response(
+                        {"error": f"Invalid PAE matrix shape: {pae.shape}"}, 500
+                    )
+
+                print(
+                    f"Successfully retrieved PAE data with shape {pae.shape}",
+                    flush=True,
+                )
+
+                # Note that using "tolist" and then json.dumps (or jsonify) would take
+                # up too much memory, so we convert to json manually.
+                json_resp = '{ "pae": ' + convert_array_to_json_string(pae) + " }"
+                resp = make_response(
+                    json_resp,
+                )
+                resp.headers["Content-Type"] = "application/json"
+                resp.status_code = 200
+                return resp
+
+            except BadRequest as e:
+                print(f"BadRequest error retrieving PAE: {str(e)}", flush=True)
+                return make_response({"error": str(e)}, 400)
+
+        except Exception as e:
+            print(f"Unexpected error retrieving PAE: {str(e)}", flush=True)
+            import traceback
+
+            traceback.print_exc()
+            return make_response(
+                {"error": f"Failed to retrieve PAE data: {str(e)}"}, 500
+            )
 
 
 contact_prob_fields = ns.model(
@@ -415,10 +469,10 @@ class DockCreateResource(Resource):
     @verify_has_edit_access
     def post(self) -> bool:
         """Create a new docking run for a fold with specified ligand.
-        
+
         Returns:
             True if docking job was queued successfully
-            
+
         Raises:
             BadRequest: If ligand name is not alphanumeric or tool is not supported
         """
@@ -463,8 +517,10 @@ class DockCreateResource(Resource):
             job_timeout="2h",
             result_ttl=48 * 60 * 60,  # 2 days
         )
-        
-        logging.info(f"Queued docking job {job.id} for fold {fold_id} with ligand {ligand_name}")
+
+        logging.info(
+            f"Queued docking job {job.id} for fold {fold_id} with ligand {ligand_name}"
+        )
         return True
 
 
@@ -472,18 +528,18 @@ class DockCreateResource(Resource):
 class DockResource(Resource):
     def delete(self, dock_id: int) -> bool:
         """Delete a docking run by ID.
-        
+
         Args:
             dock_id: ID of the dock to delete
-            
+
         Returns:
             True if deletion was successful
         """
         dock = Dock.get_by_id(dock_id)
-        
+
         if not dock:
             raise BadRequest(f"Dock with ID {dock_id} not found")
-            
+
         logging.info(f"Deleting dock {dock_id} (ligand: {dock.ligand_name})")
         dock.delete()
 

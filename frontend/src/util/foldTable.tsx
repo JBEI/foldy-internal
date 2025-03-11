@@ -1,6 +1,6 @@
 import React from "react";
 import { FaCheckCircle } from "react-icons/fa";
-import { describeFoldState } from "../services/backend.service";
+import { describeFoldState } from "../api/foldApi";
 import { Link } from "react-router-dom";
 import { Fold } from "../types/types";
 

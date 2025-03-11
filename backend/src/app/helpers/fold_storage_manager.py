@@ -30,10 +30,14 @@ from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 
 
 class StorageAccessor:
-    def list_files(self, fold_id: int, subfolder: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_files(
+        self, fold_id: int, subfolder: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         raise NotImplementedError
 
-    def write_file(self, fold_id: int, file_path: str, contents: Any, binary: bool = False) -> None:
+    def write_file(
+        self, fold_id: int, file_path: str, contents: Any, binary: bool = False
+    ) -> None:
         """Write contents to a file under the specified fold directory."""
         raise NotImplementedError
 
@@ -43,7 +47,9 @@ class StorageAccessor:
     def get_blob(self, fold_id: int, file_path: str) -> Any:
         raise NotImplementedError
 
-    def upload_folder(self, fold_id: int, local_absolute_folder_path: str, relative_folder_path: str) -> None:
+    def upload_folder(
+        self, fold_id: int, local_absolute_folder_path: str, relative_folder_path: str
+    ) -> None:
         raise NotImplementedError
 
 
@@ -96,7 +102,9 @@ class LocalStorageAccessor(StorageAccessor):
     def setup(self, local_directory: str) -> None:
         self.local_directory = Path(local_directory)
 
-    def list_files(self, fold_id: int, subfolder: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_files(
+        self, fold_id: int, subfolder: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """Returns a list of dicts describing the contents of this fold's folder.
 
         Arguments:
@@ -110,7 +118,7 @@ class LocalStorageAccessor(StorageAccessor):
         """
         if self.local_directory is None:
             raise BadRequest("Local directory not initialized")
-            
+
         padded_fold_id = "%06d" % fold_id
         dir = self.local_directory / padded_fold_id
         if subfolder:
@@ -125,11 +133,13 @@ class LocalStorageAccessor(StorageAccessor):
             if not file.is_dir()
         ]
 
-    def write_file(self, fold_id: int, file_path: str, contents: Any, binary: bool = False) -> None:
+    def write_file(
+        self, fold_id: int, file_path: str, contents: Any, binary: bool = False
+    ) -> None:
         """Write contents to a local file under the fold directory."""
         if self.local_directory is None:
             raise BadRequest("Local directory not initialized")
-            
+
         padded_fold_id = "%06d" % fold_id
         target_path = self.local_directory / padded_fold_id / file_path
         target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -141,7 +151,7 @@ class LocalStorageAccessor(StorageAccessor):
     def get_binary(self, fold_id: int, file_path: str) -> bytes:
         if self.local_directory is None:
             raise BadRequest("Local directory not initialized")
-            
+
         download_start = time.time()
         padded_fold_id = "%06d" % fold_id
         fpath = self.local_directory / padded_fold_id / file_path
@@ -158,7 +168,7 @@ class LocalStorageAccessor(StorageAccessor):
 
     def get_blob(self, fold_id: int, file_path: str) -> LocalBlob:
         """Gets a Blob object from local storage based on fold_id and relative_path.
-        
+
         Retrieves a LocalBlob object for the specified file.
 
         Args:
@@ -173,7 +183,7 @@ class LocalStorageAccessor(StorageAccessor):
         """
         if self.local_directory is None:
             raise BadRequest("Local directory not initialized")
-            
+
         padded_fold_id = f"{fold_id:06d}"
         fpath = self.local_directory / padded_fold_id / file_path
 
@@ -184,20 +194,20 @@ class LocalStorageAccessor(StorageAccessor):
 
         return blob
 
-    def upload_folder(self, fold_id: int, local_absolute_folder_path: str, relative_folder_path: str) -> None:
+    def upload_folder(
+        self, fold_id: int, local_absolute_folder_path: str, relative_folder_path: str
+    ) -> None:
         """Uploads a whole folder, like cp -r."""
         if self.local_directory is None:
             raise BadRequest("Local directory not initialized")
-            
+
         padded_fold_id = f"{fold_id:06d}"
         local_path = Path(local_absolute_folder_path)  # Use a different variable name
 
         for root, _, files in os.walk(local_path):
             for file in files:
                 local_file_path = os.path.join(root, file)
-                relative_file_path = os.path.relpath(
-                    local_file_path, local_path
-                )
+                relative_file_path = os.path.relpath(local_file_path, local_path)
 
                 out_file_path = (
                     self.local_directory
@@ -227,7 +237,9 @@ class GcloudStorageAccessor(StorageAccessor):
         self.bucket_name = match.group(1).split("/")[0]
         self.bucket_prefix = "/".join(match.group(1).split("/")[1:])
 
-    def list_files(self, fold_id: int, subfolder: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_files(
+        self, fold_id: int, subfolder: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """Returns a list of dicts describing the contents of this fold's folder.
 
         Arguments:
@@ -273,11 +285,13 @@ class GcloudStorageAccessor(StorageAccessor):
             for blob in blobs
         ]
 
-    def write_file(self, fold_id: int, file_path: str, contents: Any, binary: bool = False) -> None:
+    def write_file(
+        self, fold_id: int, file_path: str, contents: Any, binary: bool = False
+    ) -> None:
         """Write contents to GCloud Storage under the fold directory."""
         if self.client is None or self.bucket_name is None:
             raise BadRequest("GCloud client not initialized")
-            
+
         bucket = self.client.get_bucket(self.bucket_name)
 
         padded_fold_id = "%06d" % fold_id
@@ -298,7 +312,7 @@ class GcloudStorageAccessor(StorageAccessor):
         """Gets a file (as a binary string) from gcloud, with a relative path within the fold dir."""
         if self.client is None or self.bucket_name is None:
             raise BadRequest("GCloud client not initialized")
-            
+
         download_start = time.time()
         padded_fold_id = "%06d" % fold_id
 
@@ -326,7 +340,7 @@ class GcloudStorageAccessor(StorageAccessor):
         """Gets a Blob object from GCS based on fold_id and relative_path."""
         if self.client is None or self.bucket_name is None:
             raise BadRequest("GCloud client not initialized")
-            
+
         padded_fold_id = f"{fold_id:06d}"
         relative_path = relative_path.lstrip("/")
         if self.bucket_prefix:
@@ -342,11 +356,13 @@ class GcloudStorageAccessor(StorageAccessor):
 
         return blob
 
-    def upload_folder(self, fold_id: int, local_absolute_folder_path: str, relative_folder_path: str) -> None:
+    def upload_folder(
+        self, fold_id: int, local_absolute_folder_path: str, relative_folder_path: str
+    ) -> None:
         """Uploads a whole folder, like cp -r."""
         if self.client is None or self.bucket_name is None:
             raise BadRequest("GCloud client not initialized")
-            
+
         padded_fold_id = f"{fold_id:06d}"
         local_path = Path(local_absolute_folder_path)  # Use a different variable name
 
@@ -355,9 +371,7 @@ class GcloudStorageAccessor(StorageAccessor):
         for root, _, files in os.walk(local_path):
             for file in files:
                 local_file_path = os.path.join(root, file)
-                relative_file_path = os.path.relpath(
-                    local_file_path, local_path
-                )
+                relative_file_path = os.path.relpath(local_file_path, local_path)
 
                 if self.bucket_prefix:
                     gcloud_path = f"{self.bucket_prefix}/{padded_fold_id}/{relative_folder_path}/{relative_file_path}"
@@ -516,23 +530,25 @@ class FoldStorageManager:
 
         if self.storage_manager is None:
             raise BadRequest("Storage manager not initialized")
-        
+
         self.storage_manager.write_file(id, aa_blob_path, aa_contents)
         self.storage_manager.write_file(id, dna_blob_path, dna_contents)
 
     def get_fold_pdb(self, fold_id: int, ranked_model_number: int) -> str:
         if self.storage_manager is None:
             raise BadRequest("Storage manager not initialized")
-        
+
         return self.storage_manager.get_binary(
             fold_id, f"ranked_{ranked_model_number}.pdb"
         ).decode()
 
-    def get_fold_file_zip(self, fold_ids: List[int], relative_fpath: str, output_dirname: str) -> Any:
+    def get_fold_file_zip(
+        self, fold_ids: List[int], relative_fpath: str, output_dirname: str
+    ) -> Any:
         """Returns an open file handle to a temporary file with a certain file zipped up."""
         if self.storage_manager is None:
             raise BadRequest("Storage manager not initialized")
-            
+
         tmp = tempfile.TemporaryFile()
 
         with zipfile.ZipFile(tmp, "w") as archive:
@@ -559,7 +575,7 @@ class FoldStorageManager:
         """Returns a byte string."""
         if self.storage_manager is None:
             raise BadRequest("Storage manager not initialized")
-            
+
         return self.storage_manager.get_binary(
             fold_id, f"ranked_{ranked_model_number}.pkl"
         )
@@ -567,7 +583,7 @@ class FoldStorageManager:
     def get_model_pae(self, fold_id: int, model_number: int) -> np.ndarray:
         if self.storage_manager is None:
             raise BadRequest("Storage manager not initialized")
-            
+
         bytes_str = self.storage_manager.get_binary(
             fold_id, f"ranked_{model_number}/predicted_aligned_error.npy"
         )
@@ -580,10 +596,12 @@ class FoldStorageManager:
                 f"Failed to unpack file PAE for {fold_id} model {model_number} ({e})."
             )
 
-    def get_contact_prob(self, fold_id: int, model_number: int, dist_thresh: int = 12) -> np.ndarray:
+    def get_contact_prob(
+        self, fold_id: int, model_number: int, dist_thresh: int = 12
+    ) -> np.ndarray:
         if self.storage_manager is None:
             raise BadRequest("Storage manager not initialized")
-            
+
         bytes_str = self.storage_manager.get_binary(
             fold_id, f"ranked_{model_number}/contact_prob_{dist_thresh}A.npy"
         )
@@ -599,7 +617,7 @@ class FoldStorageManager:
     def get_pfam(self, fold_id: int) -> Dict[str, Any]:
         if self.storage_manager is None:
             raise BadRequest("Storage manager not initialized")
-            
+
         bytes_str = self.storage_manager.get_binary(fold_id, f"pfam/pfam.json")
         try:
             result = json.load(io.BytesIO(bytes_str))
@@ -612,7 +630,7 @@ class FoldStorageManager:
         """Returns a binary string with the contents of the SDF file."""
         if self.storage_manager is None:
             raise BadRequest("Storage manager not initialized")
-            
+
         # Prior to 10/31/23, we didn't extract DiffDock confidences ahead of time.
         # This code backfills for old runs.
         if dock.tool == "diffdock" and not dock.pose_confidences:
@@ -640,7 +658,7 @@ class FoldStorageManager:
     def get_diffdock_pose_confidences(self, fold_id: int, ligand_name: str) -> str:
         if self.storage_manager is None:
             raise BadRequest("Storage manager not initialized")
-            
+
         confidence_map: dict[int, float] = {}
 
         ligand_files = self.storage_manager.list_files(

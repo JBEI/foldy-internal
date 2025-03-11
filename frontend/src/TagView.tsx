@@ -3,17 +3,15 @@ import React, { useEffect, useState } from "react";
 import { CSVLink } from "react-csv";
 import { useParams } from "react-router-dom";
 import UIkit from "uikit";
-import {
-    getFoldFileZip,
-    getJobStatus,
-    queueJob,
-} from "./services/backend.service";
+import { queueJob } from "./api/commonApi";
+import { getFoldFileZip, getJobStatus } from "./api/foldApi";
 import { makeFoldTable } from "./util/foldTable";
 import { NewDockPrompt } from "./util/newDockPrompt";
 import { getFolds, updateFold } from "./api/foldApi";
 import { Dock, Fold } from "./types/types";
+import { notify } from "./services/NotificationService";
 
-function TagView(props: { setErrorText: (a: string) => void }) {
+function TagView() {
     let { tagStringParam } = useParams();
     const [tagString] = useState<string>(tagStringParam || "");
     const [folds, setFolds] = useState<Fold[] | null>(null);
@@ -28,9 +26,9 @@ function TagView(props: { setErrorText: (a: string) => void }) {
 
     useEffect(() => {
         getFolds(null, tagString, null, null).then(setFolds, (e) => {
-            props.setErrorText(e.toString());
+            notify.error(e.toString());
         });
-    }, [props]);
+    }, [tagString]);
 
     const refoldAnyFailedFolds = () => {
         if (!folds) {
@@ -49,12 +47,12 @@ function TagView(props: { setErrorText: (a: string) => void }) {
                 const stageToRun = "both";
                 queueJob(fold.id, stageToRun, false).then(
                     () => {
-                        UIkit.notification(
+                        notify.success(
                             `Successfully started stage ${stageToRun} for ${fold.name}.`
                         );
                     },
                     (e) => {
-                        props.setErrorText(e);
+                        notify.error(e);
                     }
                 );
                 numFoldsChanged += 1;
@@ -62,7 +60,7 @@ function TagView(props: { setErrorText: (a: string) => void }) {
         }
 
         if (numFoldsChanged === 0) {
-            UIkit.notification("No folds needed a restart.");
+            notify.info("No folds needed a restart.");
         }
     };
 
@@ -72,7 +70,7 @@ function TagView(props: { setErrorText: (a: string) => void }) {
         }
 
         if (!stageToStart) {
-            UIkit.notification("No stage selected.");
+            notify.warning("No stage selected.");
             return;
         }
 
@@ -87,15 +85,15 @@ function TagView(props: { setErrorText: (a: string) => void }) {
             ++numChanged;
             queueJob(fold.id, stageToStart, false).then(
                 () => {
-                    UIkit.notification(`Successfully started stage(s) for ${fold.name}.`);
+                    notify.success(`Successfully started stage(s) for ${fold.name}.`);
                 },
                 (e) => {
-                    props.setErrorText(e);
+                    notify.error(e);
                 }
             );
         }
         if (numChanged === 0) {
-            UIkit.notification(`All folds have finished stage ${stageToStart}.`);
+            notify.info(`All folds have finished stage ${stageToStart}.`);
         }
     };
 
@@ -136,7 +134,7 @@ function TagView(props: { setErrorText: (a: string) => void }) {
                 fileDownload(fold_pdb_blob, `${output_dirname}.zip`);
             },
             (e) => {
-                props.setErrorText(e);
+                notify.error(e);
             }
         );
     };
@@ -146,11 +144,11 @@ function TagView(props: { setErrorText: (a: string) => void }) {
             return;
         }
         if (folds.some((fold) => fold.id === null)) {
-            props.setErrorText("Some fold has a null ID... Weird.");
+            notify.error("Some fold has a null ID... Weird.");
             return;
         }
         if (!relativeFpathToDownload) {
-            props.setErrorText("No path set.");
+            notify.warning("No path set.");
             return;
         }
         const fold_ids = folds.map((fold) => fold.id || 0);
@@ -161,7 +159,7 @@ function TagView(props: { setErrorText: (a: string) => void }) {
             },
             (e) => {
                 console.log(e);
-                props.setErrorText(e);
+                notify.error(e);
             }
         );
     };
@@ -181,7 +179,7 @@ function TagView(props: { setErrorText: (a: string) => void }) {
                         return;
                     }
                     updateFold(fold.id, { public: true }).then(() => {
-                        UIkit.notification(`Successfully made ${fold.name} public.`);
+                        notify.success(`Successfully made ${fold.name} public.`);
                     });
                 });
             });
@@ -303,7 +301,6 @@ function TagView(props: { setErrorText: (a: string) => void }) {
                     <h3>Docking</h3>
                     {folds && (
                         <NewDockPrompt
-                            setErrorText={props.setErrorText}
                             foldIds={folds.map((fold) => fold.id ?? -1)}
                             existingLigands={{
                                 ...(folds.reduce((acc, fold) => {

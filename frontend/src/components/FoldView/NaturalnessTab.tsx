@@ -31,7 +31,6 @@ interface NaturalnessTabProps {
     jobs: Invokation[] | null;
     logits: Logit[] | null;
     setSelectedSubsequence: (selection: Selection | null) => void;
-    setErrorText: (error: string) => void;
 }
 
 
@@ -309,7 +308,7 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, foldC
 
     const downloadLogitCsv = (logit: Logit) => {
         if (!foldName) {
-            setErrorText('Fold name is not set.');
+            notify.warning('Fold name is not set.');
             return;
         }
         const logitPath = `naturalness/logits_${logit.name}_melted.csv`;
@@ -317,12 +316,12 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, foldC
         getFile(logit.fold_id, logitPath).then(
             (fileBlob: Blob) => {
                 const newFname = `logits_${foldName}_${logit.name}_melted.csv`;
-                UIkit.notification(`Downloading ${logitPath} with file name ${newFname}!`);
+                notify.info(`Downloading ${logitPath} with file name ${newFname}!`);
                 fileDownload(fileBlob, newFname);
             },
             (e) => {
                 console.log(e);
-                setErrorText(e.toString());
+                notify.error(e.toString());
             }
         );
     };
@@ -357,7 +356,7 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, foldC
             },
             (e) => {
                 console.log(e);
-                setErrorText(e.toString());
+                notify.error(e.toString());
             }
         );
     }

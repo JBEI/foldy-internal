@@ -214,7 +214,7 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                                         )
                                         .then(async () => {
                                             await props.setYamlConfig(yaml);
-                                            UIkit.notification("Updated YAML configuration. You can refold the protein from Actions > Refold.");
+                                            notify.info("Updated YAML configuration. You can refold the protein from Actions > Refold.");
                                         });
                                 }}
                             />

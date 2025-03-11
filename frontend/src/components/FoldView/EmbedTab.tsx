@@ -1,19 +1,19 @@
 import React, { useState, ChangeEvent } from 'react';
-import { startEmbeddings } from "../../services/backend.service";
+import { startEmbeddings } from "../../api/embedApi";
 import UIkit from 'uikit';
 import { Embedding, Invokation } from '../../types/types';
 import { FaDownload, FaRedo } from 'react-icons/fa';
 import { downloadFileStraightToFilesystem, getFile } from '../../api/fileApi';
+import { notify } from '../../services/NotificationService';
 import { ESMModelPicker } from './ESMModelPicker';
 
 interface EmbedTabProps {
     foldId: number;
     jobs: Invokation[] | null;
     embeddings: Embedding[] | null;
-    setErrorText: (text: string) => void;
 }
 
-const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, jobs, embeddings, setErrorText }) => {
+const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, jobs, embeddings }) => {
     const [batchName, setBatchName] = useState<string | null>(null);
     const [dmsStartingSeqIds, setDmsStartingSeqIds] = useState<string>('WT');
     const [extraSequenceIDs, setExtraSequenceIDs] = useState<string>('');
@@ -39,23 +39,13 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, jobs, embeddings, setErrorT
             .filter(line => line !== '');
 
         if (!batchName) {
-            UIkit.notification({
-                message: 'Batch name is required.',
-                status: 'danger',
-                pos: 'top-right',
-                timeout: 3000
-            });
+            notify.error('Batch name is required.');
             return;
         }
 
         try {
             await startEmbeddings(foldId, batchName, dmsStartingSeqIdsArray, extraIDsArray, model);
-            UIkit.notification({
-                message: 'Started embedding run.',
-                status: 'success',
-                pos: 'top-right',
-                timeout: 3000
-            });
+            notify.success('Started embedding run.');
         } catch (error) {
             console.error('Error starting embedding run:', error);
             UIkit.notification({
@@ -75,7 +65,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, jobs, embeddings, setErrorT
     const downloadEmbedding = (embedding: Embedding) => {
         const paddedFoldId = foldId.toString().padStart(6, '0');
         const embeddingPath = `embed/${paddedFoldId}_embeddings_${embedding.embedding_model}_${embedding.name}.csv`;
-        UIkit.notification(`Downloading embedding ${embedding.id} at path ${embeddingPath}`);
+        notify.info(`Downloading embedding ${embedding.id} at path ${embeddingPath}`);
 
         downloadFileStraightToFilesystem(embedding.fold_id, embeddingPath, (progress: number) => {
             console.log(`Downloading ${embeddingPath}: ${progress}%`);

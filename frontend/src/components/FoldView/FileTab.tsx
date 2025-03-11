@@ -11,6 +11,7 @@ import {
 import { FileInfo } from "../../types/types";
 import { downloadFileStraightToFilesystem } from "../../api/fileApi";
 import { removeLeadingSlash } from "../../api/commonApi";
+import { notify } from '../../services/NotificationService';
 
 interface FileTabProps {
     foldId: number;
@@ -18,7 +19,6 @@ interface FileTabProps {
     pdbString: string | null;
     maybeDownloadPdb: () => void;
     files: FileInfo[];
-    setErrorText: (a: string) => void;
 }
 
 const FileTab = React.memo((props: FileTabProps) => {
@@ -152,7 +152,7 @@ const FileTab = React.memo((props: FileTabProps) => {
     const downloadFile = (keys: string[]) => {
         console.log("Downloading files:", keys);
         keys.forEach(key => {
-            UIkit.notification(`Getting ${key} from server...`);
+            notify.info(`Getting ${key} from server...`);
             downloadFileStraightToFilesystem(
                 props.foldId,
                 removeLeadingSlash(key),
