@@ -23,14 +23,19 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.model_selection import train_test_split
 import numpy as np
 from evolve.ranked_mlp import MLPRegressorWithRankedLoss
-
+from functools import reduce
 from app.helpers.sequence_util import (
     get_measured_and_unmeasured_mutant_seq_ids,
     get_loci_set,
     process_and_validate_evolve_input_files,
 )
 
-def train_model(wt_aa_seq,raw_activity_df,raw_embedding_df,model,plot=False):
+def train_model(
+        wt_aa_seq,
+        raw_activity_df,
+        raw_embedding_df,
+        model,
+        plot=False):
     """
     Train a machine learning model on protein sequence data.
     
@@ -134,6 +139,18 @@ def evaluate_predictions(predicted_activity_df,exp_activity_df,round_activity_df
     try:
         predict = predicted_activity_df["actual_activity"].isna()
         extract_predict = predicted_activity_df[predict]
+
+        # Print out some debugging info.
+        merged = pd.merge(
+            extract_predict,
+            exp_activity_df,
+            left_on='seq_id',
+            right_on='seq_id',
+            how='left'
+        )
+        spearman, _ = spearmanr(merged['activity'], merged['predicted_activity'])
+        print(f'Spearman for predicted mutants: {spearman}')
+
         if strat == "topn":
             top_var = extract_predict.head(num_var)
         top_var_real = pd.merge(top_var,exp_activity_df,on='seq_id', how='left')
@@ -141,7 +158,7 @@ def evaluate_predictions(predicted_activity_df,exp_activity_df,round_activity_df
         next_round_activity = pd.concat([round_activity_df,top_var_real], ignore_index=True)
         #print(f'The next round has {len(next_round_activity)} variants')
     except Exception as e:
-        print(f"Failed to Evaluate Predictions")
+        print(f"Failed to Evaluate Predictions {e}")
         raise
     return next_round_activity
 def evolve_simulation(wt_aa_seq, initial_round_activity, raw_embedding_df, exp_activity_df, 
@@ -237,13 +254,13 @@ def digivolveZS(wt_aa_seq,prot_name,
 
     evolve_df = pd.DataFrame()
     all_path_results = []  # Store results for all paths
-    for path in tqdm(embeddings_paths, desc="Processing embedding paths"):
+    for path in tqdm(embeddings_paths, desc=F"Processing {dataset}"):
         start_benchmarks = {
         # Count values above 10 in the entire DataFrame
         #count = (df > 10).sum().sum()
         # Count values above 10 in a specific column
         #count = (df['column_name'] > 10).sum()  
-         f'Above WT (n={(raw_exp_activity_df['activity'] > wt_activity).sum()})' : wt_activity,
+         f'Above WT' : wt_activity,
          '50th Percentile' : 0.5,
          '90th Percentile' : 0.9,
          }
@@ -273,7 +290,7 @@ def digivolveZS(wt_aa_seq,prot_name,
 
                 for benchmark in benchmark_reset:
                     #print(benchmark)
-                    if benchmark == 'Above WT':
+                    if benchmark == f'Above WT':
                         benchmark_reset[benchmark] = above_wt_df
                         #print(f'above WT{benchmark_reset[benchmark]}')
                         continue
@@ -342,7 +359,7 @@ def digivolveZS(wt_aa_seq,prot_name,
         #print(zero_shot_string)
         plot_evolution_boxplot(evolve_df, start_benchmarks,variable_string,
                              (results_path+"/"+prot_name+ variable_string),
-                             color_by_count=True,show=True,label='count')
+                             color_by_count=True,show=True)
     else:
         print(f"No results to save for strategy")
     #clear_output(wait=False)
@@ -496,7 +513,9 @@ def evolve_multi(wt_aa_seq, initial_round_activity, mutant_dfs, exp_activity_df,
         for benchmark in benchmarks_hit.keys():
             if not benchmarks_hit[benchmark]:
                 round_variants.append(None)
-        
+        pbar.update(max_rounds)
+        pbar.clear()
+        pbar.close()
         # Group found variants by seq_id and round
         if not progressive:
             round_info = var_found.groupby('seq_id')['round_found'].apply(list).reset_index()
@@ -589,6 +608,7 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, raw_exp_activity
                 if full:
                     exp_activity_sample = raw_exp_activity_df.copy()
                     cloning_failure = cloning_failure
+
                 else:
                     exp_activity_sample = raw_exp_activity_df.sample(int((len(raw_exp_activity_df) * 0.8 )))
                 # Filter for variants above wild-type activity
@@ -618,7 +638,6 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, raw_exp_activity
                     mutant_dfs[f"mut_{i}"] = mutants
 
                 # Prepare for evolution
-                max_rounds = 10
 
                 # Process logits for single mutants
 
@@ -629,7 +648,7 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, raw_exp_activity
                     good_clone = round(num_var*random.uniform(cloning_failure,1))
                     WTM_vars = WTM_vars.sample(good_clone)
                 initial_round_activity = WTM_vars[['seq_id', 'activity']]
-
+                max_rounds = 10
                 # Run evolution
                 round_variants, top_variants, spearman_df = evolve_multi(
                     wt_aa_seq, initial_round_activity, mutant_dfs, exp_activity_sample, 
@@ -644,6 +663,8 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, raw_exp_activity
                 top_variants = top_variants[['seq_id', 'percentile', 'round_found','relevant_measured_mutants','activity']]
                 round_dict[f'round_{round_num+1}_variants'] = list(zip(top_variants['seq_id'], top_variants['relevant_measured_mutants']))
                 spearman_round_dict.update({f'round_{round_num+1}_spearman' : spearman_df})
+                if full and not cloning_failure:
+                    break
             #rounds_df = pd.DataFrame(round_dict)
             #display(rounds_df.head(3))
     # Store results for this path
@@ -667,10 +688,7 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, raw_exp_activity
         # Save to Excel
 
         raw_comp_dir = os.path.join(results_path, f'FolDE_{dataset}.xlsx')
-        try:
-            rounds_df.to_excel(os.path.join(results_path, f'VarsFound_{dataset}.xlsx'))
-        except Exception as e:
-            print(f"Error saving variant DataFrames: {str(e)}")
+
         evolve_df.to_excel(raw_comp_dir, index=False)
         top_variants = top_variants.sort_values('activity', ascending=False)
         top_variants.to_excel(os.path.join(results_path, f'TopVar_{dataset}.xlsx'))
@@ -679,7 +697,8 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, raw_exp_activity
         variable_string = 'FolDE'
         
         # Plot Spearman correlation if we have multiple rounds
-        graph_and_save_spearman(spearman_round_dict,results_path,prot_name,dataset)
+        if not full:
+            graph_and_save_spearman(spearman_round_dict,results_path,prot_name,dataset)
         
         # Plot evolution boxplot
         plot_evolution_boxplot(
@@ -1346,3 +1365,289 @@ def normalize_dataset(data,wt_activity):
     """Normalize data to range [0,1] by dividing by max value"""
     new_data = data/abs(wt_activity)
     return (new_data)
+
+def digivolve_parallel(wt_aa_seq, prot_name, wt_activity, activity_data,raw_embedding_df,
+                   data_dir, embeddings_paths, num_var, logits_df, 
+                   full=None, show=None,ranked=None,split=None):
+    """
+    Process protein sequences for directed evolution using multiple embedding paths.
+    
+    Args:
+        wt_aa_seq: Wild-type amino acid sequence
+        prot_name: Protein name
+        wt_activity: Wild-type activity value
+        dataset: Dataset name
+        exp_activity_file_path: Path to experimental activity data
+        embeddings_dir: Directory containing embeddings
+        embeddings_paths: List of paths to embedding files
+        num_var: Number of variants to consider
+        layers: Network layer configuration
+        logits_path: Path to logits file
+        scope: Scope parameter for evolution
+        depth: Depth parameter for evolution
+        progressive: Progressive evolution flag
+        show: Show visualization flag
+    
+    Returns:
+        DataFrame containing evolution results
+    """
+    # Load and preprocess experimental activity data
+    #raw_exp_activity_df = optimize_memory_with_checks(raw_exp_activity_df)
+    #exp_activity_df = raw_exp_activity_df.sort_values('activity', ascending=False)
+    #raw_exp_activity_df['activity'] = normalize_dataset(raw_exp_activity_df['activity'], wt_activity)
+    
+    # Load logits data
+    #logits_df = optimize_memory_with_checks(pd.read_csv(logits_path))
+    
+    # Initialize containers for results
+    round_dict = {}
+    benchmark_dicts = {}
+    spearman_round_dict ={}
+    path_results = {}
+    evolve_df = pd.DataFrame()
+    round_results = []  # Store results for all paths
+    rel_wt_activity = wt_activity/abs(wt_activity)
+    # Define benchmarks for evaluation
+    start_benchmarks = {
+        'Above WT': (rel_wt_activity),
+        '50th Percentile': 0.5,
+        '90th Percentile': 0.9,
+        '95th Percentile': 0.95,
+        #'99th Percentile': 0.99,
+    }
+    all_data = activity_data.copy()
+    datasets = {}
+    initial_var = 16
+    # Process each embedding path
+    for path in tqdm(embeddings_paths, desc=f"Processing {prot_name}",leave=False):
+            # Load and process embeddings
+            #embeddings_path = os.path.join(embeddings_dir, path)
+            #raw_embedding_df = pd.read_csv(embeddings_path)
+            for round_num in tqdm(range(1), desc=f"Evolution rounds for {prot_name}", leave=False):
+                all_activities=[]
+                #print(f"{dataset} round {round_num}")
+                for activities in activity_data.values():
+                    data_activity = pd.read_excel(activities)
+                    all_activities.append(data_activity)
+                #print(all_activities)
+                cleaned_variants = reduce(lambda x, y: pd.merge(x,y, on = 'seq_id'), all_activities)
+                cleaned_variants = cleaned_variants[['seq_id']]
+                #print(cleaned_variants)
+                if full:
+                    full_embeddings = clean_embeddings_df(raw_embedding_df,cleaned_variants)
+                else:
+                    embeddings = clean_embeddings_df(raw_embedding_df,cleaned_variants)
+                    full_embeddings = embeddings.sample(int(len(embeddings)*0.8))
+                #                cleaned_embeddings_df['percentile'] = cleaned_embeddings_df['activity'].rank(pct=True)
+                #display(full_embeddings.head(3))
+                for dataset in all_data.keys():
+                    benchmark_dicts[dataset] = {}
+                    dataset_activity = all_activities[list(all_data).index(dataset)]
+
+                    full_dataset = pd.merge(dataset_activity,full_embeddings, on ='seq_id', how='inner')
+                    full_dataset['percentile'] = full_dataset['activity'].rank(pct=True)
+                    benchmarks_reset = start_benchmarks.copy()
+                    above_wt_df = dataset_activity[dataset_activity['activity'] >= wt_activity]
+                    for benchmark in benchmarks_reset:
+                        if list(benchmarks_reset).index(benchmark) == 0:
+                            benchmarks_reset[benchmark] = above_wt_df
+                            continue
+                        benchmark_activity = above_wt_df['activity'].quantile(benchmarks_reset[benchmark])
+                        df = full_dataset[full_dataset['activity'] >= benchmark_activity]
+                        benchmarks_reset[benchmark] = df
+                    benchmark_dicts[dataset]=benchmarks_reset
+                    datasets[dataset] = full_dataset
+
+                top_benchmark = list(start_benchmarks)[-1]
+#
+#
+#                # Process logits for single mutants
+#
+                clean_logits_df = pd.merge(logits_df, full_embeddings, on='seq_id', how='inner')
+                logits_WTM_df = clean_logits_df.sort_values('wt_marginal', ascending=False)
+                WTM_vars = logits_WTM_df.head(initial_var)
+                WTM_vars = WTM_vars[['seq_id']]
+#                if cloning_failure:
+#                    good_clone = round(num_var*random.uniform(cloning_failure,1))
+#                    WTM_vars = WTM_vars.sample(good_clone)
+#                initial_round_activity = WTM_vars[['seq_id', 'activity']]
+                round_variants, campaigns = evolve_parallel(
+                    wt_aa_seq, WTM_vars, full_embeddings,
+                    benchmark_dicts, all_data, datasets,
+                    start_benchmarks, top_benchmark,
+                    num_var, ranked,split
+                )
+                #display(round_variants)
+                
+#            #rounds_df = pd.DataFrame(round_dict)
+#            #display(rounds_df.head(3))
+
+    if round_variants:
+        evolve_df = pd.DataFrame(round_variants)
+        
+        # Update benchmarks with additional metrics
+        start_benchmarks.update({
+            'Number of 90% Variants': 0,
+            'Best Score': 0,
+        })
+#    
+    # Save results
+    parent_dir = os.path.join(data_dir,'Parallel')
+    os.makedirs(parent_dir, exist_ok=True)
+    results_path = os.path.join(data_dir,'Parallel',f"{prot_name}_{num_var/len(datasets)}")
+    os.makedirs(results_path, exist_ok=True)
+    if not evolve_df.empty:
+        # Save to Excel
+        print(evolve_df)
+        for dataset in datasets.keys():
+            try:
+                raw_comp_dir = os.path.join(parent_dir, f'FolDE_{prot_name}_{num_var/len(datasets)}.xlsx')
+                for dataset in datasets.keys():
+                    campaigns[dataset].to_excel(os.path.join(results_path,f'VarsFound_{dataset}_parallel.xlsx'))
+                evolve_df.to_excel(raw_comp_dir, index=False)
+            except Exception as e:
+                print(f"Error saving variant DataFrames: {str(e)}")
+       #evolve_df.to_excel(raw_comp_dir, index=False)
+
+        #spearman_df.to_excel(os.path.join(results_path, f'Spearman_{dataset}.xlsx'))
+        
+        variable_string = 'Parallel'
+        
+        
+        # Plot evolution boxplot
+        # plot_evolution_boxplot(
+            # evolve_df, 
+            # start_benchmarks,
+            # variable_string,
+            # os.path.join(results_path, f"{prot_name}_{variable_string}"),color_by_count=True
+        # )
+    else:
+        print("No results to save for strategy")
+def evolve_parallel( wt_aa_seq, WTM_vars, full_embeddings,
+                    benchmark_dicts, all_data, datasets,
+                    start_benchmarks, top_benchmark,
+                    num_var, ranked,split=None):
+    max_rounds=10
+    round_num = 1
+    round_variants = {}
+    dataset_evolution= len(datasets)
+    benchmarks_hit = {benchmark: False for benchmark in start_benchmarks.copy()}
+    #print(benchmarks_hit)
+    #print(len(datasets.keys()))
+    campaigns = {}
+    campaign_benchmarks = {}
+    evolution_done = False
+    for dataset in datasets.keys():
+        #print(f"{dataset} is {len(datasets[dataset])}")
+        campaigns[dataset] = pd.merge(WTM_vars,datasets[dataset], on='seq_id')
+        campaign_benchmarks[dataset] = benchmarks_hit.copy()
+        #display(campaigns[dataset])
+        round_variants[dataset] = []
+    model_type = MLPRegressor(random_state=1,max_iter=5000, 
+                              #activation='logistic',
+                              #n_iter_no_change=200,
+
+                              hidden_layer_sizes=(
+                                  500,
+                                  100,
+                                  50))
+    try:
+        # Check initial round
+        for dataset in datasets.keys():
+            #print(campaign_benchmarks[dataset])
+            for benchmark in start_benchmarks:
+                if not campaign_benchmarks[dataset][benchmark]:
+                   # print(f"{dataset} {benchmark} is {campaign_benchmarks[dataset][benchmark]}")
+                    benchmark_df = benchmark_dicts[dataset][benchmark]
+                    if benchmark_df['seq_id'].isin(campaigns[dataset]['seq_id']).any():
+                        round_variants[dataset].append(round_num)
+                        campaign_benchmarks[dataset][benchmark] = True
+                        if benchmark == top_benchmark:
+                            good_var_num = len(pd.merge(campaigns[dataset],benchmark_dicts[dataset][benchmark], on='seq_id'))
+                            round_variants[dataset].append(good_var_num)
+                            round_variants[dataset].append(10*good_var_num)
+           # print(f"{dataset} {benchmark} is {campaign_benchmarks[dataset][benchmark]}")
+           # print(f"{dataset} rounds {round_variants[dataset]}")
+
+        with tqdm(total=max_rounds, desc="Evolution Progress", leave=False) as pbar:
+            while not evolution_done and round_num < max_rounds:
+                pbar.set_postfix({'Datasets complete': (len(datasets)-dataset_evolution)})
+                round_num += 1
+                pbar.update(1)
+                all_variants = []
+                for dataset in datasets.keys():
+                    #predicted_activity_df = train_model(wt_aa_seq, current_round_activity_df,
+                    #                              raw_embedding_df, model_type)
+                    if not campaign_benchmarks[dataset][top_benchmark]:
+                        #print(dataset)
+                        predicted_activity_df = train_model(wt_aa_seq, campaigns[dataset],
+                                                          datasets[dataset], model_type)
+                        predict = predicted_activity_df["actual_activity"].isna()
+                        predicted_activity_df.loc[predict, 'round_found'] = round_num
+                        predicted = predicted_activity_df[predict]
+                        if not split:
+                            extract_predict = predicted.head(int(num_var/dataset_evolution))
+                        else:
+                            extract_predict = predicted.head(num_var)
+                        all_variants.append(extract_predict)
+                if all_variants:
+                    all_variants_df = pd.concat(all_variants,ignore_index=True)
+                    all_variants_df = all_variants_df.drop_duplicates(subset=['seq_id'],keep='first')
+
+                else:
+                    print("No variants predicted")
+                #print(len(all_variants))
+                #display(all_variants)
+                for dataset in datasets.keys():
+                    if not campaign_benchmarks[dataset][top_benchmark]:
+                        campaign_predict = pd.merge(all_variants_df,datasets[dataset])
+                        campaigns[dataset] = pd.concat([campaign_predict,campaigns[dataset]], ignore_index=True)
+                        #print(f"{dataset} variants is {len(campaigns[dataset])}")
+                    #print(f"For dataset {dataset} the variants are:")
+                    #display(campaigns[dataset])
+
+                #campaigns[dataset] = pd.merge
+                    
+                #print(current_round_activity_df['activity'].nlargest(3))
+                for dataset in datasets.keys():
+                    #print(campaign_benchmarks[dataset])
+                    for benchmark in start_benchmarks:
+                        if not campaign_benchmarks[dataset][benchmark]:
+                            #print(f"{dataset} {benchmark} is {campaign_benchmarks[dataset][benchmark]}")
+                            benchmark_df = benchmark_dicts[dataset][benchmark]
+                            if benchmark_df['seq_id'].isin(campaigns[dataset]['seq_id']).any():
+                                round_variants[dataset].append(round_num)
+                                campaign_benchmarks[dataset][benchmark] = True
+                                # if benchmark == top_benchmark:
+                                    # good_var_num = len(pd.merge(campaigns[dataset],benchmark_dicts[dataset]['90th Percentile'], on='seq_id'))
+                                    # round_variants[dataset].append(good_var_num)
+                                    # round_variants[dataset].append(10*good_var_num)
+                #print(campaign_benchmarks)
+                dataset_evolution= len(datasets)
+                for campaign_ended in campaign_benchmarks.values():
+                    if all(campaign_ended.values()):
+                        #print(campaign_ended.values())
+                        dataset_evolution = dataset_evolution - 1
+                    if dataset_evolution == 0:
+                        evolution_done = True
+                        
+                
+    finally:
+        #print(campaigns)
+        for dataset in datasets.keys():
+            for benchmark in start_benchmarks:
+                if not campaign_benchmarks[dataset][benchmark]:
+                    round_variants[dataset].append(None)
+            good_var_num = len(pd.merge(campaigns[dataset],benchmark_dicts[dataset]['90th Percentile'], on='seq_id'))
+            round_variants[dataset].append(good_var_num)
+            round_variants[dataset].append(campaigns[dataset]['activity'].max())
+            #round_variants[dataset].append(campaigns[dataset]['activity'].max())
+            #round_variants[dataset].append(good_var_num)
+            #round_variants[dataset].append(10*(good_var_num/round_num))
+        #print(f"this is round variants{round_variants}")
+        # print(round_variants)
+        pbar.update(max_rounds)
+        pbar.clear()
+        pbar.close()
+        # print('\033[1A\033[K', end='')
+    return round_variants, campaigns
