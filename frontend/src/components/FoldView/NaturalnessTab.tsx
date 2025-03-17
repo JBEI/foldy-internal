@@ -5,7 +5,7 @@ import { evolve } from '../../api/evolveApi';
 import { FaDownload, FaEye, FaRedo } from 'react-icons/fa';
 import fileDownload from 'js-file-download';
 import { removeLeadingSlash } from '../../api/commonApi';
-import { getFile } from '../../api/fileApi';
+import { downloadFileStraightToFilesystem, getFile } from '../../api/fileApi';
 import { startLogits } from '../../api/embedApi';
 import Plot from 'react-plotly.js';
 import { Data } from 'plotly.js';
@@ -15,6 +15,8 @@ import { ESMModelPicker } from './ESMModelPicker';
 import { Selection } from './StructurePane';
 import DataGrid from 'react-data-grid';
 import ReactDataGrid from 'react-data-grid';
+import { notify } from '../../services/NotificationService';
+import { BoltzYamlHelper } from '../../util/boltzYamlHelper';
 // import 'react-data-grid/lib/styles.css';  // Don't forget the styles!
 
 
@@ -27,7 +29,7 @@ const RESIDUES = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P
 interface NaturalnessTabProps {
     foldId: number;
     foldName: string | null;
-    foldChainIds: string[] | null;
+    yamlConfig: string | null;
     jobs: Invokation[] | null;
     logits: Logit[] | null;
     setSelectedSubsequence: (selection: Selection | null) => void;
@@ -266,7 +268,7 @@ const LogitTable: React.FC<LogitTableProps> = ({
     );
 };
 
-const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, foldChainIds, jobs, logits, setSelectedSubsequence, setErrorText }) => {
+const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlConfig, jobs, logits, setSelectedSubsequence, setErrorText }) => {
     const [runName, setRunName] = useState<string>('');
     const [logitModel, setLogitModel] = useState<string>('esmc_600m');
     const [useStructure, setUseStructure] = useState<boolean>(false);
@@ -312,16 +314,14 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, foldC
             return;
         }
         const logitPath = `naturalness/logits_${logit.name}_melted.csv`;
-        console.log(`Downloading logits for ${logit.name} at path ${logitPath}`);
-        getFile(logit.fold_id, logitPath).then(
-            (fileBlob: Blob) => {
-                const newFname = `logits_${foldName}_${logit.name}_melted.csv`;
-                notify.info(`Downloading ${logitPath} with file name ${newFname}!`);
-                fileDownload(fileBlob, newFname);
-            },
-            (e) => {
-                console.log(e);
-                notify.error(e.toString());
+        const newFileName = `${foldName}_naturalness_${logit.name}.csv`;
+        console.log(`Downloading logits for ${logit.name} at path ${logitPath} to ${newFileName}`);
+        downloadFileStraightToFilesystem(
+            logit.fold_id,
+            logitPath,
+            newFileName,
+            (progress: number) => {
+                console.log(`Downloading ${logitPath}: ${progress}%`);
             }
         );
     };
@@ -457,6 +457,14 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, foldC
 
     const highlightResiduesOnModel = () => {
         if (!logitCsvData) return;
+        if (!yamlConfig) {
+            console.log('No yaml config, cannot highlight residues on model.');
+            return;
+        }
+        const configHelper = new BoltzYamlHelper(yamlConfig);
+        if (configHelper.getProteinSequences().length > 1) {
+            notify.error('Cannot currently highlight residues on multimers.');
+        }
 
         const tableData: RowData[] | null = parseCsvDataIntoRowData(logitCsvData, showWTMarginalLikelihood, zeroWildType, maxMutationsPerLocus, topPerformersToDisplay) || null;
         if (!tableData) return null;
@@ -471,7 +479,7 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, foldC
 
         const selection = uniqueLociToHighlight.map(locus => {
             return {
-                struct_asym_id: foldChainIds?.[0] || 'A',
+                struct_asym_id: 'A',
                 start_residue_number: locus,
                 end_residue_number: locus,
                 color: "#FFD700",

@@ -36,12 +36,12 @@ export const getFile = async (fold_id: number, filePath: string): Promise<Blob> 
 
 
 export const downloadFileStraightToFilesystem = async (
-    fold_id: number,
+    foldId: number,
     filePath: string,
+    newFileName: string,
     onProgress?: (progressPercent: number) => void
 ): Promise<void> => {
-    const fileName = filePath.split('/').pop() || 'downloaded_file';
-    console.log(`Downloading ${fileName}`);
+    console.log(`Downloading ${foldId} ${filePath} to ${newFileName}`);
 
     // Build headers, including Authorization if we have a token
     const token = authenticationService.currentJwtStringValue;
@@ -56,7 +56,7 @@ export const downloadFileStraightToFilesystem = async (
 
     const response = await fetch(
         // If you were using a base URL in Axios, prepend it here:
-        `${import.meta.env.VITE_BACKEND_URL}/api/file/download/${fold_id}/${filePath}`,
+        `${import.meta.env.VITE_BACKEND_URL}/api/file/download/${foldId}/${filePath}`,
         // `/api/file/download/${fold_id}/${filePath}`,
         {
             method: 'GET',
@@ -73,7 +73,7 @@ export const downloadFileStraightToFilesystem = async (
     let bytesDownloaded = 0;
 
     // Create the StreamSaver write stream
-    const fileStream = streamSaver.createWriteStream(fileName);
+    const fileStream = streamSaver.createWriteStream(newFileName);
 
     // If the browser supports ReadableStream from fetch
     if (response.body) {

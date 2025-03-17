@@ -6,6 +6,7 @@ import { BoltzYamlHelper, ChainSequence, LigandData } from "../../util/boltzYaml
 import BoltzYamlBuilder from "../../util/boltzYamlBuilder";
 import UIkit from "uikit";
 import { Selection } from "./StructurePane";
+import { notify } from "../../services/NotificationService";
 
 export interface SubsequenceSelection {
     chainIdx: number;
@@ -21,7 +22,7 @@ interface SequenceTabProps {
     foldOwner: string;
     foldCreateDate: string;
     foldPublic: boolean | null;
-    yaml_config: string | null;
+    yamlConfig: string | null;
     foldDiffusionSamples: number | null;
 
     // Old AlphaFold inputs.
@@ -48,13 +49,13 @@ interface SequenceTabProps {
 const SequenceTab = React.memo((props: SequenceTabProps) => {
     const [showYamlSection, setShowYamlSection] = useState<boolean>(false);
 
-    const config_helper = props.yaml_config ? new BoltzYamlHelper(props.yaml_config) : null;
+    const configHelper = props.yamlConfig ? new BoltzYamlHelper(props.yamlConfig) : null;
 
     var sequenceNames: string[];
     var sequences: string[];
-    if (config_helper) {
-        sequenceNames = config_helper.getProteinSequences().map((e) => e[0]);
-        sequences = config_helper.getProteinSequences().map((e) => e[1]);
+    if (configHelper) {
+        sequenceNames = configHelper.getProteinSequences().map((e) => e[0]);
+        sequences = configHelper.getProteinSequences().map((e) => e[1]);
     } else if (props.sequence) {
         const oldSequenceStrs = props.sequence.split(";");
         sequenceNames = oldSequenceStrs.map((ss) => ss.includes(":") ? ss.split(":")[0] : props.foldName);
@@ -70,15 +71,30 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                 const chainSeq = ss;
 
                 const onSelectionHandler = (chainName: string, selection: any) => {
+                    if (!configHelper) {
+                        console.log('Config helper is underfined, cannot show residues.')
+                        return;
+                    }
+                    const chainIndex = configHelper.getProteinSequences().findIndex(x => x[0] === chainName);
+                    if (chainIndex === -1) {
+                        console.log(`Could not find chain ${chainName} in boltz config: ${configHelper?.getProteinSequences()}`);
+                        return;
+                    }
+                    const chainId = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[chainIndex]
                     if (selection.start && selection.end) {
                         console.log(selection);
-                        const start = Math.min(selection.start, selection.end);
-                        const end = Math.max(selection.start, selection.end);
+                        var start = Math.min(selection.start, selection.end);
+                        var end = Math.max(selection.start, selection.end);
+                        if (start >= end) {
+                            start = -1;
+                            end = 0;
+                        }
+                        console.log(`${start}, ${end}`)
                         props.setSelectedSubsequence({
                             data: [{
-                                struct_asym_id: chainName,
+                                struct_asym_id: chainId,
                                 start_residue_number: start + 1,
-                                end_residue_number: end + 1,
+                                end_residue_number: end,
                                 color: "white",
                             }],
                             // nonSelectedColor: "white",
@@ -108,7 +124,7 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                     </div>
                 );
             })}
-            {config_helper?.getLigands().map((ligand: LigandData, idx: number) => {
+            {configHelper?.getLigands().map((ligand: LigandData, idx: number) => {
                 return <div key={idx} style={{ marginBottom: "20px" }}>
                     <h3>{ligand.chain_ids.join(", ")} (Ligand)</h3>
                     <div>
@@ -116,7 +132,7 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                     </div>
                 </div>
             })}
-            {config_helper?.getDNASequences().map((dna: ChainSequence, idx: number) => {
+            {configHelper?.getDNASequences().map((dna: ChainSequence, idx: number) => {
                 return <div key={idx} style={{ marginBottom: "20px" }}>
                     <h3>{dna[0]} (DNA)</h3>
                     <div>
@@ -135,7 +151,7 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                     </div>
                 </div>
             })}
-            {config_helper?.getRNASequences().map((rna: ChainSequence, idx: number) => {
+            {configHelper?.getRNASequences().map((rna: ChainSequence, idx: number) => {
                 return <div key={idx} style={{ marginBottom: "20px" }}>
                     <h3>{rna[0]} (RNA)</h3>
                     <div>
@@ -205,7 +221,7 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                             marginBottom: '20px'
                         }}>
                             <BoltzYamlBuilder
-                                initialYaml={props.yaml_config || undefined}
+                                initialYaml={props.yamlConfig || undefined}
                                 onSave={(yaml) => {
                                     console.log(`YAML: ${yaml}`);
                                     UIkit.modal

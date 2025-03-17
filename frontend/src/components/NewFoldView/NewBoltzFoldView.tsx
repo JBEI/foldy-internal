@@ -76,6 +76,12 @@ sequences:
             return;
         }
 
+        // Check for weird characters in the fold name
+        if (/[^a-zA-Z0-9_ -]/.test(foldName)) {
+            notify.warning("Fold name contains invalid characters. Please use only letters, numbers, underscores, hyphens, and spaces.");
+            return;
+        }
+
         setIsSubmitting(true);
         try {
             await createFold(foldName, yamlString, {

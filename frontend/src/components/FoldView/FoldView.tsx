@@ -1,30 +1,25 @@
 import jquery from "jquery";
 import ParsePdb, { ParsedPdb } from "parse-pdb";
-import React, { Component, RefObject } from "react";
-import { AiOutlineFolder, AiOutlineFolderOpen } from "react-icons/ai";
-import { FaDownload } from "react-icons/fa";
-import { FileBrowser, FileList, FileNavbar, FileToolbar, ChonkyActions, ChonkyFileActionData } from 'chonky';
+import React, { Component } from "react";
 import { useParams } from "react-router-dom";
 import UIkit from "uikit";
 import { notify } from "../../services/NotificationService";
 import { queueJob } from "../../api/commonApi";
-import { deleteDock, getDockSdf } from "../../api/dockApi";
+import { deleteDock } from "../../api/dockApi";
 import { getFoldPdb, getFoldPfam, getInvokation } from "../../api/foldApi";
-import { FoldyMascot } from "../../util/foldyMascot";
-import { VariousColorSchemes, getColorsForAnnotations } from "../../util/plots";
+import { VariousColorSchemes } from "../../util/plots";
 import ContactTab from "./ContactTab";
 import DockTab from "./DockTab";
 import "./FoldView.scss";
 import PaeTab from "./PaeTab";
 import JobsTab from "./JobsTab";
-import SequenceTab, { SubsequenceSelection } from "./SequenceTab";
+import SequenceTab from "./SequenceTab";
 import fileDownload from "js-file-download";
 import NaturalnessTab from "./NaturalnessTab";
 import EmbedTab from "./EmbedTab";
 import EvolveTab from "./EvolveTab";
 import { Annotations, FileInfo, Fold, FoldPdb, Invokation } from "../../types/types";
-import { removeLeadingSlash } from "../../api/commonApi";
-import { downloadFileStraightToFilesystem, getFile, getFileList } from "../../api/fileApi";
+import { getFileList } from "../../api/fileApi";
 import { getFold, updateFold } from "../../api/foldApi";
 import StructurePane, { Selection } from "./StructurePane";
 import FileTab from "./FileTab";
@@ -446,7 +441,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                             foldPublic={this.state.foldData?.public}
                             foldModelPreset={this.state.foldData?.af2_model_preset}
                             foldDisableRelaxation={this.state.foldData?.disable_relaxation}
-                            yaml_config={this.state.foldData.yaml_config}
+                            yamlConfig={this.state.foldData.yaml_config}
                             sequence={this.state.foldData.sequence}
                             colorScheme={this.state.colorScheme}
                             setPublic={this.setPublic}
@@ -520,6 +515,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                     <NaturalnessTab
                         foldId={this.props.foldId}
                         foldName={this.state.foldData?.name || null}
+                        yamlConfig={this.state.foldData?.yaml_config}
                         jobs={this.state.jobs}
                         logits={this.state.foldData?.logits || null}
                         setSelectedSubsequence={this.setSelectedSubsequence}
@@ -582,7 +578,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                     {[...(this.state.foldData?.jobs || [])].map((job: Invokation) => {
                         // If it's (dock, embedding, evolve) and it's not running or queued, don't show it.
                         if (
-                            (job.type?.startsWith("dock_") || job.type?.startsWith("embed_") || job.type?.startsWith("evolve_")) &&
+                            (job.type?.startsWith("dock_") || job.type?.startsWith("embed_") || job.type?.startsWith("evolve_") || job.type?.startsWith("logits_")) &&
                             (job.state !== 'running' && job.state !== 'queued')) {
                             return null;
                         }
@@ -1020,30 +1016,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
 
     handleTagClick = (tagToOpen: string) => {
         window.open(`/tag/${tagToOpen}`, "_self");
-    };
-
-    downloadFile = (keys: string[]) => {
-        console.log(keys);
-        for (let key of keys) {
-            notify.info(`Getting ${key} from server...`);
-            downloadFileStraightToFilesystem(this.props.foldId, removeLeadingSlash(key), (progress: number) => {
-                console.log(`Downloading ${key}: ${progress}%`);
-            });
-            // getFile(this.props.foldId, removeLeadingSlash(key)).then(
-            //     (fileBlob: Blob) => {
-            //         const newFname = key.split("/").pop();
-            //         if (!newFname) {
-            //             this.props.setErrorText(`No file name found for ${key}`);
-            //             return;
-            //         }
-            //         console.log(`Downloading ${key} with file name ${newFname}!!!`);
-            //         fileDownload(fileBlob, newFname);
-            //     },
-            //     (e) => {
-            //         this.props.setErrorText(e.toString());
-            //     }
-            // );
-        }
     };
 
     formatStartTime = (jobstarttime: string | null) => {
