@@ -71,7 +71,9 @@ class ZeroShotModel(ABC):
             embedding_df: Optional DataFrame containing protein embeddings
 
         Returns:
-            List of sequence IDs for the top N variants
+            Tuple of
+              * List of sequence IDs for the top N variants.
+              * Series of predictions for all input variants with seq_id as index.
         """
         if "seq_id" not in naturalness_df.columns:
             raise ValueError(
@@ -89,7 +91,10 @@ class ZeroShotModel(ABC):
         # Sort by prediction value (descending) and get top N
         top_n = results_df.sort_values("prediction", ascending=False).head(n)
 
-        return top_n["seq_id"].tolist()
+        return (
+            top_n["seq_id"].tolist(),
+            results_df.set_index("seq_id").prediction,
+        )
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information about the model.

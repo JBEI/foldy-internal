@@ -45,7 +45,9 @@ class FewShotModel(ABC):
             embedding_df: DataFrame containing protein embeddings
 
         Returns:
-            List of sequence IDs for the top N variants
+            Tuple of
+              * List of sequence IDs for the top N variants.
+              * Series of predictions for all input variants with seq_id as index.
 
         Raises:
             ValueError: If the model is not fitted or if required columns are missing
@@ -62,7 +64,8 @@ class FewShotModel(ABC):
         return (
             results_df.sort_values("prediction", ascending=False)
             .head(n)["seq_id"]
-            .tolist()
+            .tolist(),
+            results_df.set_index("seq_id").prediction,
         )
 
     @abstractmethod

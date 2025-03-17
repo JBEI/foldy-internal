@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class FolDEModelConfig(BaseModel):
+    name: str
     naturalness_model_id: str
     embedding_model_id: str
     zeroshot_model_name: str
@@ -30,15 +31,34 @@ class FolDEModelConfig(BaseModel):
     fewshot_model_params: Dict[str, Any]
 
 
+class MutantMetrics(BaseModel):
+    """Stores dense information about each mutants tested in the simulation."""
+
+    seq_id: str
+    round_found: int
+    activity: float
+    predicted_activity: float
+    percentile: float
+    relevant_mutants: List[str]
+
+
+class RoundMetrics(BaseModel):
+    """Stores expensive-to-compute per-round metrics, such as model characterization."""
+
+    round_num: int
+    model_spearman: float
+    misc: Dict[str, Any]
+
+
 class SimulationResult(BaseModel):
     rounds: int
-    best_variant_per_round: List[str]
-    best_activity_per_round: List[float]
-    cumulative_best_activity: List[float]
-    cumulative_best_percentile: List[float]
-    tested_variants: List[List[str]]
-    tested_variant_percentiles: List[List[float]]
-    round_metrics: List[Dict[str, Any]]
+    round_metrics: List[RoundMetrics]
+    mutant_metrics: List[MutantMetrics]
+
+
+class SingleConfigCampaignResults(BaseModel):
+    config: FolDEModelConfig
+    simulation_results: List[SimulationResult]
 
 
 class CampaignResults(BaseModel):
@@ -48,7 +68,7 @@ class CampaignResults(BaseModel):
     activity_column: str
     max_rounds: int
     random_seed: int
-    simulation_results: List[Tuple[FolDEModelConfig, List[SimulationResult]]]
+    output: List[SingleConfigCampaignResults]
 
 
 def _evaluate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
@@ -152,12 +172,7 @@ def _run_single_simulation(
     results = SimulationResult(
         config=config,
         rounds=0,
-        best_variant_per_round=[],
-        best_activity_per_round=[],
-        cumulative_best_activity=[],
-        cumulative_best_percentile=[],
-        tested_variants=[],
-        tested_variant_percentiles=[],
+        mutant_metrics=[],
         round_metrics=[],
     )
 
@@ -182,7 +197,7 @@ def _run_single_simulation(
 
         # We're getting a topN to synthesize, and a predicted activity for every variant.
         top_seq_ids = None
-        all_predicted_activities = None
+        predicted_activity_df = None
 
         # First round: always use zero-shot model
         if round_num == 1:
@@ -191,13 +206,10 @@ def _run_single_simulation(
                 config.zeroshot_model_name, **config.zeroshot_model_params
             )
             # Get top variants using zero-shot model's get_top_n method
-            top_seq_ids = zeroshot_model.get_top_n(
+            top_seq_ids, predicted_activity_series = zeroshot_model.get_top_n(
                 round_size,
                 world_state.get_unmeasured_naturalness_df(),
                 world_state.get_unmeasured_embeddings_df(),
-            )
-            all_predicted_activities = zeroshot_model.predict(
-                naturalness_df, embedding_df
             )
 
         # Subsequent rounds: use few-shot model if specified
@@ -221,15 +233,11 @@ def _run_single_simulation(
             )
 
             # Use the get_top_n method from FewShotModel
-            top_seq_ids = fewshot_model.get_top_n(
+            top_seq_ids, predicted_activity_series = fewshot_model.get_top_n(
                 round_size,
                 world_state.get_unmeasured_naturalness_df(),
                 world_state.get_unmeasured_embeddings_df(),
             )
-            all_embeddings_array = np.array(
-                [np.array(emb) for emb in embedding_df.embedding.values]
-            )
-            all_predicted_activities = fewshot_model.predict(all_embeddings_array)
 
         assert (
             len(top_seq_ids) == round_size
@@ -239,44 +247,42 @@ def _run_single_simulation(
         )
         world_state.measure_variant_activities(top_seq_ids)
 
-        # Track results for this round
-        selected_activity_df = world_state.get_measured_activity_df().loc[top_seq_ids]
-        best_in_round = selected_activity_df.loc[
-            selected_activity_df[activity_column].idxmax()
-        ]
-        best_in_round_activity = best_in_round[activity_column]
-
         all_percentiles = golden_activity_df[activity_column].rank(pct=True)
-        top_seq_id_percentiles = [all_percentiles.loc[seq_id] for seq_id in top_seq_ids]
 
-        if (
-            best_activity_so_far == None
-            or best_in_round_activity > best_activity_so_far
-        ):
-            best_activity_so_far = best_in_round_activity
+        mutant_metrics_list = []
+        for top_seq_id in top_seq_ids:
+            golden_activity = world_state.get_measured_activity_df().loc[top_seq_id][
+                activity_column
+            ]
+            percentile = all_percentiles.loc[top_seq_id]
+            mutant_metrics_list.append(
+                MutantMetrics(
+                    seq_id=top_seq_id,
+                    round_found=round_num,
+                    activity=golden_activity,
+                    predicted_activity=predicted_activity_series.loc[top_seq_id],
+                    percentile=percentile,
+                    relevant_mutants=[],  # TODO(jacob): Compute relevant mutants
+                )
+            )
 
         # Compute metrics for this round's predictions
         # TOOD(jacob): Compute metrics for every round, eg validation or test correlation.
         whole_dataset_spearman = spearmanr(
-            golden_activity_df[activity_column].values, all_predicted_activities
+            golden_activity_df.loc[predicted_activity_series.index][
+                activity_column
+            ].values,
+            predicted_activity_series.values,
         )[0]
-        round_metrics = {
-            "whole_dataset_spearman": whole_dataset_spearman,
-        }
+        round_metrics = RoundMetrics(
+            round_num=round_num,
+            model_spearman=whole_dataset_spearman,
+            misc={},
+        )
 
-        # Store round results
         results.rounds = round_num
-        results.best_variant_per_round.append(
-            best_in_round["seq_id"] if best_in_round is not None else None
-        )
-        results.best_activity_per_round.append(best_in_round_activity)
-        results.cumulative_best_activity.append(best_activity_so_far)
-        results.cumulative_best_percentile.append(
-            np.mean(golden_activity_df[activity_column].values <= best_activity_so_far)
-        )
-        results.tested_variants.append(top_seq_ids)
-        results.tested_variant_percentiles.append(top_seq_id_percentiles)
         results.round_metrics.append(round_metrics)
+        results.mutant_metrics.extend(mutant_metrics_list)
 
     return results
 
@@ -313,8 +319,7 @@ def simulate_campaign(
         activity_column=activity_column,
         max_rounds=max_rounds,
         random_seed=random_seed,
-        configurations=[],
-        simulation_results=[],
+        output=[],
     )
 
     # Run simulations for each configuration
@@ -376,8 +381,10 @@ def simulate_campaign(
             )
             single_model_campaign_results.append(sim_result)
 
-        campaign_results.simulation_results.append(
-            (model_config, single_model_campaign_results)
+        campaign_results.output.append(
+            SingleConfigCampaignResults(
+                config=model_config, simulation_results=single_model_campaign_results
+            )
         )
 
     return campaign_results
