@@ -24,12 +24,19 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 from evolve.ranked_mlp import MLPRegressorWithRankedLoss
 from functools import reduce
+from functools import reduce
 from app.helpers.sequence_util import (
     get_measured_and_unmeasured_mutant_seq_ids,
     get_loci_set,
     process_and_validate_evolve_input_files,
 )
 
+def train_model(
+        wt_aa_seq,
+        raw_activity_df,
+        raw_embedding_df,
+        model,
+        plot=False):
 def train_model(
         wt_aa_seq,
         raw_activity_df,
@@ -151,6 +158,18 @@ def evaluate_predictions(predicted_activity_df,exp_activity_df,round_activity_df
         spearman, _ = spearmanr(merged['activity'], merged['predicted_activity'])
         print(f'Spearman for predicted mutants: {spearman}')
 
+
+        # Print out some debugging info.
+        merged = pd.merge(
+            extract_predict,
+            exp_activity_df,
+            left_on='seq_id',
+            right_on='seq_id',
+            how='left'
+        )
+        spearman, _ = spearmanr(merged['activity'], merged['predicted_activity'])
+        print(f'Spearman for predicted mutants: {spearman}')
+
         if strat == "topn":
             top_var = extract_predict.head(num_var)
         top_var_real = pd.merge(top_var,exp_activity_df,on='seq_id', how='left')
@@ -160,6 +179,7 @@ def evaluate_predictions(predicted_activity_df,exp_activity_df,round_activity_df
                                          ignore_index=True)
         #print(f'The next round has {len(next_round_activity)} variants')
     except Exception as e:
+        print(f"Failed to Evaluate Predictions {e}")
         print(f"Failed to Evaluate Predictions {e}")
         raise
     return next_round_activity
@@ -257,11 +277,13 @@ def digivolveZS(wt_aa_seq,prot_name,
     evolve_df = pd.DataFrame()
     all_path_results = []  # Store results for all paths
     for path in tqdm(embeddings_paths, desc=F"Processing {dataset}"):
+    for path in tqdm(embeddings_paths, desc=F"Processing {dataset}"):
         start_benchmarks = {
         # Count values above 10 in the entire DataFrame
         #count = (df > 10).sum().sum()
         # Count values above 10 in a specific column
         #count = (df['column_name'] > 10).sum()  
+         f'Above WT' : wt_activity,
          f'Above WT' : wt_activity,
          '50th Percentile' : 0.5,
          '90th Percentile' : 0.9,
@@ -292,6 +314,7 @@ def digivolveZS(wt_aa_seq,prot_name,
 
                 for benchmark in benchmark_reset:
                     #print(benchmark)
+                    if benchmark == f'Above WT':
                     if benchmark == f'Above WT':
                         benchmark_reset[benchmark] = above_wt_df
                         #print(f'above WT{benchmark_reset[benchmark]}')
@@ -361,6 +384,7 @@ def digivolveZS(wt_aa_seq,prot_name,
         #print(zero_shot_string)
         plot_evolution_boxplot(evolve_df, start_benchmarks,variable_string,
                              (results_path+"/"+prot_name+ variable_string),
+                             color_by_count=True,show=True)
                              color_by_count=True,show=True)
     else:
         print(f"No results to save for strategy")
@@ -521,6 +545,9 @@ def evolve_multi(wt_aa_seq, initial_round_activity, mutant_dfs, exp_activity_df,
         pbar.update(max_rounds)
         pbar.clear()
         pbar.close()
+        pbar.update(max_rounds)
+        pbar.clear()
+        pbar.close()
         # Group found variants by seq_id and round
         if not progressive:
             round_info = var_found.groupby('seq_id')['round_found'].apply(list).reset_index()
@@ -612,6 +639,7 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, raw_exp_activity
                     exp_activity_sample = raw_exp_activity_df.copy()
                     cloning_failure = cloning_failure
 
+
                 else:
                     exp_activity_sample = raw_exp_activity_df.sample(int((len(raw_exp_activity_df) * 0.8 )))
                 # Filter for variants above wild-type activity
@@ -652,6 +680,7 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, raw_exp_activity
                     WTM_vars = WTM_vars.sample(good_clone)
                 initial_round_activity = WTM_vars[['seq_id', 'activity']]
                 max_rounds = 10
+                max_rounds = 10
                 # Run evolution
                 round_variants, top_variants, spearman_df = evolve_multi(
                     wt_aa_seq, initial_round_activity, mutant_dfs, exp_activity_sample, 
@@ -668,6 +697,8 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, raw_exp_activity
                 top_variants = top_variants[['seq_id', 'percentile', 'round_found','relevant_measured_mutants','activity']]
                 round_dict[f'round_{round_num+1}_variants'] = list(zip(top_variants['seq_id'], top_variants['relevant_measured_mutants']))
                 spearman_round_dict.update({f'round_{round_num+1}_spearman' : spearman_df})
+                if full and not cloning_failure:
+                    break
                 if full and not cloning_failure:
                     break
             #rounds_df = pd.DataFrame(round_dict)
@@ -694,6 +725,7 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, raw_exp_activity
 
         raw_comp_dir = os.path.join(results_path, f'FolDE_{dataset}.xlsx')
 
+
         evolve_df.to_excel(raw_comp_dir, index=False)
         top_variants = top_variants.sort_values('activity', ascending=False)
         top_variants.to_excel(os.path.join(results_path, f'TopVar_{dataset}.xlsx'))
@@ -702,6 +734,8 @@ def digivolve_multi(wt_aa_seq, prot_name, wt_activity, dataset, raw_exp_activity
         variable_string = 'FolDE'
         
         # Plot Spearman correlation if we have multiple rounds
+        if not full:
+            graph_and_save_spearman(spearman_round_dict,results_path,prot_name,dataset)
         if not full:
             graph_and_save_spearman(spearman_round_dict,results_path,prot_name,dataset)
         
