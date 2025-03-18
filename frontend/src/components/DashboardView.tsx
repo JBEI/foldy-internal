@@ -10,6 +10,7 @@ import qs from "query-string";
 import debounce from "lodash/debounce";
 import { getFolds } from "../api/foldApi";
 import { Fold } from "src/types/types";
+import { notify } from "../services/NotificationService";
 
 const PAGE_SIZE = 25;
 
@@ -50,7 +51,6 @@ function getQueryStringValue(
 }
 
 function AuthenticatedDashboardView(props: {
-    setErrorText: (a: string) => void;
     decodedToken: DecodedJwt;
 }) {
     const userEmail: string = props.decodedToken.user_claims.email;
@@ -93,7 +93,7 @@ function AuthenticatedDashboardView(props: {
                     setSearchIsStale(false);
                 },
                 (e) => {
-                    props.setErrorText(e.toString());
+                    notify.error(e.toString());
                 }
             );
         }, 300),
@@ -217,7 +217,6 @@ function AuthenticatedDashboardView(props: {
 }
 
 function DashboardView(props: {
-    setErrorText: (a: string) => void;
     decodedToken: DecodedJwt | null;
 }) {
     if (!props.decodedToken) {
@@ -225,7 +224,6 @@ function DashboardView(props: {
     }
     return (
         <AuthenticatedDashboardView
-            setErrorText={props.setErrorText}
             decodedToken={props.decodedToken}
         />
     );

@@ -1,34 +1,25 @@
 import jquery from "jquery";
 import ParsePdb, { ParsedPdb } from "parse-pdb";
-import React, { Component, RefObject } from "react";
-import { AiOutlineFolder, AiOutlineFolderOpen } from "react-icons/ai";
-import { FaDownload } from "react-icons/fa";
-import { FileBrowser, FileList, FileNavbar, FileToolbar, ChonkyActions, ChonkyFileActionData } from 'chonky';
+import React, { Component } from "react";
 import { useParams } from "react-router-dom";
 import UIkit from "uikit";
-import {
-    deleteDock,
-    getDockSdf,
-    getFoldPdb,
-    getFoldPfam,
-    getInvokation,
-    queueJob,
-} from "../../services/backend.service";
-import { FoldyMascot } from "../../util/foldyMascot";
-import { VariousColorSchemes, getColorsForAnnotations } from "../../util/plots";
+import { notify } from "../../services/NotificationService";
+import { queueJob } from "../../api/commonApi";
+import { deleteDock } from "../../api/dockApi";
+import { getFoldPdb, getFoldPfam, getInvokation } from "../../api/foldApi";
+import { VariousColorSchemes } from "../../util/plots";
 import ContactTab from "./ContactTab";
 import DockTab from "./DockTab";
 import "./FoldView.scss";
 import PaeTab from "./PaeTab";
 import JobsTab from "./JobsTab";
-import SequenceTab, { SubsequenceSelection } from "./SequenceTab";
+import SequenceTab from "./SequenceTab";
 import fileDownload from "js-file-download";
 import NaturalnessTab from "./NaturalnessTab";
 import EmbedTab from "./EmbedTab";
 import EvolveTab from "./EvolveTab";
 import { Annotations, FileInfo, Fold, FoldPdb, Invokation } from "../../types/types";
-import { removeLeadingSlash } from "../../api/commonApi";
-import { downloadFileStraightToFilesystem, getFile, getFileList } from "../../api/fileApi";
+import { getFileList } from "../../api/fileApi";
 import { getFold, updateFold } from "../../api/foldApi";
 import StructurePane, { Selection } from "./StructurePane";
 import FileTab from "./FileTab";
@@ -112,7 +103,6 @@ const getCubeEdges = (
 
 interface FoldProps {
     foldId: number;
-    setErrorText: (a: string) => void;
     userType: string | null;
 }
 
@@ -221,10 +211,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                     .map(job => job.id);
 
                 if (jobsToRefresh.length > MAX_JOBS_TO_REFRESH) {
-                    UIkit.notification(`Not streaming job logs because there are too many jobs (${jobsToRefresh.length} > ${MAX_JOBS_TO_REFRESH}))`, {
-                        status: 'warning',
-                        timeout: 1000,
-                    });
+                    notify.warning(`Not streaming job logs because there are too many jobs (${jobsToRefresh.length} > ${MAX_JOBS_TO_REFRESH}))`);
                     return;
                 }
 
@@ -253,7 +240,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                             this.setState({ jobs: finalJobs });
                         },
                         (e) => {
-                            this.props.setErrorText(e.toString());
+                            notify.error(e.toString());
                         }
                     );
                 } else {
@@ -317,7 +304,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                             this.setState({ jobs: fullInvs });
                         },
                         (e) => {
-                            this.props.setErrorText(e.toString());
+                            notify.error(e.toString());
                         }
                     );
                 }
@@ -368,7 +355,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                 );
             },
             (e) => {
-                this.props.setErrorText(e.toString());
+                notify.error(e.toString());
             }
         );
     }
@@ -454,7 +441,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                             foldPublic={this.state.foldData?.public}
                             foldModelPreset={this.state.foldData?.af2_model_preset}
                             foldDisableRelaxation={this.state.foldData?.disable_relaxation}
-                            yaml_config={this.state.foldData.yaml_config}
+                            yamlConfig={this.state.foldData.yaml_config}
                             sequence={this.state.foldData.sequence}
                             colorScheme={this.state.colorScheme}
                             setPublic={this.setPublic}
@@ -482,7 +469,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         pdbString={this.state.pdb?.pdb_string || null}
                         maybeDownloadPdb={this.maybeDownloadPdb}
                         files={this.state.files}
-                        setErrorText={this.props.setErrorText}
                     />
                 </li>
 
@@ -511,7 +497,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         foldSequence={this.state.foldData?.sequence}
                         docks={this.state.foldData ? this.state.foldData.docks : null}
                         jobs={this.state.foldData ? this.state.foldData.jobs : null}
-                        setErrorText={this.props.setErrorText}
                         displayedLigandNames={[]}  // Object.keys(this.state.displayedDocks)
                         // ranks={Object.fromEntries(
                         //     Object.entries(this.state.displayedDocks).map(([key, value]) => [
@@ -530,10 +515,10 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                     <NaturalnessTab
                         foldId={this.props.foldId}
                         foldName={this.state.foldData?.name || null}
+                        yamlConfig={this.state.foldData?.yaml_config}
                         jobs={this.state.jobs}
                         logits={this.state.foldData?.logits || null}
                         setSelectedSubsequence={this.setSelectedSubsequence}
-                        setErrorText={this.props.setErrorText}
                     />
                 </li>
 
@@ -542,7 +527,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         foldId={this.props.foldId}
                         jobs={this.state.jobs}
                         embeddings={this.state.foldData?.embeddings || null}
-                        setErrorText={this.props.setErrorText}
                     />
                 </li>
 
@@ -552,7 +536,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         jobs={this.state.jobs}
                         files={this.state.files}
                         evolutions={this.state.foldData?.evolutions || null}
-                        setErrorText={this.props.setErrorText}
                     />
                 </li>
 
@@ -595,7 +578,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                     {[...(this.state.foldData?.jobs || [])].map((job: Invokation) => {
                         // If it's (dock, embedding, evolve) and it's not running or queued, don't show it.
                         if (
-                            (job.type?.startsWith("dock_") || job.type?.startsWith("embed_") || job.type?.startsWith("evolve_")) &&
+                            (job.type?.startsWith("dock_") || job.type?.startsWith("embed_") || job.type?.startsWith("evolve_") || job.type?.startsWith("logits_")) &&
                             (job.state !== 'running' && job.state !== 'queued')) {
                             return null;
                         }
@@ -718,10 +701,10 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
     startStage = (stage: string) => {
         queueJob(this.props.foldId, stage, true).then(
             () => {
-                UIkit.notification(`Successfully started ${stage}.`);
+                notify.info(`Successfully started ${stage}.`);
             },
             (e) => {
-                this.props.setErrorText(e.toString());
+                notify.error(e.toString());
             }
         );
     };
@@ -745,7 +728,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
 
     // displayLigandPose = (ligandName: string) => {
     //     if (ligandName in this.state.displayedDocks) {
-    //         UIkit.notification(`Hiding ${ligandName}`);
+    //         notify.info(`Hiding ${ligandName}`);
     //         this.state.stage?.removeComponent(
     //             this.state.displayedDocks[ligandName].nglComponent
     //         );
@@ -769,7 +752,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
     //         return;
     //     }
 
-    //     UIkit.notification(`Displaying SDF file for ${ligandName}`);
+    //     notify.info(`Displaying SDF file for ${ligandName}`);
     //     getDockSdf(this.props.foldId, ligandName).then(
     //         (sdf: Blob) => {
     //             if (!this.state.stage || !this.state.parsedPdb) {
@@ -864,7 +847,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
 
                     deleteDock(ligandId).then(
                         () => {
-                            UIkit.notification(`Successfully deleted ligand ${ligandName}.`);
+                            notify.info(`Successfully deleted ligand ${ligandName}.`);
                         },
                         (e) => {
                             UIkit.alert(
@@ -907,10 +890,10 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                 updateFold(this.props.foldId, { public: is_public }).then(
                     () => {
                         this.refreshFoldDataFromBackend();
-                        UIkit.notification("Updated public status.");
+                        notify.info("Updated public status.");
                     },
                     (e) => {
-                        this.props.setErrorText(e);
+                        notify.error(e);
                     }
                 );
             });
@@ -926,10 +909,10 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                 updateFold(this.props.foldId, { disable_relaxation: new_disable_relaxation }).then(
                     () => {
                         this.refreshFoldDataFromBackend();
-                        UIkit.notification("Updated disable relaxation setting.");
+                        notify.info("Updated disable relaxation setting.");
                     },
                     (e) => {
-                        this.props.setErrorText(e);
+                        notify.error(e);
                     }
                 );
             });
@@ -950,10 +933,10 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         updateFold(this.props.foldId, { name: newFoldName }).then(
                             () => {
                                 this.refreshFoldDataFromBackend();
-                                UIkit.notification("Updated fold name.");
+                                notify.info("Updated fold name.");
                             },
                             (e) => {
-                                this.props.setErrorText(e);
+                                notify.error(e);
                             }
                         );
                     });
@@ -970,10 +953,10 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                 updateFold(this.props.foldId, { af2_model_preset: newFoldModelPreset }).then(
                     () => {
                         this.refreshFoldDataFromBackend();
-                        UIkit.notification("Updated fold model.");
+                        notify.info("Updated fold model.");
                     },
                     (e) => {
-                        this.props.setErrorText(e);
+                        notify.error(e);
                     }
                 );
             });
@@ -985,7 +968,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                 this.refreshFoldDataFromBackend();
             },
             (e) => {
-                this.props.setErrorText(e);
+                notify.error(e);
             }
         );
     };
@@ -999,10 +982,10 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
         updateFold(this.props.foldId, { tags: tags }).then(
             () => {
                 this.refreshFoldDataFromBackend();
-                UIkit.notification("Updated tags.");
+                notify.info("Updated tags.");
             },
             (e) => {
-                this.props.setErrorText(e);
+                notify.error(e);
             }
         );
     };
@@ -1018,10 +1001,10 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                 updateFold(this.props.foldId, { tags: newTags }).then(
                     () => {
                         this.refreshFoldDataFromBackend();
-                        UIkit.notification("Updated tags.");
+                        notify.info("Updated tags.");
                     },
                     (e) => {
-                        this.props.setErrorText(e);
+                        notify.error(e);
                     }
                 );
             },
@@ -1033,30 +1016,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
 
     handleTagClick = (tagToOpen: string) => {
         window.open(`/tag/${tagToOpen}`, "_self");
-    };
-
-    downloadFile = (keys: string[]) => {
-        console.log(keys);
-        for (let key of keys) {
-            UIkit.notification(`Getting ${key} from server...`);
-            downloadFileStraightToFilesystem(this.props.foldId, removeLeadingSlash(key), (progress: number) => {
-                console.log(`Downloading ${key}: ${progress}%`);
-            });
-            // getFile(this.props.foldId, removeLeadingSlash(key)).then(
-            //     (fileBlob: Blob) => {
-            //         const newFname = key.split("/").pop();
-            //         if (!newFname) {
-            //             this.props.setErrorText(`No file name found for ${key}`);
-            //             return;
-            //         }
-            //         console.log(`Downloading ${key} with file name ${newFname}!!!`);
-            //         fileDownload(fileBlob, newFname);
-            //     },
-            //     (e) => {
-            //         this.props.setErrorText(e.toString());
-            //     }
-            // );
-        }
     };
 
     formatStartTime = (jobstarttime: string | null) => {
@@ -1091,7 +1050,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
 }
 
 function FoldView(props: {
-    setErrorText: (a: string | null) => void;
     userType: string | null;
 }) {
     let { foldId } = useParams();
@@ -1100,7 +1058,6 @@ function FoldView(props: {
     }
     return (
         <InternalFoldView
-            setErrorText={props.setErrorText}
             foldId={parseInt(foldId)}
             userType={props.userType}
         />

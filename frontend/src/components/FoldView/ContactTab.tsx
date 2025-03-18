@@ -1,7 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import {
-    getFoldContactProb,
-} from "../../services/backend.service";
+import { getFoldContactProb } from "../../api/foldApi";
 import { getResidueHeatmap } from "../../util/plots";
 import { FoldContactProb } from "../../types/types";
 

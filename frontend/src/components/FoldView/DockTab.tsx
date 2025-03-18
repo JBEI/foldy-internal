@@ -11,12 +11,10 @@ import {
     FaTrash,
 } from "react-icons/fa";
 import UIkit from "uikit";
-import {
-    getDockSdf,
-    postDock,
-} from "../../services/backend.service";
+import { getDockSdf, postDock } from "../../api/dockApi";
 import { NewDockPrompt } from "../../util/newDockPrompt";
 import { Dock, Invokation, DockInput } from "../../types/types";
+import { notify } from "../../services/NotificationService";
 
 interface DockTabProps {
     foldId: number;
@@ -24,7 +22,6 @@ interface DockTabProps {
     foldSequence: string | undefined;
     docks: Dock[] | null;
     jobs: Invokation[] | null;
-    setErrorText: (error: string) => void;
 
     // UI Commands managed by the FoldView.
     displayedLigandNames: string[];
@@ -53,14 +50,14 @@ const DockTab = React.memo((props: DockTabProps) => {
     };
 
     const downloadLigandPose = (ligandName: string) => {
-        UIkit.notification(`Downloading SDF file for ${ligandName}`);
+        notify.info(`Downloading SDF file for ${ligandName}`);
         getDockSdf(props.foldId, ligandName).then(
             (sdf: Blob) => {
                 if (!props.foldName) return;
                 fileDownload(sdf, `${props.foldName}_${ligandName}.sdf`);
             },
             (error) => {
-                props.setErrorText(error.toString());
+                notify.error(error.toString());
             }
         );
     };
@@ -68,8 +65,8 @@ const DockTab = React.memo((props: DockTabProps) => {
     const rerunDock = (dock: Dock) => {
         const dockCopy: DockInput = { ...dock, fold_id: props.foldId };
         postDock(dockCopy).then(
-            () => UIkit.notification(`Successfully restarted docking for ${dock.ligand_name}`),
-            (error) => props.setErrorText(`Docking ${dock.ligand_name} failed: ${error}`)
+            () => notify.success(`Successfully restarted docking for ${dock.ligand_name}`),
+            (error) => notify.error(`Docking ${dock.ligand_name} failed: ${error}`)
         );
     };
 
@@ -264,7 +261,6 @@ const DockTab = React.memo((props: DockTabProps) => {
             {showDockForm && (
                 <section style={{ backgroundColor: "#ffffff", padding: "15px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)" }}>
                     <NewDockPrompt
-                        setErrorText={props.setErrorText}
                         foldIds={[props.foldId]}
                         existingLigands={{
                             [props.foldId]: (props.docks || []).map((dock) => dock.ligand_name),

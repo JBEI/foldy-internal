@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import UIkit from "uikit";
-import { postDock } from "../services/backend.service";
+import { postDock } from "../api/dockApi";
 import { DockInput } from "../types/types";
+import { notify } from "../services/NotificationService";
 
 const getLigandNameErrorMessage = (ligandName: string | null) => {
     if (!ligandName) {
@@ -43,7 +44,6 @@ const getBBResidueErrorMessage = (bboxResidue: string | null) => {
 };
 
 interface newDockTextboxInterface {
-    setErrorText: (error: string) => void;
     foldIds: number[];
     existingLigands: { [foldId: number]: Array<string> };
 }
@@ -81,7 +81,7 @@ export function NewDockPrompt(props: newDockTextboxInterface) {
 
     const submitTextboxDocks = () => {
         if (!textboxContents) {
-            props.setErrorText("Must provide a smiles string and ligand name!");
+            notify.warning("Must provide a smiles string and ligand name!");
             return;
         }
 
@@ -140,19 +140,19 @@ export function NewDockPrompt(props: newDockTextboxInterface) {
         console.log(errors);
 
         if (errors.length) {
-            props.setErrorText(errors.join("\n"));
+            notify.warning(errors.join("\n"));
             return;
         }
 
         newDocks.forEach((newDock) => {
             postDock(newDock).then(
                 () => {
-                    UIkit.notification(
+                    notify.success(
                         `Successfully started docking run for ${newDock.ligand_name}`
                     );
                 },
                 (e) => {
-                    props.setErrorText(`Docking ${newDock.ligand_name} failed: ${e}`);
+                    notify.error(`Docking ${newDock.ligand_name} failed: ${e}`);
                 }
             );
         });
@@ -160,19 +160,19 @@ export function NewDockPrompt(props: newDockTextboxInterface) {
 
     const submitFormDocks = () => {
         if (!ligandName || !ligandSmiles) {
-            props.setErrorText("Must provide a ligand name and SMILES string!");
+            notify.warning("Must provide a ligand name and SMILES string!");
             return;
         }
 
         if (!ligandName.match(/^[0-9a-zA-Z]+$/)) {
-            props.setErrorText(
+            notify.warning(
                 `All ligand names must be alphanumeric, "${ligandName}" is not`
             );
             return;
         }
 
         if (toolName === "") {
-            props.setErrorText("Must select a docking tool.");
+            notify.warning("Must select a docking tool.");
             return;
         }
 
@@ -181,7 +181,7 @@ export function NewDockPrompt(props: newDockTextboxInterface) {
             props.existingLigands
         );
         if (foldsWithExistingLigand && !overrideExistingLigands) {
-            props.setErrorText(
+            notify.warning(
                 `This would overwrite the "${ligandName}" ligand for ${foldsWithExistingLigand.length} folds, including for ${foldsWithExistingLigand[0]}. Aborting.`
             );
             return;
@@ -204,12 +204,12 @@ export function NewDockPrompt(props: newDockTextboxInterface) {
         newDocks.forEach((newDock) => {
             postDock(newDock).then(
                 () => {
-                    UIkit.notification(
+                    notify.success(
                         `Successfully started docking run for ${newDock.ligand_name}`
                     );
                 },
                 (e) => {
-                    props.setErrorText(`Docking ${newDock.ligand_name} failed: ${e}`);
+                    notify.error(`Docking ${newDock.ligand_name} failed: ${e}`);
                 }
             );
         });

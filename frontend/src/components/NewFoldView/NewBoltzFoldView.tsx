@@ -5,10 +5,10 @@ import { Row, Col, Form, Input, Switch, Alert, InputNumber } from "antd";
 import { postFolds } from "../../api/foldApi";
 import { FoldInput } from "../../types/types";
 import UIkit from "uikit";
+import { notify } from "../../services/NotificationService";
 
 interface NewBoltzFoldViewProps {
     userType: string | null;
-    setErrorText: (error: string) => void;
 }
 
 interface AdvancedSettings {
@@ -52,7 +52,7 @@ async function createFold(
     });
 }
 
-const NewBoltzFoldView: React.FC<NewBoltzFoldViewProps> = ({ userType, setErrorText }) => {
+const NewBoltzFoldView: React.FC<NewBoltzFoldViewProps> = ({ userType }) => {
     const navigate = useNavigate();
     const [foldName, setFoldName] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -72,7 +72,13 @@ sequences:
 
     async function handleSave(yamlString: string) {
         if (!foldName.trim()) {
-            setErrorText("Please enter a fold name");
+            notify.warning("Please enter a fold name");
+            return;
+        }
+
+        // Check for weird characters in the fold name
+        if (/[^a-zA-Z0-9_ -]/.test(foldName)) {
+            notify.warning("Fold name contains invalid characters. Please use only letters, numbers, underscores, hyphens, and spaces.");
             return;
         }
 
@@ -83,17 +89,14 @@ sequences:
                 ...advancedSettings,
             });
 
-            UIkit.notification({
-                message: "Fold successfully created!",
-                status: 'success'
-            });
+            notify.success("Fold successfully created!");
 
             if (!advancedSettings.stayOnPage) {
                 navigate("/");
             }
         } catch (err) {
             console.error(err);
-            setErrorText(`Failed to create fold: ${String(err)}`);
+            notify.error(`Failed to create fold: ${String(err)}`);
         } finally {
             setIsSubmitting(false);
         }

@@ -298,7 +298,6 @@ function RoutedApp({ token, setToken }: {
                         element={
                             <Suspense fallback={renderLoader()}>
                                 <AvatarFoldView
-                                    setErrorText={setErrorText}
                                     userType={
                                         fullDecodedToken ? fullDecodedToken.user_claims.type : null
                                     }
@@ -308,13 +307,12 @@ function RoutedApp({ token, setToken }: {
                     />
                     <Route
                         path="/tag/:tagStringParam"
-                        element={<TagView setErrorText={setErrorText} />}
+                        element={<TagView />}
                     />
                     <Route
                         path="/newFold"
                         element={
                             <NewBoltzFoldView
-                                setErrorText={setErrorText}
                                 userType={
                                     fullDecodedToken ? fullDecodedToken.user_claims.type : null
                                 }
@@ -323,7 +321,7 @@ function RoutedApp({ token, setToken }: {
                     />
                     <Route
                         path="/sudopage"
-                        element={<SudoPage setErrorText={setErrorText} />}
+                        element={<SudoPage />}
                     />
                     <Route
                         path="/about"
@@ -339,7 +337,6 @@ function RoutedApp({ token, setToken }: {
                         path="/"
                         element={
                             <DashboardView
-                                setErrorText={setErrorText}
                                 decodedToken={fullDecodedToken}
                             />
                         }

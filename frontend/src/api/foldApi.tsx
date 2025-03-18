@@ -1,5 +1,5 @@
 import axiosInstance from '../services/axiosInstance';
-import { Fold, FoldInput } from '../types/types';
+import { Annotations, Fold, FoldContactProb, FoldInput, FoldPae, FoldPdb, Invokation } from '../types/types';
 import { authenticationService } from "../services/authentication.service";
 import { BoltzYamlHelper } from '../util/boltzYamlHelper';
 
@@ -57,4 +57,160 @@ export const updateFold = async (
 ): Promise<boolean> => {
     const response = await axiosInstance.post(`/api/fold/${foldId}`, fieldsToUpdate);
     return response.data;
+};
+
+/**
+ * Gets an invokation by ID
+ */
+export const getInvokation = async (invokationId: number): Promise<Invokation> => {
+    const response = await axiosInstance.get(`/api/invokation/${invokationId}`);
+    return response.data;
+};
+
+/**
+ * Gets a fold PDB model
+ */
+export const getFoldPdb = async (
+    foldId: number,
+    modelNumber: number
+): Promise<FoldPdb> => {
+    const response = await axiosInstance.get(`/api/fold_pdb/${foldId}/${modelNumber}`);
+    return response.data;
+};
+
+/**
+ * Gets fold PKL data
+ */
+export const getFoldPkl = async (
+    foldId: number,
+    modelNumber: number
+): Promise<Blob> => {
+    const response = await axiosInstance.post(
+        `/api/fold_pkl/${foldId}/${modelNumber}`, 
+        null,
+        { responseType: 'blob' }
+    );
+    return response.data;
+};
+
+/**
+ * Downloads multiple PDB files as a zip
+ */
+export const getFoldPdbZip = async (
+    foldIds: number[],
+    dirname: string
+): Promise<Blob> => {
+    const response = await axiosInstance.post(
+        '/api/fold_pdb_zip', 
+        { fold_ids: foldIds, dirname },
+        { responseType: 'blob' }
+    );
+    return response.data;
+};
+
+/**
+ * Downloads multiple fold files as a zip
+ */
+export const getFoldFileZip = async (
+    foldIds: number[],
+    relativeFpath: string,
+    outputDirname: string
+): Promise<Blob> => {
+    const response = await axiosInstance.post(
+        '/api/fold_file_zip',
+        {
+            fold_ids: foldIds,
+            relative_fpath: relativeFpath,
+            output_dirname: outputDirname,
+        },
+        { responseType: 'blob' }
+    );
+    return response.data;
+};
+
+/**
+ * Gets PAE data for a fold model
+ */
+export const getFoldPae = async (
+    foldId: number,
+    modelNumber: number
+): Promise<FoldPae> => {
+    const response = await axiosInstance.get(`/api/pae/${foldId}/${modelNumber}`);
+    return response.data;
+};
+
+/**
+ * Gets contact probability data for a fold model 
+ */
+export const getFoldContactProb = async (
+    foldId: number,
+    modelNumber: number
+): Promise<FoldContactProb> => {
+    const response = await axiosInstance.get(`/api/contact_prob/${foldId}/${modelNumber}`);
+    return response.data;
+};
+
+/**
+ * Gets PFAM annotations for a fold
+ */
+export const getFoldPfam = async (foldId: number): Promise<Annotations> => {
+    const response = await axiosInstance.get(`/api/pfam/${foldId}`);
+    return response.data;
+};
+
+/**
+ * Get the job status for a specific type of job in a fold
+ */
+export const getJobStatus = (fold: Fold, jobType: string): string | null => {
+    if (!fold.jobs) {
+        return null;
+    }
+    for (const job of fold.jobs) {
+        if (job.type === jobType) {
+            return job.state;
+        }
+    }
+    return null;
+};
+
+/**
+ * Describes the overall fold state based on its jobs
+ */
+export const describeFoldState = (fold: Fold): string => {
+    const boltzState = getJobStatus(fold, "boltz");
+    const featuresState = getJobStatus(fold, "features");
+    const modelsState = getJobStatus(fold, "models");
+    const decompressState = getJobStatus(fold, "decompress_pkls");
+
+    if (boltzState) {
+        return boltzState;
+    }
+
+    if (
+        featuresState === null ||
+        modelsState === null ||
+        decompressState === null
+    ) {
+        return "unstarted";
+    }
+    if (featuresState === "queued") {
+        return "queued";
+    }
+    if (decompressState === "finished") {
+        return "finished";
+    }
+    if (featuresState !== "finished") {
+        return `features ${featuresState}`;
+    }
+    if (modelsState !== "finished") {
+        return `models ${modelsState}`;
+    }
+    return `decompress_pkls ${decompressState}`;
+};
+
+/**
+ * Checks if a fold is finished
+ */
+export const foldIsFinished = (fold: Fold): boolean => {
+    return getJobStatus(fold, "models") === "finished";
 };

@@ -4,3 +4,4 @@
 **/.vscode
 .boltz/
 backend/src/notebooks/
+backend/src/folde/data/*
