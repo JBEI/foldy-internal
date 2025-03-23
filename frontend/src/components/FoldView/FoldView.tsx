@@ -476,7 +476,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                     {this.state.paeIsOnScreen ? (
                         <PaeTab
                             foldId={this.props.foldId}
-                            foldSequence={this.state.foldData?.sequence}
+                            foldSequence={this.state.foldData?.sequence || undefined}
                         />
                     ) : null}
                 </li>
@@ -485,7 +485,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                     {this.state.contactIsOnScreen ? (
                         <ContactTab
                             foldId={this.props.foldId}
-                            foldSequence={this.state.foldData?.sequence}
+                            foldSequence={this.state.foldData?.sequence || undefined}
                         ></ContactTab>
                     ) : null}
                 </li>
@@ -494,7 +494,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                     <DockTab
                         foldId={this.props.foldId}
                         foldName={this.state.foldData?.name || null}
-                        foldSequence={this.state.foldData?.sequence}
+                        foldSequence={this.state.foldData?.sequence || undefined}
                         docks={this.state.foldData ? this.state.foldData.docks : null}
                         jobs={this.state.foldData ? this.state.foldData.jobs : null}
                         displayedLigandNames={[]}  // Object.keys(this.state.displayedDocks)
@@ -515,7 +515,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                     <NaturalnessTab
                         foldId={this.props.foldId}
                         foldName={this.state.foldData?.name || null}
-                        yamlConfig={this.state.foldData?.yaml_config}
+                        yamlConfig={this.state.foldData?.yaml_config || null}
                         jobs={this.state.jobs}
                         logits={this.state.foldData?.logits || null}
                         setSelectedSubsequence={this.setSelectedSubsequence}
@@ -525,6 +525,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                 <li key="Embedli">
                     <EmbedTab
                         foldId={this.props.foldId}
+                        foldName={this.state.foldData?.name || null}
                         jobs={this.state.jobs}
                         embeddings={this.state.foldData?.embeddings || null}
                     />

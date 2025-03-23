@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Type
 import numpy as np
 import pandas as pd
+from folde.util import boltzmann_sample_n
 
 
 # Registry of available zero-shot models
@@ -34,13 +35,13 @@ class ZeroShotModel(ABC):
     requiring training on labeled fitness/activity data.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, temperature: float = 0.0):
         """Initialize the zero-shot model.
 
         Args:
             **kwargs: Model-specific parameters
         """
-        self.model_params = kwargs
+        self.temperature = temperature
 
     @abstractmethod
     def predict(
@@ -88,11 +89,13 @@ class ZeroShotModel(ABC):
             {"seq_id": naturalness_df["seq_id"], "prediction": predictions}
         )
 
-        # Sort by prediction value (descending) and get top N
-        top_n = results_df.sort_values("prediction", ascending=False).head(n)
+        chosen_indices = boltzmann_sample_n(
+            results_df.prediction.values, self.temperature, n
+        )
+        chosen_seqs = results_df.iloc[chosen_indices]
 
         return (
-            top_n["seq_id"].tolist(),
+            chosen_seqs["seq_id"].tolist(),
             results_df.set_index("seq_id").prediction,
         )
 
@@ -108,6 +111,37 @@ class ZeroShotModel(ABC):
 def register_zeroshot_model(model_class: Type[ZeroShotModel]):
     _ZERO_SHOT_MODELS[model_class.__name__] = model_class
     return model_class
+
+
+@register_zeroshot_model
+class RandomZeroShotModel(ZeroShotModel):
+    """Zero-shot prediction model based on sequence naturalness scores.
+
+    This model uses sequence naturalness (log-likelihood) scores
+    directly as the prediction, optionally with some transformation.
+    """
+
+    def predict(
+        self, naturalness_df: pd.DataFrame, embedding_df: pd.DataFrame = None
+    ) -> np.ndarray:
+        """Predict using naturalness scores.
+
+        Args:
+            naturalness_df: DataFrame containing 'wt_marginal' column
+            embedding_df: Not used by this model, but included for API consistency
+
+        Returns:
+            Array of prediction scores based on naturalness
+        """
+        return np.random.rand(naturalness_df.shape[0])
+
+    def get_debug_info(self) -> Dict[str, Any]:
+        """Get debug information about the model.
+
+        Returns:
+            Dictionary containing model parameters
+        """
+        return {}
 
 
 @register_zeroshot_model

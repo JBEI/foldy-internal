@@ -13,62 +13,22 @@ import random
 from sklearn.metrics import roc_auc_score, average_precision_score, mean_squared_error
 from scipy.stats import spearmanr
 from pydantic import BaseModel, Field
+from concurrent.futures import ProcessPoolExecutor
 
+from folde.types import (
+    CampaignResultCollection,
+    CampaignResults,
+    SingleConfigCampaignResults,
+    FolDEModelConfig,
+    MutantMetrics,
+    RoundMetrics,
+    SimulationResult,
+)
 from folde.data import get_proteingym_dataset
 from folde.few_shot_models import get_few_shot_model
 from folde.zero_shot_models import get_zero_shot_model
 
 logger = logging.getLogger(__name__)
-
-
-class FolDEModelConfig(BaseModel):
-    name: str
-    naturalness_model_id: str
-    embedding_model_id: str
-    zeroshot_model_name: str
-    zeroshot_model_params: Dict[str, Any]
-    fewshot_model_name: str
-    fewshot_model_params: Dict[str, Any]
-
-
-class MutantMetrics(BaseModel):
-    """Stores dense information about each mutants tested in the simulation."""
-
-    seq_id: str
-    round_found: int
-    activity: float
-    predicted_activity: float
-    percentile: float
-    relevant_mutants: List[str]
-
-
-class RoundMetrics(BaseModel):
-    """Stores expensive-to-compute per-round metrics, such as model characterization."""
-
-    round_num: int
-    model_spearman: float
-    misc: Dict[str, Any]
-
-
-class SimulationResult(BaseModel):
-    rounds: int
-    round_metrics: List[RoundMetrics]
-    mutant_metrics: List[MutantMetrics]
-
-
-class SingleConfigCampaignResults(BaseModel):
-    config: FolDEModelConfig
-    simulation_results: List[SimulationResult]
-
-
-class CampaignResults(BaseModel):
-    dms_id: str
-    round_size: int
-    number_of_simulations: int
-    activity_column: str
-    max_rounds: int
-    random_seed: int
-    output: List[SingleConfigCampaignResults]
 
 
 def _evaluate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
@@ -172,6 +132,7 @@ def _run_single_simulation(
     results = SimulationResult(
         config=config,
         rounds=0,
+        variant_pool_size=len(golden_activity_df),
         mutant_metrics=[],
         round_metrics=[],
     )
@@ -189,7 +150,7 @@ def _run_single_simulation(
 
     # Run the simulation for the specified number of rounds
     for round_num in range(1, max_rounds + 1):
-        logger.info(f"Running round {round_num}")
+        logger.debug(f"Running round {round_num}")
 
         if world_state.get_unmeasured_variants_activity_df().shape[0] == 0:
             logger.info("No more unmeasured variants, ending simulation")
@@ -202,11 +163,11 @@ def _run_single_simulation(
         # First round: always use zero-shot model
         if round_num == 1:
             # Get the zero-shot model
-            zeroshot_model = get_zero_shot_model(
-                config.zeroshot_model_name, **config.zeroshot_model_params
+            zero_shot_model = get_zero_shot_model(
+                config.zero_shot_model_name, **config.zero_shot_model_params
             )
             # Get top variants using zero-shot model's get_top_n method
-            top_seq_ids, predicted_activity_series = zeroshot_model.get_top_n(
+            top_seq_ids, predicted_activity_series = zero_shot_model.get_top_n(
                 round_size,
                 world_state.get_unmeasured_naturalness_df(),
                 world_state.get_unmeasured_embeddings_df(),
@@ -216,24 +177,25 @@ def _run_single_simulation(
         else:
 
             # Get few-shot model
-            fewshot_model = get_few_shot_model(
-                config.fewshot_model_name, **config.fewshot_model_params
+            few_shot_model = get_few_shot_model(
+                config.few_shot_model_name, **config.few_shot_model_params
             )
 
             # Convert list of embeddings to numpy array
-            train_naturalness = world_state.get_measured_naturalness_df()
-            train_embeddings = world_state.get_measured_embeddings_df()
-            train_embeddings_array = np.array(
-                [np.array(emb) for emb in train_embeddings.embedding.values]
-            )
+            train_naturalness_df = world_state.get_measured_naturalness_df()
+            train_embedding_df = world_state.get_measured_embeddings_df()
+            train_activity_df = world_state.get_measured_activity_df()
 
-            fewshot_model.fit(
+            train_embeddings_array = np.array(
+                [np.array(emb) for emb in train_embedding_df.embedding.values]
+            )
+            few_shot_model.fit(
                 train_embeddings_array,
-                world_state.get_measured_activity_df()[activity_column].to_numpy(),
+                train_activity_df[activity_column].to_numpy(),
             )
 
             # Use the get_top_n method from FewShotModel
-            top_seq_ids, predicted_activity_series = fewshot_model.get_top_n(
+            top_seq_ids, predicted_activity_series = few_shot_model.get_top_n(
                 round_size,
                 world_state.get_unmeasured_naturalness_df(),
                 world_state.get_unmeasured_embeddings_df(),
@@ -242,7 +204,7 @@ def _run_single_simulation(
         assert (
             len(top_seq_ids) == round_size
         ), f"Must choose {round_size} variants per rounds, only chose {len(top_seq_ids)}"
-        logging.info(
+        logging.debug(
             f"In Round {round_num}: elected {len(top_seq_ids)} variants: {','.join(top_seq_ids)}"
         )
         world_state.measure_variant_activities(top_seq_ids)
@@ -287,6 +249,28 @@ def _run_single_simulation(
     return results
 
 
+# Run multiple simulations
+def run_single_sim_parallel(
+    sim_idx,
+    activity_df_subset,
+    naturalness_df_subset,
+    embedding_df_subset,
+    random_seed,
+    **kwargs,
+):
+    logger.info(f"Running simulation {sim_idx+1}")
+    random.seed(random_seed + sim_idx)
+    np.random.seed(random_seed + sim_idx)
+
+    sim_result = _run_single_simulation(
+        activity_df_subset,
+        naturalness_df_subset,
+        embedding_df_subset,
+        **kwargs,
+    )
+    return sim_result
+
+
 def simulate_campaign(
     dms_id: str,
     round_size: int,
@@ -322,31 +306,32 @@ def simulate_campaign(
         output=[],
     )
 
+    df_cache = {}
+
     # Run simulations for each configuration
     for config_idx, model_config in enumerate(config_list):
         # Set random seed for reproducibility
-        random.seed(random_seed)
-        np.random.seed(random_seed)
         logger.info(
             f"Running simulations for configuration {config_idx+1}/{len(config_list)}"
         )
         logger.info(f"Config: {model_config}")
 
-        single_model_campaign_results = []
-
         # Load dataset for this configuration
-        try:
-            naturalness_df, embedding_df, activity_df = get_proteingym_dataset(
-                dms_id,
-                model_config.embedding_model_id,
-                model_config.naturalness_model_id,
-            )
-        except Exception as e:
-            logger.error(f"Error loading dataset: {e}")
-            import traceback
+        cache_key = (model_config.embedding_model_id, model_config.naturalness_model_id)
+        if cache_key not in df_cache:
+            try:
+                df_cache[cache_key] = get_proteingym_dataset(
+                    dms_id,
+                    model_config.embedding_model_id,
+                    model_config.naturalness_model_id,
+                )
+            except Exception as e:
+                logger.error(f"Error loading dataset: {e}")
+                import traceback
 
-            print(traceback.format_exc(), flush=True)
-            raise e
+                print(traceback.format_exc(), flush=True)
+                raise e
+        naturalness_df, embedding_df, activity_df = df_cache[cache_key]
 
         # Check that the activity column exists
         if activity_column not in activity_df.columns:
@@ -360,31 +345,44 @@ def simulate_campaign(
                 continue
             logger.info(f"Using detected activity column: {activity_column}")
 
-        # Run multiple simulations
-        for sim_idx in range(number_of_simulations):
-            logger.info(f"Running simulation {sim_idx+1}/{number_of_simulations}")
-
-            bootstrapped_seq_ids = np.random.choice(
-                activity_df.index.values,
-                size=int(len(activity_df) * 0.5),
-                replace=False,
-            )
-
-            sim_result = _run_single_simulation(
-                activity_df.loc[bootstrapped_seq_ids],
-                naturalness_df.loc[bootstrapped_seq_ids],
-                embedding_df.loc[bootstrapped_seq_ids],
-                round_size,
-                model_config,
-                activity_column,
-                max_rounds,
-            )
-            single_model_campaign_results.append(sim_result)
+        single_model_campaign_results = None
+        with ProcessPoolExecutor() as executor:
+            futures = []
+            for sim_idx in range(number_of_simulations):
+                bootstrapped_seq_ids = np.random.choice(
+                    activity_df.index.values,
+                    size=int(len(activity_df) * 0.5),
+                    replace=False,
+                )
+                futures.append(
+                    executor.submit(
+                        run_single_sim_parallel,
+                        sim_idx,
+                        activity_df.loc[bootstrapped_seq_ids],
+                        naturalness_df.loc[bootstrapped_seq_ids],
+                        embedding_df.loc[bootstrapped_seq_ids],
+                        random_seed=random_seed,
+                        round_size=round_size,
+                        config=model_config,
+                        activity_column=activity_column,
+                        max_rounds=max_rounds,
+                    )
+                )
+            single_model_campaign_results = [f.result() for f in futures]
 
         campaign_results.output.append(
             SingleConfigCampaignResults(
-                config=model_config, simulation_results=single_model_campaign_results
+                config=model_config,
+                simulation_results=single_model_campaign_results,
             )
         )
 
     return campaign_results
+
+
+def simulate_campaigns(dms_ids: List[str], **kwargs):
+    """Run a list of campaigns."""
+    results = CampaignResultCollection(campaign_results={})
+    for dms_id in dms_ids:
+        results.campaign_results[dms_id] = simulate_campaign(dms_id, **kwargs)
+    return results

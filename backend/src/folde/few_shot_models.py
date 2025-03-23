@@ -90,6 +90,20 @@ def register_few_shot_model(model_class: Type[FewShotModel]):
 
 
 @register_few_shot_model
+class RandomFewShotModel(FewShotModel):
+    """Just guess random activity."""
+
+    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs) -> "RandomFewShotModel":
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        return np.random.rand(len(X))
+
+    def get_debug_info(self) -> Dict[str, Any]:
+        return {}
+
+
+@register_few_shot_model
 class MLPFewShotModel(FewShotModel):
     """Multi-layer Perceptron regressor for protein property prediction.
 
