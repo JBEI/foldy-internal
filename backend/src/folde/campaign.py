@@ -16,9 +16,9 @@ from pydantic import BaseModel, Field
 from concurrent.futures import ProcessPoolExecutor
 
 from folde.types import (
-    CampaignResultCollection,
-    CampaignResults,
-    SingleConfigCampaignResults,
+    ModelEvaluation,
+    CampaignResult,
+    SingleConfigCampaignResult,
     FolDEModelConfig,
     MutantMetrics,
     RoundMetrics,
@@ -279,7 +279,7 @@ def simulate_campaign(
     activity_column: str = "DMS_score",
     max_rounds: int = 10,
     random_seed: int = 42,
-) -> CampaignResults:
+) -> CampaignResult:
     """Simulate protein engineering campaigns with different model configurations.
 
     Args:
@@ -296,14 +296,14 @@ def simulate_campaign(
     """
 
     # Initialize results
-    campaign_results = CampaignResults(
+    campaign_result = CampaignResult(
         dms_id=dms_id,
         round_size=round_size,
         number_of_simulations=number_of_simulations,
         activity_column=activity_column,
         max_rounds=max_rounds,
         random_seed=random_seed,
-        output=[],
+        config_results=[],
     )
 
     df_cache = {}
@@ -370,19 +370,19 @@ def simulate_campaign(
                 )
             single_model_campaign_results = [f.result() for f in futures]
 
-        campaign_results.output.append(
-            SingleConfigCampaignResults(
+        campaign_result.config_results.append(
+            SingleConfigCampaignResult(
                 config=model_config,
                 simulation_results=single_model_campaign_results,
             )
         )
 
-    return campaign_results
+    return campaign_result
 
 
-def simulate_campaigns(dms_ids: List[str], **kwargs):
+def simulate_campaigns(name: str, dms_ids: List[str], **kwargs) -> ModelEvaluation:
     """Run a list of campaigns."""
-    results = CampaignResultCollection(campaign_results={})
+    results = ModelEvaluation(name=name, campaign_results=[])
     for dms_id in dms_ids:
-        results.campaign_results[dms_id] = simulate_campaign(dms_id, **kwargs)
+        results.campaign_results.append(simulate_campaign(dms_id, **kwargs))
     return results

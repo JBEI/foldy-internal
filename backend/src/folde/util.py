@@ -3,7 +3,7 @@ import pandas as pd
 import logging
 from scipy.special import softmax
 
-from folde.types import CampaignResultCollection
+from folde.types import ModelEvaluation
 
 
 def boltzmann_sample_n(scores, temperature, n):
@@ -35,13 +35,14 @@ def boltzmann_sample_n(scores, temperature, n):
 
 
 def convert_compaign_result_collection_to_df(
-    campaign_result_collection: CampaignResultCollection,
+    model_evaluation: ModelEvaluation,
 ) -> pd.DataFrame:
     """Convert a CampaignResultCollection to mutant and round metrics dataframes."""
     mutant_metrics_df_list = []
     round_metrics_df_list = []
-    for dms_id, campaign_result in campaign_result_collection.campaign_results.items():
-        for result in campaign_result.output:
+    for campaign_result in model_evaluation.campaign_results:
+        dms_id = campaign_result.dms_id
+        for result in campaign_result.config_results:
             config = result.config
             for sim_num, sim_result in enumerate(result.simulation_results):
                 mutant_metric_list = []

@@ -38,20 +38,21 @@ class SimulationResult(BaseModel):
     mutant_metrics: List[MutantMetrics]
 
 
-class SingleConfigCampaignResults(BaseModel):
+class SingleConfigCampaignResult(BaseModel):
     config: FolDEModelConfig
     simulation_results: List[SimulationResult]
 
 
-class CampaignResults(BaseModel):
+class CampaignResult(BaseModel):
     dms_id: str
     round_size: int
     number_of_simulations: int
     activity_column: str
     max_rounds: int
     random_seed: int
-    output: List[SingleConfigCampaignResults]
+    config_results: List[SingleConfigCampaignResult]
 
 
-class CampaignResultCollection(BaseModel):
-    campaign_results: Dict[str, CampaignResults]
+class ModelEvaluation(BaseModel):
+    name: str
+    campaign_results: List[CampaignResult]
