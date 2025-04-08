@@ -8,11 +8,13 @@ is available.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Any, Type
+from typing import Any, Dict, List, Optional, Tuple, Type, cast
+
 import numpy as np
 import pandas as pd
-from folde.util import boltzmann_sample_n
-
+from folde.util import internal_sample_n_indices
+from numpy.typing import NDArray
+from pandas import DataFrame, Series
 
 # Registry of available zero-shot models
 _ZERO_SHOT_MODELS = {}
@@ -35,18 +37,19 @@ class ZeroShotModel(ABC):
     requiring training on labeled fitness/activity data.
     """
 
-    def __init__(self, temperature: float = 0.0):
+    def __init__(self, temperature: float = 0.0, epsilon: float = 0.0):
         """Initialize the zero-shot model.
 
         Args:
             **kwargs: Model-specific parameters
         """
         self.temperature = temperature
+        self.epsilon = epsilon
 
     @abstractmethod
     def predict(
-        self, naturalness_df: pd.DataFrame, embedding_df: pd.DataFrame = None
-    ) -> np.ndarray:
+        self, naturalness_df: DataFrame, embedding_df: Optional[DataFrame] = None
+    ) -> NDArray[np.float64]:
         """Make predictions for protein variants.
 
         Args:
@@ -59,8 +62,11 @@ class ZeroShotModel(ABC):
         pass
 
     def get_top_n(
-        self, n: int, naturalness_df: pd.DataFrame, embedding_df: pd.DataFrame = None
-    ) -> List[str]:
+        self,
+        n: int,
+        naturalness_df: DataFrame,
+        embedding_df: Optional[DataFrame] = None,
+    ) -> Tuple[List[str], Series]:
         """Get the top N variants predicted by the model.
 
         This method predicts scores for all variants and returns the
@@ -89,8 +95,11 @@ class ZeroShotModel(ABC):
             {"seq_id": naturalness_df["seq_id"], "prediction": predictions}
         )
 
-        chosen_indices = boltzmann_sample_n(
-            results_df.prediction.values, self.temperature, n
+        chosen_indices = internal_sample_n_indices(
+            results_df.prediction.values,
+            n,
+            temperature=self.temperature,
+            epsilon=self.epsilon,
         )
         chosen_seqs = results_df.iloc[chosen_indices]
 
@@ -105,10 +114,11 @@ class ZeroShotModel(ABC):
         Returns:
             Dictionary containing model parameters and other debug info
         """
-        return {"model_type": self.__class__.__name__, "params": self.model_params}
+        # Default implementation without model_params
+        return {"model_type": self.__class__.__name__}
 
 
-def register_zeroshot_model(model_class: Type[ZeroShotModel]):
+def register_zeroshot_model(model_class: Type[ZeroShotModel]) -> Type[ZeroShotModel]:
     _ZERO_SHOT_MODELS[model_class.__name__] = model_class
     return model_class
 
@@ -122,8 +132,8 @@ class RandomZeroShotModel(ZeroShotModel):
     """
 
     def predict(
-        self, naturalness_df: pd.DataFrame, embedding_df: pd.DataFrame = None
-    ) -> np.ndarray:
+        self, naturalness_df: DataFrame, embedding_df: Optional[DataFrame] = None
+    ) -> NDArray[np.float64]:
         """Predict using naturalness scores.
 
         Args:
@@ -164,8 +174,8 @@ class NaturalnessZeroShotModel(ZeroShotModel):
         self.naturalness_col = naturalness_col
 
     def predict(
-        self, naturalness_df: pd.DataFrame, embedding_df: pd.DataFrame = None
-    ) -> np.ndarray:
+        self, naturalness_df: DataFrame, embedding_df: Optional[DataFrame] = None
+    ) -> NDArray[np.float64]:
         """Predict using naturalness scores.
 
         Args:
@@ -181,7 +191,7 @@ class NaturalnessZeroShotModel(ZeroShotModel):
             )
 
         scores = naturalness_df[self.naturalness_col].values
-        return scores
+        return cast(NDArray[np.float64], scores)
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information about the model.
@@ -190,7 +200,7 @@ class NaturalnessZeroShotModel(ZeroShotModel):
             Dictionary containing model parameters
         """
         info = super().get_debug_info()
-        info["transformation"] = self.transformation
+        info["naturalness_col"] = self.naturalness_col
         return info
 
 

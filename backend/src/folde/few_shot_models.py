@@ -7,12 +7,16 @@ scikit-learn implementations with additional protein-specific functionality.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
+
 import numpy as np
 import pandas as pd
-from sklearn.neural_network import MLPRegressor as SklearnMLPRegressor
+from folde.util import internal_sample_n_indices
+from numpy.typing import NDArray
+from pandas import DataFrame, Series
 from sklearn.ensemble import RandomForestRegressor as SklearnRandomForestRegressor
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.neural_network import MLPRegressor as SklearnMLPRegressor
 
 # Registry of available models
 _FEW_SHOT_MODELS = {}
@@ -21,19 +25,25 @@ _FEW_SHOT_MODELS = {}
 class FewShotModel(ABC):
     """Abstract base class for few-shot protein property prediction models."""
 
+    def __init__(self, temperature: float = 0.0, epsilon: float = 0.0):
+        self.temperature = temperature
+        self.epsilon = epsilon
+
     @abstractmethod
-    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs) -> "FewShotModel":
+    def fit(
+        self, X: NDArray[np.float64], y: NDArray[np.float64], **kwargs
+    ) -> "FewShotModel":
         """Train the model on the given data."""
         pass
 
     @abstractmethod
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
         """Make predictions using the trained model."""
         pass
 
     def get_top_n(
-        self, n: int, naturalness_df: pd.DataFrame, embedding_df: pd.DataFrame
-    ) -> List[str]:
+        self, n: int, naturalness_df: DataFrame, embedding_df: DataFrame
+    ) -> Tuple[List[str], Series]:
         """Get the top N variants predicted by the model.
 
         This method combines features from naturalness and embedding dataframes,
@@ -61,10 +71,16 @@ class FewShotModel(ABC):
         results_df = pd.DataFrame(
             {"seq_id": embedding_df["seq_id"], "prediction": predictions}
         )
+
+        chosen_indices = internal_sample_n_indices(
+            results_df.prediction.values,
+            n,
+            temperature=self.temperature,
+            epsilon=self.epsilon,
+        )
+
         return (
-            results_df.sort_values("prediction", ascending=False)
-            .head(n)["seq_id"]
-            .tolist(),
+            results_df.iloc[chosen_indices]["seq_id"].tolist(),
             results_df.set_index("seq_id").prediction,
         )
 
@@ -74,7 +90,7 @@ class FewShotModel(ABC):
         pass
 
 
-def register_few_shot_model(model_class: Type[FewShotModel]):
+def register_few_shot_model(model_class: Type[FewShotModel]) -> Type[FewShotModel]:
     _FEW_SHOT_MODELS[model_class.__name__] = model_class
     return model_class
 
@@ -89,18 +105,41 @@ def register_few_shot_model(model_class: Type[FewShotModel]):
 #     return decorator
 
 
+def get_ensemble_prediction(
+    model_list: List[Any], X: NDArray[np.float64], decision_mode: str
+) -> NDArray[np.float64]:
+    """Get the prediction of an ensemble using deicision mode (often max or median)."""
+    pred_list = []
+    for model in model_list:
+        pred_list.append(model.predict(X))
+    pred_arr = np.stack(pred_list)
+    if decision_mode == "max":
+        return np.max(pred_arr, axis=0)
+    elif decision_mode == "ucb":
+        return np.max(pred_arr, axis=0) + np.std(pred_arr, axis=0)
+    elif decision_mode == "median":
+        return np.median(pred_arr, axis=0)
+    raise ValueError(f"Invalid decision mode {decision_mode}")
+
+
 @register_few_shot_model
 class RandomFewShotModel(FewShotModel):
     """Just guess random activity."""
 
-    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs) -> "RandomFewShotModel":
+    def fit(
+        self, X: NDArray[np.float64], y: NDArray[np.float64], **kwargs
+    ) -> "RandomFewShotModel":
         return self
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
         return np.random.rand(len(X))
 
     def get_debug_info(self) -> Dict[str, Any]:
         return {}
+
+
+# TODO(jacob): Implement GP Model
+# https://scikit-learn.org/stable/modules/generated/sklearn.gaussian_process.GaussianProcessRegressor.html
 
 
 @register_few_shot_model
@@ -111,19 +150,30 @@ class MLPFewShotModel(FewShotModel):
     for full parameter details: https://scikit-learn.org/stable/modules/generated/sklearn.neural_network.MLPRegressor.html
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, ensemble_size: int = 1, **kwargs):
         """Initialize the MLP regressor with any parameters supported by sklearn's MLPRegressor."""
-        self.model = SklearnMLPRegressor(**kwargs)
-        self.metrics_ = {}
-        self._is_fitted = False
+        super().__init__(
+            temperature=kwargs.pop("temperature", 0.0),
+            epsilon=kwargs.pop("epsilon", 0.0),
+        )
+        self.ensemble_size = ensemble_size
+        base_random_state = kwargs.pop("random_state", 0)
+        self.models: List[SklearnMLPRegressor] = [
+            SklearnMLPRegressor(**kwargs, random_state=base_random_state + ii)
+            for ii in range(ensemble_size)
+        ]
+        self.metrics_: Dict[str, float] = {}
+        self._is_fitted: bool = False
 
     def fit(
         self,
-        X: np.ndarray,
-        y: np.ndarray,
-        validation_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+        X: NDArray[np.float64],
+        y: NDArray[np.float64],
+        validation_data: Optional[
+            Tuple[NDArray[np.float64], NDArray[np.float64]]
+        ] = None,
         **kwargs,
-    ) -> "MLPRegressor":
+    ) -> "MLPFewShotModel":
         """Train the MLP regressor.
 
         Args:
@@ -136,11 +186,12 @@ class MLPFewShotModel(FewShotModel):
             Self for method chaining
         """
         # Train the model
-        self.model.fit(X, y, **kwargs)
+        for model in self.models:
+            model.fit(X, y, **kwargs)
         self._is_fitted = True
 
         # Calculate training metrics
-        y_train_pred = self.model.predict(X)
+        y_train_pred = get_ensemble_prediction(self.models, X, "median")
         self.metrics_ = {
             "train_mse": mean_squared_error(y, y_train_pred),
             "train_r2": r2_score(y, y_train_pred),
@@ -150,7 +201,7 @@ class MLPFewShotModel(FewShotModel):
         # Calculate validation metrics if provided
         if validation_data is not None:
             X_val, y_val = validation_data
-            y_val_pred = self.model.predict(X_val)
+            y_val_pred = get_ensemble_prediction(self.models, X_val, "median")
             self.metrics_.update(
                 {
                     "val_mse": mean_squared_error(y_val, y_val_pred),
@@ -165,7 +216,7 @@ class MLPFewShotModel(FewShotModel):
         """Make predictions using the trained MLP."""
         if not self._is_fitted:
             raise ValueError("Model has not been trained yet. Call fit() first.")
-        return self.model.predict(X)
+        return get_ensemble_prediction(self.models, X, "ucb")
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information for the MLP."""
@@ -173,29 +224,39 @@ class MLPFewShotModel(FewShotModel):
             raise ValueError("Model has not been trained yet. Call fit() first.")
 
         # Basic debug info
-        debug_info = {
+        debug_info: Dict[str, Any] = {
             "metrics": self.metrics_,
-            "n_layers": self.model.n_layers_,
-            "n_outputs": self.model.n_outputs_,
-            "n_iter": self.model.n_iter_,
-            "loss_curve": (
-                self.model.loss_curve_ if hasattr(self.model, "loss_curve_") else None
-            ),
         }
 
-        # Network structure
-        network_structure = []
-        for i, (coef, intercept) in enumerate(
-            zip(self.model.coefs_, self.model.intercepts_)
-        ):
-            layer_info = {
-                "layer": i + 1,
-                "shape": coef.shape,
-                "n_params": coef.size + intercept.size,
-            }
-            network_structure.append(layer_info)
+        # Get properties from the first model in the ensemble
+        if len(self.models) > 0:
+            first_model = self.models[0]
 
-        debug_info["network_structure"] = network_structure
+            if hasattr(first_model, "n_layers_"):
+                debug_info["n_layers"] = first_model.n_layers_
+
+            if hasattr(first_model, "n_outputs_"):
+                debug_info["n_outputs"] = first_model.n_outputs_
+
+            if hasattr(first_model, "n_iter_"):
+                debug_info["n_iter"] = first_model.n_iter_
+
+            if hasattr(first_model, "loss_curve_"):
+                debug_info["loss_curve"] = first_model.loss_curve_
+
+            # Network structure
+            if hasattr(first_model, "coefs_") and hasattr(first_model, "intercepts_"):
+                network_structure = []
+                for i, (coef, intercept) in enumerate(
+                    zip(first_model.coefs_, first_model.intercepts_)
+                ):
+                    layer_info = {
+                        "layer": i + 1,
+                        "shape": coef.shape,
+                        "n_params": coef.size + intercept.size,
+                    }
+                    network_structure.append(layer_info)
+                debug_info["network_structure"] = network_structure
 
         return debug_info
 
@@ -208,19 +269,30 @@ class RandomForestFewShotModel(FewShotModel):
     for full parameter details: https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestRegressor.html
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, ensemble_size: int = 1, **kwargs):
         """Initialize the Random Forest regressor with any parameters supported by sklearn's RandomForestRegressor."""
-        self.model = SklearnRandomForestRegressor(**kwargs)
-        self.metrics_ = {}
-        self._is_fitted = False
+        super().__init__(
+            temperature=kwargs.pop("temperature", 0.0),
+            epsilon=kwargs.pop("epsilon", 0.0),
+        )
+        self.ensemble_size = ensemble_size
+        base_random_state = kwargs.pop("random_state", 0)
+        self.models: List[SklearnRandomForestRegressor] = [
+            SklearnRandomForestRegressor(**kwargs, random_state=base_random_state + ii)
+            for ii in range(ensemble_size)
+        ]
+        self.metrics_: Dict[str, float] = {}
+        self._is_fitted: bool = False
 
     def fit(
         self,
-        X: np.ndarray,
-        y: np.ndarray,
-        validation_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+        X: NDArray[np.float64],
+        y: NDArray[np.float64],
+        validation_data: Optional[
+            Tuple[NDArray[np.float64], NDArray[np.float64]]
+        ] = None,
         **kwargs,
-    ) -> "RandomForestRegressor":
+    ) -> "RandomForestFewShotModel":
         """Train the Random Forest regressor.
 
         Args:
@@ -233,11 +305,12 @@ class RandomForestFewShotModel(FewShotModel):
             Self for method chaining
         """
         # Train the model
-        self.model.fit(X, y, **kwargs)
+        for model in self.models:
+            model.fit(X, y, **kwargs)
         self._is_fitted = True
 
         # Calculate training metrics
-        y_train_pred = self.model.predict(X)
+        y_train_pred = get_ensemble_prediction(self.models, X, "median")
         self.metrics_ = {
             "train_mse": mean_squared_error(y, y_train_pred),
             "train_r2": r2_score(y, y_train_pred),
@@ -247,7 +320,7 @@ class RandomForestFewShotModel(FewShotModel):
         # Calculate validation metrics if provided
         if validation_data is not None:
             X_val, y_val = validation_data
-            y_val_pred = self.model.predict(X_val)
+            y_val_pred = get_ensemble_prediction(self.models, X_val, "median")
             self.metrics_.update(
                 {
                     "val_mse": mean_squared_error(y_val, y_val_pred),
@@ -257,47 +330,67 @@ class RandomForestFewShotModel(FewShotModel):
             )
 
         # Add OOB score if available
-        if hasattr(self.model, "oob_score_"):
-            self.metrics_["oob_score"] = self.model.oob_score_
+        if hasattr(self.models, "oob_score_"):
+            self.metrics_["oob_score"] = self.models[0].oob_score_
 
         return self
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
         """Make predictions using the trained Random Forest."""
         if not self._is_fitted:
             raise ValueError("Model has not been trained yet. Call fit() first.")
-        return self.model.predict(X)
+        return get_ensemble_prediction(self.models, X, "ucb")
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information for the Random Forest."""
         if not self._is_fitted:
             raise ValueError("Model has not been trained yet. Call fit() first.")
 
-        # Get feature importances
-        feature_importances = {
-            "mean": self.model.feature_importances_.tolist(),
-            "std": np.std(
-                [tree.feature_importances_ for tree in self.model.estimators_], axis=0
-            ).tolist(),
-        }
-
-        # Basic tree info (limit to first 5 trees to avoid excessive info)
-        tree_info = []
-        for i, tree in enumerate(self.model.estimators_[:5]):
-            tree_info.append(
-                {
-                    "tree_idx": i,
-                    "n_nodes": tree.tree_.node_count,
-                    "max_depth": tree.tree_.max_depth,
-                }
-            )
-
-        return {
+        debug_info: Dict[str, Any] = {
             "metrics": self.metrics_,
-            "n_estimators": len(self.model.estimators_),
-            "feature_importances": feature_importances,
-            "tree_info": tree_info,
         }
+
+        # Get properties from the first model in the ensemble
+        if len(self.models) > 0:
+            first_model = self.models[0]
+
+            # Get feature importances if available
+            if hasattr(first_model, "feature_importances_"):
+                feature_importances = {
+                    "mean": first_model.feature_importances_.tolist()
+                }
+
+                # Add standard deviation if we have estimators
+                if (
+                    hasattr(first_model, "estimators_")
+                    and len(first_model.estimators_) > 0
+                ):
+                    feature_importances["std"] = np.std(
+                        [tree.feature_importances_ for tree in first_model.estimators_],
+                        axis=0,
+                    ).tolist()
+
+                debug_info["feature_importances"] = feature_importances
+
+                # Basic tree info (limit to first 5 trees to avoid excessive info)
+                if hasattr(first_model, "estimators_"):
+                    tree_info = []
+                    for i, tree in enumerate(first_model.estimators_[:5]):
+                        if hasattr(tree, "tree_"):
+                            tree_info.append(
+                                {
+                                    "tree_idx": i,
+                                    "n_nodes": tree.tree_.node_count,
+                                    "max_depth": tree.tree_.max_depth,
+                                }
+                            )
+
+                    if tree_info:
+                        debug_info["tree_info"] = tree_info
+
+                    debug_info["n_estimators"] = len(first_model.estimators_)
+
+        return debug_info
 
 
 def get_few_shot_model(model_name: str, **kwargs) -> FewShotModel:

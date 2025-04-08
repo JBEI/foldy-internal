@@ -5,28 +5,28 @@ This module provides functions for simulating protein engineering campaigns
 and evaluating different model configurations.
 """
 
-from typing import Dict, List, Any, Tuple, Optional, Union
-import pandas as pd
-import numpy as np
 import logging
 import random
-from sklearn.metrics import roc_auc_score, average_precision_score, mean_squared_error
-from scipy.stats import spearmanr
-from pydantic import BaseModel, Field
 from concurrent.futures import ProcessPoolExecutor
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+import numpy as np
+import pandas as pd
+from folde.data import get_proteingym_dataset
+from folde.few_shot_models import get_few_shot_model
 from folde.types import (
-    ModelEvaluation,
     CampaignResult,
-    SingleConfigCampaignResult,
     FolDEModelConfig,
+    ModelEvaluation,
     MutantMetrics,
     RoundMetrics,
     SimulationResult,
+    SingleConfigCampaignResult,
 )
-from folde.data import get_proteingym_dataset
-from folde.few_shot_models import get_few_shot_model
 from folde.zero_shot_models import get_zero_shot_model
+from pydantic import BaseModel, Field
+from scipy.stats import spearmanr
+from sklearn.metrics import average_precision_score, mean_squared_error, roc_auc_score
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +74,20 @@ class CampaignWorldState:
         self.golden_activity_df = golden_activity_df.copy()
         self.naturalness_df = naturalness_df.copy()
         self.embedding_df = embedding_df.copy()
-        self.measured_seq_ids = []
+        self.measured_seq_ids: List[str] = []
 
     def measure_variant_activities(self, seq_ids: List[str]):
         """Adds seq ids to the collection of measured samples."""
+        assert len(set(seq_ids)) == len(
+            seq_ids
+        ), f"seq_ids must be unique, got {seq_ids}"
+        for seq_id in seq_ids:
+            assert (
+                type(seq_id) == str
+            ), f"seq_id must be a string, got {type(seq_id)} ({seq_id})"
+            assert (
+                seq_id not in self.measured_seq_ids
+            ), f"seq_id {seq_id} already measured"
         self.measured_seq_ids.extend(seq_ids)
 
     def get_unmeasured_variants_activity_df(self) -> pd.DataFrame:
@@ -202,6 +212,9 @@ def _run_single_simulation(
             )
 
         assert (
+            type(top_seq_ids) == list
+        ), f"top_seq_ids must be a list, got {type(top_seq_ids)}"
+        assert (
             len(top_seq_ids) == round_size
         ), f"Must choose {round_size} variants per rounds, only chose {len(top_seq_ids)}"
         logging.debug(
@@ -213,9 +226,13 @@ def _run_single_simulation(
 
         mutant_metrics_list = []
         for top_seq_id in top_seq_ids:
+            # Get the activity from the dataframe and convert to float if needed
             golden_activity = world_state.get_measured_activity_df().loc[top_seq_id][
                 activity_column
             ]
+            assert (
+                type(golden_activity) == float or type(golden_activity) == np.float64
+            ), f"golden_activity must be a float, got {type(golden_activity)}"
             percentile = all_percentiles.loc[top_seq_id]
             mutant_metrics_list.append(
                 MutantMetrics(
@@ -335,15 +352,9 @@ def simulate_campaign(
 
         # Check that the activity column exists
         if activity_column not in activity_df.columns:
-            activity_column = next(
-                (col for col in activity_df.columns if "score" in col.lower()), None
+            raise ValueError(
+                f"Activity column {activity_column} not found in dataset: {activity_df.columns}"
             )
-            if activity_column is None:
-                logger.error(
-                    f"Activity column not found in dataset: {activity_df.columns}"
-                )
-                continue
-            logger.info(f"Using detected activity column: {activity_column}")
 
         single_model_campaign_results = None
         with ProcessPoolExecutor() as executor:

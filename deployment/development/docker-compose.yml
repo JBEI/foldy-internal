@@ -19,6 +19,7 @@ x-worker-base: &worker-base
   volumes: &worker-volumes
     - ./backend/src/rq_worker_main.py:/backend/src/rq_worker_main.py
     - ./backend/src/app:/backend/src/app
+    - ./backend/src/folde:/backend/src/folde
     - ./backend/src/integration_tests:/backend/src/integration_tests
     - ./backend/src/migrations:/backend/src/migrations
     - ./backend/src/notebooks:/backend/src/notebooks
@@ -68,6 +69,7 @@ services:
     volumes:
       - ./backend/src/main.py:/src/main.py
       - ./backend/src/app:/src/app
+      - ./backend/src/folde:/backend/src/folde
       - ./backend/src/integration_tests:/src/integration_tests
       - ./backend/src/migrations:/src/migrations
     restart: always
@@ -100,6 +102,7 @@ services:
     volumes:
       - ./backend/src/rq_worker_main.py:/backend/src/rq_worker_main.py
       - ./backend/src/app:/backend/src/app
+      - ./backend/src/folde:/backend/src/folde
       - ./backend/src/integration_tests:/backend/src/integration_tests
       - ./backend/src/migrations:/backend/src/migrations
       - ./.boltz:/.boltz
