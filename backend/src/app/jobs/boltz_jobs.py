@@ -174,18 +174,14 @@ def run_boltz(fold_id, invokation_id):
             add_log(f"Now converting mmCIF to PDB")
 
             # Use glob to find all files matching the pattern
-            cif_files = list(
-                Path(temp_dir).glob("boltz_results*/predictions/*/*_model_0.cif")
-            )
+            cif_files = list(Path(temp_dir).glob("boltz_results*/predictions/*/*_model_0.cif"))
             add_log(f"Found {len(cif_files)} cif files: {cif_files}")
             if len(cif_files) > 0:
                 cif_file = cif_files[0]
                 add_log(f"Copying {cif_file} to ranked_0.pdb")
 
                 pdb_file_contents = cif_to_pdb(str(cif_file), "structure")
-                fsm.storage_manager.write_file(
-                    fold_id, "ranked_0.pdb", pdb_file_contents
-                )
+                fsm.storage_manager.write_file(fold_id, "ranked_0.pdb", pdb_file_contents)
             add_log(f"Finished!")
 
     try_run_job_with_logging(run_boltz_with_logger, invokation)

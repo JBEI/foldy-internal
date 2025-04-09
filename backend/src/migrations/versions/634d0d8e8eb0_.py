@@ -28,9 +28,7 @@ def upgrade():
         )
 
     with op.batch_alter_table("logits", schema=None) as batch_op:
-        batch_op.add_column(
-            sa.Column("get_depth_two_logits", sa.Boolean(), nullable=True)
-        )
+        batch_op.add_column(sa.Column("get_depth_two_logits", sa.Boolean(), nullable=True))
 
     # ### end Alembic commands ###
 

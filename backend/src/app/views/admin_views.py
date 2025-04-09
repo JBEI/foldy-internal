@@ -17,9 +17,7 @@ from rq.registry import FailedJobRegistry
 from sqlalchemy.sql.elements import and_
 from werkzeug.exceptions import BadRequest
 
-ns = Namespace(
-    "admin_views", decorators=[jwt_required(fresh=True), verify_has_edit_access]
-)
+ns = Namespace("admin_views", decorators=[jwt_required(fresh=True), verify_has_edit_access])
 
 
 @ns.route("/createdbs")
@@ -153,17 +151,13 @@ class KillFoldsResource(Resource):
         """
         range_parts = folds_range.split("-")
         if len(range_parts) != 2:
-            raise BadRequest(
-                f'Invalid fold range "{folds_range}" must look like "10-60".'
-            )
+            raise BadRequest(f'Invalid fold range "{folds_range}" must look like "10-60".')
 
         try:
             fold_lower_bound = int(range_parts[0])
             fold_upper_bound = int(range_parts[1])
         except ValueError:
-            raise BadRequest(
-                f'Invalid fold range "{folds_range}", range must be integers.'
-            )
+            raise BadRequest(f'Invalid fold range "{folds_range}", range must be integers.')
 
         folds_in_range = db.session.query(Fold.id).filter(
             and_(Fold.id >= fold_lower_bound, Fold.id < fold_upper_bound)
@@ -198,17 +192,13 @@ class BulkAddTagResource(Resource):
         """
         range_parts = folds_range.split("-")
         if len(range_parts) != 2:
-            raise BadRequest(
-                f'Invalid fold range "{folds_range}" must look like "10-60".'
-            )
+            raise BadRequest(f'Invalid fold range "{folds_range}" must look like "10-60".')
 
         try:
             fold_lower_bound = int(range_parts[0])
             fold_upper_bound = int(range_parts[1])
         except ValueError:
-            raise BadRequest(
-                f'Invalid fold range "{folds_range}", range must be integers.'
-            )
+            raise BadRequest(f'Invalid fold range "{folds_range}", range must be integers.')
 
         if not new_tag.isalnum():
             raise BadRequest(f"Tags must be alphanumeric, got {new_tag}")
@@ -275,9 +265,7 @@ class AddInvokationToAllJobsResource(Resource):
         Returns:
             True if operation was successful
         """
-        logging.info(
-            f"Adding invocation type={job_type}, state={job_state} to all folds"
-        )
+        logging.info(f"Adding invocation type={job_type}, state={job_state} to all folds")
         count = 0
         for (fold_id,) in db.session.query(Fold.id).all():
             fold = Fold.get_by_id(fold_id)

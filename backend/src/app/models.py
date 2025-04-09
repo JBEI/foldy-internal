@@ -17,9 +17,7 @@ class Invokation(PkModel):
 
     __tablename__ = "invokation"
 
-    fold_id = Column(
-        db.Integer, db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE")
-    )
+    fold_id = Column(db.Integer, db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE"))
     fold = relationship("Fold", back_populates="jobs")
 
     type = Column(db.String(80), nullable=False)
@@ -179,9 +177,7 @@ class Logit(PkModel):
 
     name = Column(db.String, nullable=False)
 
-    fold_id = Column(
-        db.Integer, db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE")
-    )
+    fold_id = Column(db.Integer, db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE"))
     fold = relationship("Fold", back_populates="logits")
 
     logit_model = Column(db.String, nullable=False)
@@ -201,9 +197,7 @@ class Embedding(PkModel):
 
     name = Column(db.String, nullable=False)
 
-    fold_id = Column(
-        db.Integer, db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE")
-    )
+    fold_id = Column(db.Integer, db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE"))
     fold = relationship("Fold", back_populates="embeddings")
 
     embedding_model = Column(db.String, nullable=False)
@@ -226,18 +220,14 @@ class Evolution(PkModel):
 
     name = Column(db.String, nullable=False)
 
-    fold_id = Column(
-        db.Integer, db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE")
-    )
+    fold_id = Column(db.Integer, db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE"))
     fold = relationship("Fold", back_populates="evolutions")
 
     # Two options: "finetuning" on rank or "randomforest" on logits.
     mode = Column(db.String, nullable=True)
 
     # If mode == randomforest, then this is the fixed embeddings to use.
-    embedding_files = Column(
-        db.String, nullable=True
-    )  # A list of embedding file paths.
+    embedding_files = Column(db.String, nullable=True)  # A list of embedding file paths.
 
     # If mode == finetuning, then this is the model checkpoint to use.
     finetuning_model_checkpoint = Column(db.String, nullable=True)

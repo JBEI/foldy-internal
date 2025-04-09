@@ -49,28 +49,20 @@ def test_create_simulated_protein_dataset():
     assert len(embedding_df.embedding.iloc[0]) == embedding_dim
 
     # Check that random seed works by creating datasets with different seeds
-    activity_df2, _, _ = create_simulated_protein_dataset(
-        num_samples=num_samples, random_seed=43
-    )
+    activity_df2, _, _ = create_simulated_protein_dataset(num_samples=num_samples, random_seed=43)
 
     # The datasets should be different with different seeds
-    assert not np.array_equal(
-        activity_df.DMS_score.values, activity_df2.DMS_score.values
-    )
+    assert not np.array_equal(activity_df.DMS_score.values, activity_df2.DMS_score.values)
 
     # The datasets should be the same with the same seed
-    activity_df3, _, _ = create_simulated_protein_dataset(
-        num_samples=num_samples, random_seed=42
-    )
+    activity_df3, _, _ = create_simulated_protein_dataset(num_samples=num_samples, random_seed=42)
     assert np.array_equal(activity_df.DMS_score.values, activity_df3.DMS_score.values)
 
 
 def test_mock_zero_shot_model():
     """Test the mock zero-shot model."""
     # Create a simulated dataset
-    activity_df, naturalness_df, embedding_df = create_simulated_protein_dataset(
-        random_seed=42
-    )
+    activity_df, naturalness_df, embedding_df = create_simulated_protein_dataset(random_seed=42)
 
     # Create a mock model
     model = MockZeroShotModel(temperature=0.1)
@@ -98,9 +90,7 @@ def test_mock_zero_shot_model():
 def test_mock_few_shot_model():
     """Test the mock few-shot model."""
     # Create a simulated dataset
-    activity_df, naturalness_df, embedding_df = create_simulated_protein_dataset(
-        random_seed=42
-    )
+    activity_df, naturalness_df, embedding_df = create_simulated_protein_dataset(random_seed=42)
 
     # Create a mock model
     model = MockFewShotModel()

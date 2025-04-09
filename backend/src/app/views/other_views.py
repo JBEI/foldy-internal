@@ -64,9 +64,7 @@ full_invokation_fields = ns.clone(
         "timedelta_sec": fields.Float(
             readonly=True,
             required=False,
-            attribute=lambda r: (
-                r.timedelta.total_seconds() if r and r.timedelta else None
-            ),
+            attribute=lambda r: (r.timedelta.total_seconds() if r and r.timedelta else None),
         ),
         "starttime": fields.DateTime(
             format="iso8601Z", dt_format="iso8601", readonly=True, required=False
@@ -155,15 +153,11 @@ fold_fields = ns.model(
         "jobs": fields.List(fields.Nested(simple_invokation_fields)),
         "docks": fields.List(
             fields.Nested(dock_fields),
-            attribute=lambda x: (
-                [] if getattr(x, "_skip_embedded_fields", False) else x.docks
-            ),
+            attribute=lambda x: ([] if getattr(x, "_skip_embedded_fields", False) else x.docks),
         ),
         "logits": fields.List(
             fields.Nested(logit_fields),
-            attribute=lambda x: (
-                [] if getattr(x, "_skip_embedded_fields", False) else x.logits
-            ),
+            attribute=lambda x: ([] if getattr(x, "_skip_embedded_fields", False) else x.logits),
         ),
         "embeddings": fields.List(
             fields.Nested(embedding_fields),
@@ -380,9 +374,7 @@ class PaeResource(Resource):
 
                 if pae.ndim != 2 or pae.shape[0] != pae.shape[1]:
                     print(f"PAE data has invalid shape: {pae.shape}", flush=True)
-                    return make_response(
-                        {"error": f"Invalid PAE matrix shape: {pae.shape}"}, 500
-                    )
+                    return make_response({"error": f"Invalid PAE matrix shape: {pae.shape}"}, 500)
 
                 print(
                     f"Successfully retrieved PAE data with shape {pae.shape}",
@@ -408,9 +400,7 @@ class PaeResource(Resource):
             import traceback
 
             traceback.print_exc()
-            return make_response(
-                {"error": f"Failed to retrieve PAE data: {str(e)}"}, 500
-            )
+            return make_response({"error": f"Failed to retrieve PAE data: {str(e)}"}, 500)
 
 
 contact_prob_fields = ns.model(
@@ -430,9 +420,7 @@ class ContactProbResource(Resource):
         manager.setup()
         contact_prob = manager.get_contact_prob(fold_id, model_number)
 
-        json_resp = (
-            '{ "contact_prob": ' + convert_array_to_json_string(contact_prob) + " }"
-        )
+        json_resp = '{ "contact_prob": ' + convert_array_to_json_string(contact_prob) + " }"
 
         # with np.printoptions(threshold=np.inf):
         #   json_resp = ('{ "contact_prob": ' + np.array2string(
@@ -482,15 +470,11 @@ class DockCreateResource(Resource):
         fold_id = req["fold_id"]
 
         if not ligand_name.isalnum():
-            raise BadRequest(
-                f"Ligand names must be alphanumeric, {ligand_name} is invalid."
-            )
+            raise BadRequest(f"Ligand names must be alphanumeric, {ligand_name} is invalid.")
 
         ALLOWED_DOCKING_TOOLS = ["vina", "diffdock"]
         if not tool in ALLOWED_DOCKING_TOOLS:
-            raise BadRequest(
-                f"Invalid docking tool {tool}: must be one of {ALLOWED_DOCKING_TOOLS}"
-            )
+            raise BadRequest(f"Invalid docking tool {tool}: must be one of {ALLOWED_DOCKING_TOOLS}")
 
         fold = Fold.get_by_id(fold_id)
 
@@ -516,9 +500,7 @@ class DockCreateResource(Resource):
             result_ttl=48 * 60 * 60,  # 2 days
         )
 
-        logging.info(
-            f"Queued docking job {job.id} for fold {fold_id} with ligand {ligand_name}"
-        )
+        logging.info(f"Queued docking job {job.id} for fold {fold_id} with ligand {ligand_name}")
         return True
 
 

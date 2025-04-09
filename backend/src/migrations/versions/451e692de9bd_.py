@@ -25,9 +25,7 @@ def upgrade():
         sa.Column("logit_model", sa.String(), nullable=False),
         sa.Column("invokation_id", sa.Integer(), nullable=True),
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["fold_id"], ["roles.id"], onupdate="CASCADE", ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["fold_id"], ["roles.id"], onupdate="CASCADE", ondelete="CASCADE"),
         sa.ForeignKeyConstraint(
             ["invokation_id"], ["invokation.id"], onupdate="CASCADE", ondelete="CASCADE"
         ),

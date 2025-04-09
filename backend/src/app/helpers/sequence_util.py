@@ -47,9 +47,7 @@ def allele_set_to_seq_id(allele_set: Set[str]) -> str:
     """
     if allele_set == {""} or len(allele_set) == 0:
         return "WT"
-    allele_list = sorted(
-        list(allele_set), key=lambda allele: (int(allele[1:-1]), allele[-1])
-    )
+    allele_list = sorted(list(allele_set), key=lambda allele: (int(allele[1:-1]), allele[-1]))
     return "_".join(allele_list)
 
 
@@ -78,9 +76,7 @@ def maybe_get_allele_id_error_message(wt_aa_seq: str, allele_id: str) -> Optiona
     allele_idx = int(m.groups()[1]) - 1
     if allele_idx < 0 or allele_idx >= len(wt_aa_seq):
         return f"Allele is out of bounds (got {allele_idx+1} but protein only has {len(wt_aa_seq)} AAs)."
-    if (
-        wt_aa_seq[allele_idx] != m.groups()[0]
-    ):  # Changed 'is not' to '!=' for string comparison
+    if wt_aa_seq[allele_idx] != m.groups()[0]:  # Changed 'is not' to '!=' for string comparison
         return f"Allele does not correspond to WT sequence: wt residue at {m.groups()[1]} is {wt_aa_seq[int(m.groups()[1])-1]} but allele was {allele_id}"
 
     return None
@@ -219,9 +215,7 @@ def get_seq_ids_for_deep_mutational_scan(
                     else:
                         new_mut_id = f"{wt_aa_seq[aa_idx]}{aa_idx+1}{alternative_aa}"
                         seq_id_set.add(
-                            allele_set_to_seq_id(
-                                set(seq_base_allele_list + [new_mut_id])
-                            )
+                            allele_set_to_seq_id(set(seq_base_allele_list + [new_mut_id]))
                         )
 
             else:
@@ -232,9 +226,7 @@ def get_seq_ids_for_deep_mutational_scan(
                     else:
                         new_mut_id = f"{wt_aa_seq[aa_idx]}{aa_idx+1}{alternative_aa}"
                         seq_id_set.add(
-                            allele_set_to_seq_id(
-                                set(starting_seq_allele_list + [new_mut_id])
-                            )
+                            allele_set_to_seq_id(set(starting_seq_allele_list + [new_mut_id]))
                         )
 
     for extra_seq_id in extra_seq_ids:
@@ -297,9 +289,7 @@ def process_and_validate_evolve_input_files(
     embedding_df = raw_embedding_df.copy() if raw_embedding_df is not None else None
 
     if "seq_id" not in activity_df.columns:
-        raise ValueError(
-            f"Activity file must contain a 'seq_id' column, got {activity_df.columns}"
-        )
+        raise ValueError(f"Activity file must contain a 'seq_id' column, got {activity_df.columns}")
     if "activity" not in activity_df.columns:
         raise ValueError(
             f"Activity file must contain a 'activity' column, got {activity_df.columns}"
@@ -370,9 +360,7 @@ def get_measured_and_unmeasured_mutant_seq_ids(
 
 def train_and_predict_activities(
     activity_df: pd.DataFrame, embedding_df: pd.DataFrame, mode: str
-) -> Tuple[
-    List[str], List[str], Union[RandomForestRegressor, MLPRegressor], pd.DataFrame
-]:
+) -> Tuple[List[str], List[str], Union[RandomForestRegressor, MLPRegressor], pd.DataFrame]:
     """Train a machine learning model on measured mutants and predict activities for all mutants.
 
     Args:
@@ -400,9 +388,7 @@ def train_and_predict_activities(
     )
 
     # Prepare training data
-    X_train = np.vstack(
-        [json.loads(x) for x in embedding_df.loc[activity_df.index].embedding]
-    )
+    X_train = np.vstack([json.loads(x) for x in embedding_df.loc[activity_df.index].embedding])
     y_train = activity_df.activity.to_numpy()
 
     model: Union[RandomForestRegressor, MLPRegressor]
@@ -427,19 +413,14 @@ def train_and_predict_activities(
             max_samples=None,
         )
     elif mode == "mlp":
-        model = MLPRegressor(
-            random_state=1, max_iter=5000, hidden_layer_sizes=(100, 50)
-        )
+        model = MLPRegressor(random_state=1, max_iter=5000, hidden_layer_sizes=(100, 50))
     else:
         raise ValueError(f"Invalid model choice: {mode}")
     model.fit(X_train, y_train)
 
     # Prepare prediction data for all mutants
     all_mutants_embedding_array = np.vstack(
-        [
-            json.loads(x)
-            for x in embedding_df.loc[measured_mutants + unmeasured_mutants].embedding
-        ]
+        [json.loads(x) for x in embedding_df.loc[measured_mutants + unmeasured_mutants].embedding]
     )
 
     # Make predictions
@@ -531,8 +512,7 @@ def get_cross_validation_holdout_sets(
                 # WT is never in the holdout set.
                 continue
             if any(
-                get_locus_from_allele_id(allele) == holdout_locus
-                for allele in seq_id.split("_")
+                get_locus_from_allele_id(allele) == holdout_locus for allele in seq_id.split("_")
             ):
                 holdout_list.append(seq_id)
         holdout_lists.append(holdout_list)
@@ -658,9 +638,7 @@ def get_cross_validation_holdout_sets_with_stratification(
                 sampled_locus = random.choice(candidate_loci)
 
                 tentative_holdout_set = holdout_set.union({sampled_locus})
-                tentative_holdout_quartile_counts = get_quartile_counts(
-                    tentative_holdout_set
-                )
+                tentative_holdout_quartile_counts = get_quartile_counts(tentative_holdout_set)
 
                 if all(
                     count <= (max_data_per_quartile or float("inf"))
@@ -673,17 +651,13 @@ def get_cross_validation_holdout_sets_with_stratification(
             # We've finished one attempt. Check if we've met the stratification
             # criteria. If not, we dump it and try again.
             if all(
-                min_data_per_quartile
-                <= count
-                <= (max_data_per_quartile or float("inf"))
+                min_data_per_quartile <= count <= (max_data_per_quartile or float("inf"))
                 for count in get_quartile_counts(holdout_set)
             ):
                 break
 
         if iterations >= max_num_iterations:
-            raise ValueError(
-                "Exceeded maximum number of iterations while building holdout sets."
-            )
+            raise ValueError("Exceeded maximum number of iterations while building holdout sets.")
 
         return holdout_set
 
@@ -721,10 +695,7 @@ def get_cross_validation_holdout_sets_with_stratification(
             seq_id
             for seq_id in seq_ids
             if any(
-                [
-                    get_locus_from_allele_id(allele) in holdout_set
-                    for allele in seq_id.split("_")
-                ]
+                [get_locus_from_allele_id(allele) in holdout_set for allele in seq_id.split("_")]
             )
         }
         for holdout_set in holdout_sets
@@ -801,9 +772,7 @@ def validate_aa_sequence(fold_name: str, sequence: str, af2_model_preset: str) -
         chains: List[List[str]] = []
         for chain in sequence.split(";"):
             if len(chain.split(":")) != 2:
-                raise BadRequest(
-                    f'Each chain (separated by ";") must have a single ":".'
-                )
+                raise BadRequest(f'Each chain (separated by ";") must have a single ":".')
             chain_parts = chain.split(":")
             chains.append([chain_parts[0], chain_parts[1]])
     else:

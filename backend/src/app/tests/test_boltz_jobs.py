@@ -16,9 +16,7 @@ from werkzeug.exceptions import BadRequest
 def test_invokation(app, test_fold):
     """Create a test invokation."""
     with app.app_context():
-        invokation = Invokation(
-            fold_id=test_fold.id, type="embed_test1", state="queued"
-        )
+        invokation = Invokation(fold_id=test_fold.id, type="embed_test1", state="queued")
         db.session.add(invokation)
         db.session.commit()
         yield invokation

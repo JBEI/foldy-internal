@@ -21,9 +21,9 @@ def email_should_get_edit_permission_by_default(current_user: Optional[str]) -> 
     """
     if not current_user:
         return False
-    if current_app.config.get(
-        "FOLDY_USER_EMAIL_DOMAIN", None
-    ) and current_user.endswith("@" + current_app.config["FOLDY_USER_EMAIL_DOMAIN"]):
+    if current_app.config.get("FOLDY_USER_EMAIL_DOMAIN", None) and current_user.endswith(
+        "@" + current_app.config["FOLDY_USER_EMAIL_DOMAIN"]
+    ):
         return True
     if current_user.lower() in [
         v.lower() for v in current_app.config.get("FOLDY_ADMIN_UPGRADE_LIST", [])

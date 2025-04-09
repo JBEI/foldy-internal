@@ -50,9 +50,7 @@ class TestDatasetGeneration:
 
         # Create naturalness data
         naturalness_values = np.random.normal(-10, 2, num_samples)
-        naturalness_df = pd.DataFrame(
-            {"seq_id": seq_ids, "wt_marginal": naturalness_values}
-        )
+        naturalness_df = pd.DataFrame({"seq_id": seq_ids, "wt_marginal": naturalness_values})
         naturalness_df = naturalness_df.set_index("seq_id", drop=False)
 
         # Create embedding data
@@ -213,12 +211,12 @@ class TestCampaignWorldState:
         assert len(unmeasured_activity_df) == len(dataset_generator.activity_df) - len(
             seq_ids_to_measure
         )
-        assert len(unmeasured_naturalness_df) == len(
-            dataset_generator.naturalness_df
-        ) - len(seq_ids_to_measure)
-        assert len(unmeasured_embeddings_df) == len(
-            dataset_generator.embedding_df
-        ) - len(seq_ids_to_measure)
+        assert len(unmeasured_naturalness_df) == len(dataset_generator.naturalness_df) - len(
+            seq_ids_to_measure
+        )
+        assert len(unmeasured_embeddings_df) == len(dataset_generator.embedding_df) - len(
+            seq_ids_to_measure
+        )
 
         # Verify measured variants are excluded
         for seq_id in seq_ids_to_measure:
@@ -311,9 +309,7 @@ class TestEvaluateMetrics:
 class TestRunSingleSimulation:
     """Tests for the _run_single_simulation function."""
 
-    def test_run_single_simulation_first_round(
-        self, mock_get_few_shot, mock_get_zero_shot
-    ):
+    def test_run_single_simulation_first_round(self, mock_get_few_shot, mock_get_zero_shot):
         """Test running a single simulation for the first round only."""
         # Create test datasets
         dataset_generator = TestDatasetGeneration()
@@ -372,9 +368,7 @@ class TestRunSingleSimulation:
             assert isinstance(mutant_metric.predicted_activity, float)
             assert isinstance(mutant_metric.percentile, float)
 
-    def test_run_single_simulation_multiple_rounds(
-        self, mock_get_few_shot, mock_get_zero_shot
-    ):
+    def test_run_single_simulation_multiple_rounds(self, mock_get_few_shot, mock_get_zero_shot):
         """Test running a single simulation for multiple rounds."""
         # Create test datasets
         dataset_generator = TestDatasetGeneration()

@@ -59,9 +59,7 @@ def run_evolvepro(evolve_id: int):
         evolve_directory = Path("evolve") / evolve.name
         activity_file_path = evolve_directory / "activity.xlsx"
         add_log(f"Getting the activity file {activity_file_path}")
-        activity_file = fsm.storage_manager.get_binary(
-            evolve.fold_id, str(activity_file_path)
-        )
+        activity_file = fsm.storage_manager.get_binary(evolve.fold_id, str(activity_file_path))
         raw_activity_df = pd.read_excel(BytesIO(activity_file))
 
         # 2. Read and merge all embedding CSVs
@@ -108,9 +106,7 @@ def run_evolvepro(evolve_id: int):
         )
 
         # 6. Store model, visualizations, and predicted activities in storage manager.
-        add_log(
-            f"Storing model, visualizations, and predicted activities in {evolve_directory}"
-        )
+        add_log(f"Storing model, visualizations, and predicted activities in {evolve_directory}")
         model_buffer = io.BytesIO()
         joblib.dump(model, model_buffer)
         serialized_model_binary_string = model_buffer.getvalue()

@@ -29,14 +29,10 @@ ns = Namespace("evolve_views", decorators=[jwt_required(fresh=True)])
 upload_parser = ns.parser()
 upload_parser.add_argument("name", type=str, location="form", required=True)
 upload_parser.add_argument("fold_id", type=str, location="form", required=True)
-upload_parser.add_argument(
-    "activity_file", type=FileStorage, location="files", required=True
-)
+upload_parser.add_argument("activity_file", type=FileStorage, location="files", required=True)
 upload_parser.add_argument("mode", type=str, location="form", required=True)
 upload_parser.add_argument("embedding_paths", type=str, location="form", required=False)
-upload_parser.add_argument(
-    "finetuning_model_checkpoint", type=str, location="form", required=False
-)
+upload_parser.add_argument("finetuning_model_checkpoint", type=str, location="form", required=False)
 
 
 @ns.route("/evolve")
@@ -80,9 +76,7 @@ class EvolveResource(Resource):
             json.loads(args["embedding_paths"]) if args["embedding_paths"] else None
         )
         finetuning_model_checkpoint: Optional[str] = (
-            args["finetuning_model_checkpoint"]
-            if args["finetuning_model_checkpoint"]
-            else None
+            args["finetuning_model_checkpoint"] if args["finetuning_model_checkpoint"] else None
         )
 
         if mode == "randomforest" or mode == "mlp":
@@ -90,9 +84,7 @@ class EvolveResource(Resource):
                 raise BadRequest("embedding_paths are required for randomforest mode")
         elif mode == "finetuning":
             if not finetuning_model_checkpoint:
-                raise BadRequest(
-                    "finetuning_model_checkpoint is required for finetuning mode"
-                )
+                raise BadRequest("finetuning_model_checkpoint is required for finetuning mode")
         else:
             raise BadRequest(f"Invalid mode: {mode}")
 
@@ -105,9 +97,7 @@ class EvolveResource(Resource):
         ).first()
         if existing_evolve:
             # Delete existing evolve job.
-            logging.info(
-                f"Deleting existing evolution job {existing_evolve.id} for {name}"
-            )
+            logging.info(f"Deleting existing evolution job {existing_evolve.id} for {name}")
             existing_evolve.delete()
 
         # 1. Upload the activity file to the storage manager.
@@ -155,8 +145,6 @@ class EvolveResource(Resource):
                 evolve_jobs.run_evolvepro,
                 evolve_record.id,
             )
-            logging.info(
-                f"Queued {mode} job {enqueued_job.id} for evolution {evolve_record.id}"
-            )
+            logging.info(f"Queued {mode} job {enqueued_job.id} for evolution {evolve_record.id}")
 
         return evolve_record

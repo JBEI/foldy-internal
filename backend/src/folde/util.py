@@ -28,9 +28,7 @@ def internal_sample_n_indices(
 
     if epsilon > 0:
         # Draw some samples randomly.
-        epsilon_choices = np.random.choice(
-            len(scores), size=int(epsilon * n), replace=False
-        )
+        epsilon_choices = np.random.choice(len(scores), size=int(epsilon * n), replace=False)
         chosen_indices.extend(epsilon_choices.tolist())
 
     if temperature < 1e-6:
@@ -43,9 +41,7 @@ def internal_sample_n_indices(
     else:
         try:
             scores = np.array(scores)
-            remaining_indices = [
-                ii for ii in range(len(scores)) if ii not in chosen_indices
-            ]
+            remaining_indices = [ii for ii in range(len(scores)) if ii not in chosen_indices]
             while len(chosen_indices) < n:
                 # Compute softmax over remaining scores
                 remaining_scores = scores[remaining_indices]
@@ -58,9 +54,7 @@ def internal_sample_n_indices(
                 # Remove selected index
                 del remaining_indices[choice]
         except Exception as e:
-            logging.error(
-                f"Error in boltzmann sampling. Returning top {n} variants: {e}"
-            )
+            logging.error(f"Error in boltzmann sampling. Returning top {n} variants: {e}")
             # Fallback to deterministic top-N selection
             for top_ranked_index in np.argsort(scores)[::-1]:
                 if top_ranked_index not in chosen_indices:
@@ -115,12 +109,8 @@ def convert_compaign_result_collection_to_df(
                 round_metrics_list = []
                 for round_metrics in sim_result.round_metrics:
                     round_num = round_metrics.round_num
-                    mutants_this_round = mutant_metric_df[
-                        mutant_metric_df.round_found == round_num
-                    ]
-                    mutants_so_far = mutant_metric_df[
-                        mutant_metric_df.round_found <= round_num
-                    ]
+                    mutants_this_round = mutant_metric_df[mutant_metric_df.round_found == round_num]
+                    mutants_so_far = mutant_metric_df[mutant_metric_df.round_found <= round_num]
                     round_metrics_list.append(
                         {
                             "dms_id": dms_id,

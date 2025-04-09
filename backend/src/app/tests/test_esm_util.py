@@ -11,9 +11,11 @@ from app.helpers.esm_util import get_naturalness
 @pytest.fixture
 def mock_esm_setup():
     """Setup common mocks for ESM-related tests"""
-    with patch("torch.device") as mock_device, patch(
-        "esm.models.esmc.ESMC"
-    ) as mock_ESMC, patch("esm.models.esm3.ESM3") as mock_ESM3:
+    with (
+        patch("torch.device") as mock_device,
+        patch("esm.models.esmc.ESMC") as mock_ESMC,
+        patch("esm.models.esm3.ESM3") as mock_ESM3,
+    ):
 
         # Mock device setup
         mock_device.return_value = "cpu"
@@ -92,9 +94,7 @@ def test_get_naturalness_wt_marginal_calculation(mock_esm_setup):
     # Verify wt_marginal calculations
     # Filter for a specific position
     pos1_data = melted_df[melted_df.locus == 1]
-    assert all(
-        pos1_data.wt_marginal.notna()
-    )  # All wt_marginal values should be calculated
+    assert all(pos1_data.wt_marginal.notna())  # All wt_marginal values should be calculated
 
 
 def test_get_naturalness_error_handling(mock_esm_setup):
@@ -119,8 +119,6 @@ def test_add_pdb_file_path_works_for_esm3(mock_esm_setup):
     wt_aa_seq = "ABCDE"
     pdb_file_path = "app/tests/testdata/rubisco-boltz.pdb"
 
-    logits_json, melted_df = get_naturalness(
-        wt_aa_seq, "esm3_mock_model", pdb_file_path
-    )
+    logits_json, melted_df = get_naturalness(wt_aa_seq, "esm3_mock_model", pdb_file_path)
     assert logits_json is not None
     assert melted_df is not None

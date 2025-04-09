@@ -28,14 +28,10 @@ from werkzeug.exceptions import BadRequest
 
 
 class StorageAccessor:
-    def list_files(
-        self, fold_id: int, subfolder: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    def list_files(self, fold_id: int, subfolder: Optional[str] = None) -> List[Dict[str, Any]]:
         raise NotImplementedError
 
-    def write_file(
-        self, fold_id: int, file_path: str, contents: Any, binary: bool = False
-    ) -> None:
+    def write_file(self, fold_id: int, file_path: str, contents: Any, binary: bool = False) -> None:
         """Write contents to a file under the specified fold directory."""
         raise NotImplementedError
 
@@ -100,9 +96,7 @@ class LocalStorageAccessor(StorageAccessor):
     def setup(self, local_directory: str) -> None:
         self.local_directory = Path(local_directory)
 
-    def list_files(
-        self, fold_id: int, subfolder: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    def list_files(self, fold_id: int, subfolder: Optional[str] = None) -> List[Dict[str, Any]]:
         """Returns a list of dicts describing the contents of this fold's folder.
 
         Arguments:
@@ -131,9 +125,7 @@ class LocalStorageAccessor(StorageAccessor):
             if not file.is_dir()
         ]
 
-    def write_file(
-        self, fold_id: int, file_path: str, contents: Any, binary: bool = False
-    ) -> None:
+    def write_file(self, fold_id: int, file_path: str, contents: Any, binary: bool = False) -> None:
         """Write contents to a local file under the fold directory."""
         if self.local_directory is None:
             raise BadRequest("Local directory not initialized")
@@ -235,9 +227,7 @@ class GcloudStorageAccessor(StorageAccessor):
         self.bucket_name = match.group(1).split("/")[0]
         self.bucket_prefix = "/".join(match.group(1).split("/")[1:])
 
-    def list_files(
-        self, fold_id: int, subfolder: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    def list_files(self, fold_id: int, subfolder: Optional[str] = None) -> List[Dict[str, Any]]:
         """Returns a list of dicts describing the contents of this fold's folder.
 
         Arguments:
@@ -253,11 +243,7 @@ class GcloudStorageAccessor(StorageAccessor):
             raise BadRequest("GCloud client not initialized")
 
         padded_fold_id = "%06d" % fold_id
-        prefix = (
-            f"{self.bucket_prefix}/{padded_fold_id}"
-            if self.bucket_prefix
-            else padded_fold_id
-        )
+        prefix = f"{self.bucket_prefix}/{padded_fold_id}" if self.bucket_prefix else padded_fold_id
         if subfolder:
             prefix = f"{prefix}/{subfolder}"
 
@@ -283,9 +269,7 @@ class GcloudStorageAccessor(StorageAccessor):
             for blob in blobs
         ]
 
-    def write_file(
-        self, fold_id: int, file_path: str, contents: Any, binary: bool = False
-    ) -> None:
+    def write_file(self, fold_id: int, file_path: str, contents: Any, binary: bool = False) -> None:
         """Write contents to GCloud Storage under the fold directory."""
         if self.client is None or self.bucket_name is None:
             raise BadRequest("GCloud client not initialized")
@@ -374,9 +358,7 @@ class GcloudStorageAccessor(StorageAccessor):
                 if self.bucket_prefix:
                     gcloud_path = f"{self.bucket_prefix}/{padded_fold_id}/{relative_folder_path}/{relative_file_path}"
                 else:
-                    gcloud_path = (
-                        f"{padded_fold_id}/{relative_folder_path}/{relative_file_path}"
-                    )
+                    gcloud_path = f"{padded_fold_id}/{relative_folder_path}/{relative_file_path}"
 
                 print(f"Uploaded {local_file_path} to {gcloud_path}", flush=True)
                 blob = bucket.blob(gcloud_path)
@@ -504,13 +486,10 @@ class FoldStorageManager:
         aa_blob_path = f"{padded_fold_id}.fasta"
         dna_blob_path = f"{padded_fold_id}_dna.fasta"
 
-        aa_fasta_entries = [
-            f"> {id}\n{aa_seq}" for id, aa_seq in config.get_protein_sequences()
-        ]
+        aa_fasta_entries = [f"> {id}\n{aa_seq}" for id, aa_seq in config.get_protein_sequences()]
         aa_contents = "\n\n".join(aa_fasta_entries)
         dna_fasta_entries = [
-            f"> {id}\n{back_translate(aa_seq)}"
-            for id, aa_seq in config.get_protein_sequences()
+            f"> {id}\n{back_translate(aa_seq)}" for id, aa_seq in config.get_protein_sequences()
         ]
         dna_contents = "\n\n".join(dna_fasta_entries)
 
@@ -574,9 +553,7 @@ class FoldStorageManager:
         if self.storage_manager is None:
             raise BadRequest("Storage manager not initialized")
 
-        return self.storage_manager.get_binary(
-            fold_id, f"ranked_{ranked_model_number}.pkl"
-        )
+        return self.storage_manager.get_binary(fold_id, f"ranked_{ranked_model_number}.pkl")
 
     def get_model_pae(self, fold_id: int, model_number: int) -> np.ndarray:
         if self.storage_manager is None:
@@ -590,9 +567,7 @@ class FoldStorageManager:
             return result  # Explicit return to avoid type error
         except Exception as e:
             print(e, flush=True)
-            raise BadRequest(
-                f"Failed to unpack file PAE for {fold_id} model {model_number} ({e})."
-            )
+            raise BadRequest(f"Failed to unpack file PAE for {fold_id} model {model_number} ({e}).")
 
     def get_contact_prob(
         self, fold_id: int, model_number: int, dist_thresh: int = 12
@@ -659,9 +634,7 @@ class FoldStorageManager:
 
         confidence_map: dict[int, float] = {}
 
-        ligand_files = self.storage_manager.list_files(
-            fold_id, subfolder=f"dock/{ligand_name}"
-        )
+        ligand_files = self.storage_manager.list_files(fold_id, subfolder=f"dock/{ligand_name}")
         for file_info in ligand_files:
             # Confidence can be negative or positive
             # https://github.com/gcorso/DiffDock/issues/152
@@ -674,9 +647,7 @@ class FoldStorageManager:
         max_rank = max(confidence_map.keys())
         for rank in range(1, max_rank + 1):
             if rank not in confidence_map:
-                print(
-                    f'ERROR: Missing rank {rank} among files {[l["key"] for l in ligand_files]}'
-                )
+                print(f'ERROR: Missing rank {rank} among files {[l["key"] for l in ligand_files]}')
             confidence_list.append(confidence_map[rank])
 
         return ",".join([str(c) for c in confidence_list])

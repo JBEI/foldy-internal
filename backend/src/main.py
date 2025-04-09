@@ -17,6 +17,4 @@ app_dispatch = DispatcherMiddleware(instance_of_app, {"/metrics": make_wsgi_app(
 if __name__ == "__main__":
     # with app.app_context():
     #   db.create_all()
-    instance_of_app.run(
-        debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8080))
-    )
+    instance_of_app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))

@@ -30,9 +30,7 @@ class FewShotModel(ABC):
         self.epsilon = epsilon
 
     @abstractmethod
-    def fit(
-        self, X: NDArray[np.float64], y: NDArray[np.float64], **kwargs
-    ) -> "FewShotModel":
+    def fit(self, X: NDArray[np.float64], y: NDArray[np.float64], **kwargs) -> "FewShotModel":
         """Train the model on the given data."""
         pass
 
@@ -64,13 +62,9 @@ class FewShotModel(ABC):
         """
 
         # Convert list of embeddings to numpy array
-        embeddings_array = np.array(
-            [np.array(emb) for emb in embedding_df.embedding.values]
-        )
+        embeddings_array = np.array([np.array(emb) for emb in embedding_df.embedding.values])
         predictions = self.predict(embeddings_array)
-        results_df = pd.DataFrame(
-            {"seq_id": embedding_df["seq_id"], "prediction": predictions}
-        )
+        results_df = pd.DataFrame({"seq_id": embedding_df["seq_id"], "prediction": predictions})
 
         chosen_indices = internal_sample_n_indices(
             results_df.prediction.values,
@@ -126,9 +120,7 @@ def get_ensemble_prediction(
 class RandomFewShotModel(FewShotModel):
     """Just guess random activity."""
 
-    def fit(
-        self, X: NDArray[np.float64], y: NDArray[np.float64], **kwargs
-    ) -> "RandomFewShotModel":
+    def fit(self, X: NDArray[np.float64], y: NDArray[np.float64], **kwargs) -> "RandomFewShotModel":
         return self
 
     def predict(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -169,9 +161,7 @@ class MLPFewShotModel(FewShotModel):
         self,
         X: NDArray[np.float64],
         y: NDArray[np.float64],
-        validation_data: Optional[
-            Tuple[NDArray[np.float64], NDArray[np.float64]]
-        ] = None,
+        validation_data: Optional[Tuple[NDArray[np.float64], NDArray[np.float64]]] = None,
         **kwargs,
     ) -> "MLPFewShotModel":
         """Train the MLP regressor.
@@ -288,9 +278,7 @@ class RandomForestFewShotModel(FewShotModel):
         self,
         X: NDArray[np.float64],
         y: NDArray[np.float64],
-        validation_data: Optional[
-            Tuple[NDArray[np.float64], NDArray[np.float64]]
-        ] = None,
+        validation_data: Optional[Tuple[NDArray[np.float64], NDArray[np.float64]]] = None,
         **kwargs,
     ) -> "RandomForestFewShotModel":
         """Train the Random Forest regressor.
@@ -356,15 +344,10 @@ class RandomForestFewShotModel(FewShotModel):
 
             # Get feature importances if available
             if hasattr(first_model, "feature_importances_"):
-                feature_importances = {
-                    "mean": first_model.feature_importances_.tolist()
-                }
+                feature_importances = {"mean": first_model.feature_importances_.tolist()}
 
                 # Add standard deviation if we have estimators
-                if (
-                    hasattr(first_model, "estimators_")
-                    and len(first_model.estimators_) > 0
-                ):
+                if hasattr(first_model, "estimators_") and len(first_model.estimators_) > 0:
                     feature_importances["std"] = np.std(
                         [tree.feature_importances_ for tree in first_model.estimators_],
                         axis=0,

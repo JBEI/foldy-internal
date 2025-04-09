@@ -91,9 +91,7 @@ class ZeroShotModel(ABC):
         predictions = self.predict(naturalness_df, embedding_df)
 
         # Create a DataFrame with sequence IDs and predictions
-        results_df = pd.DataFrame(
-            {"seq_id": naturalness_df["seq_id"], "prediction": predictions}
-        )
+        results_df = pd.DataFrame({"seq_id": naturalness_df["seq_id"], "prediction": predictions})
 
         chosen_indices = internal_sample_n_indices(
             results_df.prediction.values,

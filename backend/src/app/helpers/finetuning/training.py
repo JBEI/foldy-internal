@@ -77,9 +77,7 @@ def create_dataset_direct_preference(tokenizer, input_df):
     label for a "winning" mutant, and the seq_id and label for a "losing" mutant."""
     from datasets import Dataset
 
-    if any(
-        [col not in input_df.columns for col in ["sequence", "seq_id_w", "seq_id_l"]]
-    ):
+    if any([col not in input_df.columns for col in ["sequence", "seq_id_w", "seq_id_l"]]):
         raise ValueError(
             f"Input dataframe must have columns 'sequence', 'seq_id_w', 'seq_id_l', got {input_df.columns}"
         )
@@ -145,9 +143,7 @@ def full_ranking_bce(preds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor
 
     # Ensure everything is shape (batch_size,) and has gradients enabled
     preds = preds.view(-1)
-    targets = targets.view(
-        -1
-    ).detach()  # Detach targets as we don't need gradients for them
+    targets = targets.view(-1).detach()  # Detach targets as we don't need gradients for them
 
     # Calculate pairwise differences between all predictions
     pairwise_diffs = preds[:, None] - preds[None, :]
@@ -259,9 +255,7 @@ def train_per_protein(
 
         def __call__(self, features):
             # Extract seq_ids before handling the rest
-            seq_ids = (
-                [f.pop("seq_id") for f in features] if "seq_id" in features[0] else None
-            )
+            seq_ids = [f.pop("seq_id") for f in features] if "seq_id" in features[0] else None
 
             # Process the remaining features normally (convert to tensors, pad, etc.)
             batch = super().__call__(features)
@@ -277,17 +271,9 @@ def train_per_protein(
 
         def __call__(self, features):
             # Extract seq_ids before handling the rest
-            seq_id_ws = (
-                [f.pop("seq_id_w") for f in features]
-                if "seq_id_w" in features[0]
-                else None
-            )
+            seq_id_ws = [f.pop("seq_id_w") for f in features] if "seq_id_w" in features[0] else None
 
-            seq_id_ls = (
-                [f.pop("seq_id_l") for f in features]
-                if "seq_id_l" in features[0]
-                else None
-            )
+            seq_id_ls = [f.pop("seq_id_l") for f in features] if "seq_id_l" in features[0] else None
             # Process the remaining features normally (convert to tensors, pad, etc.)
             batch = super().__call__(features)
 
@@ -400,9 +386,7 @@ def parse_mutations(seq_id):
 
 def calculate_log_wt_marginal_from_logits(single_protein_logits, seq_id, tokenizer):
     """Calculate the WT marginal score from a protein logits for a seq id."""
-    sequence_score = torch.tensor(
-        0.0, device=single_protein_logits.device, requires_grad=True
-    )
+    sequence_score = torch.tensor(0.0, device=single_protein_logits.device, requires_grad=True)
     if not seq_id or seq_id == "WT":
         return sequence_score
 

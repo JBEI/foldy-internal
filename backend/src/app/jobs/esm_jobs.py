@@ -56,19 +56,13 @@ def get_esm_embeddings(
     embed_name = embed_record.name
     embedding_model = embed_record.embedding_model
     dms_starting_seq_ids = (
-        embed_record.dms_starting_seq_ids.split(",")
-        if embed_record.dms_starting_seq_ids
-        else []
+        embed_record.dms_starting_seq_ids.split(",") if embed_record.dms_starting_seq_ids else []
     )
-    extra_seq_ids = (
-        embed_record.extra_seq_ids.split(",") if embed_record.extra_seq_ids else []
-    )
+    extra_seq_ids = embed_record.extra_seq_ids.split(",") if embed_record.extra_seq_ids else []
 
     fold = embed_record.fold
     if not fold:
-        raise KeyError(
-            f"Embedding ID {embed_id} ({embed_name}) does not have an associated fold!"
-        )
+        raise KeyError(f"Embedding ID {embed_id} ({embed_name}) does not have an associated fold!")
     invokation = Invokation.get_by_id(embed_record.invokation_id)
     if not invokation:
         raise KeyError(
@@ -93,9 +87,7 @@ def get_esm_embeddings(
         for extra_seq_id in extra_seq_ids:
             error = maybe_get_seq_id_error_message(wt_aa_seq, extra_seq_id)
             if error:
-                raise ValueError(
-                    f"Invalid seq_id in extra seq_ids: '{extra_seq_id}': {error}"
-                )
+                raise ValueError(f"Invalid seq_id in extra seq_ids: '{extra_seq_id}': {error}")
         for dms_starting_seq_id in dms_starting_seq_ids:
             error = maybe_get_seq_id_error_message(wt_aa_seq, dms_starting_seq_id)
             if error:
@@ -134,9 +126,7 @@ def get_esm_embeddings(
         embedding_dicts = []
 
         for ii, seq_id in enumerate(dms_seq_ids):
-            embedding_dicts.append(
-                get_embedding_dict(seq_id, seq_id_to_seq(wt_aa_seq, seq_id))
-            )
+            embedding_dicts.append(get_embedding_dict(seq_id, seq_id_to_seq(wt_aa_seq, seq_id)))
             if ii % 100 == 0:
                 logging.info(f"Finished embedding {ii}/{len(dms_seq_ids)}")
 
@@ -144,16 +134,12 @@ def get_esm_embeddings(
 
         # Convert the DataFrame to a CSV string
         csv_buffer = StringIO()
-        embedding_df.to_csv(
-            csv_buffer, index=False
-        )  # Use index=False to exclude the index
+        embedding_df.to_csv(csv_buffer, index=False)  # Use index=False to exclude the index
         embedding_csv_string = csv_buffer.getvalue()
 
         # Create a FoldStorageManager and store the embeddings.
         padded_fold_id = "%06d" % fold.id
-        embedding_path = (
-            f"embed/{padded_fold_id}_embeddings_{embedding_model}_{embed_name}.csv"
-        )
+        embedding_path = f"embed/{padded_fold_id}_embeddings_{embedding_model}_{embed_name}.csv"
 
         logging.info(f"Saving output to {embedding_path}")
         fsm = FoldStorageManager()
@@ -184,9 +170,7 @@ def get_esm_logits(logit_id: int):
     logit_model = logit_record.logit_model
     fold = logit_record.fold
     if not fold:
-        raise KeyError(
-            f"Logit ID {logit_id} ({logit_name}) does not have an associated fold!"
-        )
+        raise KeyError(f"Logit ID {logit_id} ({logit_name}) does not have an associated fold!")
     invokation = Invokation.get_by_id(logit_record.invokation_id)
     if not invokation:
         raise KeyError(
@@ -290,15 +274,11 @@ def finetune_esm_model(evolve_id: int):
         evolve_directory = Path("evolve") / evolve.name
         activity_file_path = evolve_directory / "activity.xlsx"
         logging.info(f"Getting the activity file {activity_file_path}")
-        activity_file = fsm.storage_manager.get_binary(
-            evolve.fold_id, str(activity_file_path)
-        )
+        activity_file = fsm.storage_manager.get_binary(evolve.fold_id, str(activity_file_path))
         raw_activity_df = pd.read_excel(BytesIO(activity_file))
 
         # 3. Process the activity and embedding data.
-        if all(
-            [v in raw_activity_df.columns for v in ["sequence", "seq_id_w", "seq_id_l"]]
-        ):
+        if all([v in raw_activity_df.columns for v in ["sequence", "seq_id_w", "seq_id_l"]]):
             loss = "dpo"
             # TODO: do some validation...
             activity_df = raw_activity_df
@@ -311,24 +291,18 @@ def finetune_esm_model(evolve_id: int):
 
         elif all([v in raw_activity_df.columns for v in ["seq_id", "activity"]]):
             loss = "entropy"
-            activity_df = process_and_validate_evolve_input_files(
-                wt_aa_seq, raw_activity_df
-            )
+            activity_df = process_and_validate_evolve_input_files(wt_aa_seq, raw_activity_df)
             # Convert activity_df, which has seq_id and activity, into train and valid dfs with an 80/20 split and columns sequence and label.
             activity_df["sequence"] = activity_df["seq_id"].apply(
                 lambda seq_id: seq_id_to_seq(wt_aa_seq, seq_id)
             )
             activity_df["label"] = activity_df["activity"]
         else:
-            raise ValueError(
-                f"Activity file has invalid columns, got {raw_activity_df.columns}"
-            )
+            raise ValueError(f"Activity file has invalid columns, got {raw_activity_df.columns}")
         logging.info(f"Have {activity_df.shape[0]} rows in activity_df")
 
         if "use_for_validation" in activity_df.columns:
-            logging.info(
-                f'Using "use_for_validation" column to split into train and valid'
-            )
+            logging.info(f'Using "use_for_validation" column to split into train and valid')
             train_df = activity_df[activity_df["use_for_validation"] == False]
             valid_df = activity_df[activity_df["use_for_validation"] == True]
         else:
@@ -395,9 +369,7 @@ def finetune_esm_model(evolve_id: int):
 
         # Save training history
         history_json = json.dumps(history)
-        fsm.storage_manager.write_file(
-            fold.id, f"{model_dir}/history.json", history_json
-        )
+        fsm.storage_manager.write_file(fold.id, f"{model_dir}/history.json", history_json)
 
         # Get all sequences to score
         logging.info(f"Getting all sequences to score")

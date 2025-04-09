@@ -358,9 +358,7 @@ class FoldyESM1and2Client(FoldyESMClient):
         """
         import torch
 
-        self.model, self.alphabet = torch.hub.load(
-            "facebookresearch/esm:main", model_name
-        )
+        self.model, self.alphabet = torch.hub.load("facebookresearch/esm:main", model_name)
         self.batch_converter = self.alphabet.get_batch_converter()
         self.model.eval()  # Set to evaluation mode
 
@@ -451,9 +449,7 @@ class FoldyESM1and2Client(FoldyESMClient):
             probs = sequence_probs[0, pos, :].cpu().tolist()
 
             for vocab_idx, vocab_char in enumerate(self.alphabet.all_toks):
-                if (
-                    vocab_char in self.alphabet.standard_toks
-                ):  # Only include standard amino acids
+                if vocab_char in self.alphabet.standard_toks:  # Only include standard amino acids
                     prob = probs[vocab_idx]
                     seq_id = f"{wt_aa}{pos}{vocab_char}"
                     melted_rows.append({"seq_id": seq_id, "probability": prob})

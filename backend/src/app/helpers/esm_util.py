@@ -115,9 +115,7 @@ def get_naturalness(
                 float(pos_probs[pos_probs.seq_id.str.endswith(aa)].probability.iloc[0])
                 for aa in pos_probs.seq_id.str[-1].unique()
             ]
-            position_probs.append(
-                {"locus": pos, "wt_aa": wt_aa, "probabilities": probs}
-            )
+            position_probs.append({"locus": pos, "wt_aa": wt_aa, "probabilities": probs})
 
         logits_json = json.dumps(position_probs)
 

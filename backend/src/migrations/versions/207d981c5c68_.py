@@ -27,9 +27,7 @@ def upgrade():
         sa.Column("dms_starting_seq_ids", sa.String(), nullable=True),
         sa.Column("invokation_id", sa.Integer(), nullable=True),
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["fold_id"], ["roles.id"], onupdate="CASCADE", ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["fold_id"], ["roles.id"], onupdate="CASCADE", ondelete="CASCADE"),
         sa.ForeignKeyConstraint(
             ["invokation_id"], ["invokation.id"], onupdate="CASCADE", ondelete="CASCADE"
         ),

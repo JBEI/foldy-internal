@@ -23,9 +23,7 @@ def upgrade():
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("fold_id", sa.Integer(), nullable=True),
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["fold_id"], ["roles.id"], onupdate="CASCADE", ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["fold_id"], ["roles.id"], onupdate="CASCADE", ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     with op.batch_alter_table("roles", schema=None) as batch_op:

@@ -48,9 +48,7 @@ def _evaluate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float
     metrics["rmse"] = np.sqrt(metrics["mse"])
     if len(np.unique(y_pred)) > 1:
         metrics["pearson"] = np.corrcoef(y_true, y_pred)[0, 1]
-        metrics["spearman"] = pd.Series(y_true).corr(
-            pd.Series(y_pred), method="spearman"
-        )
+        metrics["spearman"] = pd.Series(y_true).corr(pd.Series(y_pred), method="spearman")
     else:
         logging.warning(f"The predicted activities were degenerate: {y_pred}")
         metrics["pearson"] = None
@@ -78,16 +76,10 @@ class CampaignWorldState:
 
     def measure_variant_activities(self, seq_ids: List[str]):
         """Adds seq ids to the collection of measured samples."""
-        assert len(set(seq_ids)) == len(
-            seq_ids
-        ), f"seq_ids must be unique, got {seq_ids}"
+        assert len(set(seq_ids)) == len(seq_ids), f"seq_ids must be unique, got {seq_ids}"
         for seq_id in seq_ids:
-            assert (
-                type(seq_id) == str
-            ), f"seq_id must be a string, got {type(seq_id)} ({seq_id})"
-            assert (
-                seq_id not in self.measured_seq_ids
-            ), f"seq_id {seq_id} already measured"
+            assert type(seq_id) == str, f"seq_id must be a string, got {type(seq_id)} ({seq_id})"
+            assert seq_id not in self.measured_seq_ids, f"seq_id {seq_id} already measured"
         self.measured_seq_ids.extend(seq_ids)
 
     def get_unmeasured_variants_activity_df(self) -> pd.DataFrame:
@@ -96,14 +88,10 @@ class CampaignWorldState:
         ]
 
     def get_unmeasured_naturalness_df(self) -> pd.DataFrame:
-        return self.naturalness_df[
-            ~self.naturalness_df["seq_id"].isin(self.measured_seq_ids)
-        ]
+        return self.naturalness_df[~self.naturalness_df["seq_id"].isin(self.measured_seq_ids)]
 
     def get_unmeasured_embeddings_df(self) -> pd.DataFrame:
-        return self.embedding_df[
-            ~self.embedding_df["seq_id"].isin(self.measured_seq_ids)
-        ]
+        return self.embedding_df[~self.embedding_df["seq_id"].isin(self.measured_seq_ids)]
 
     def get_measured_activity_df(self) -> pd.DataFrame:
         return self.golden_activity_df.loc[self.measured_seq_ids]
@@ -211,9 +199,7 @@ def _run_single_simulation(
                 world_state.get_unmeasured_embeddings_df(),
             )
 
-        assert (
-            type(top_seq_ids) == list
-        ), f"top_seq_ids must be a list, got {type(top_seq_ids)}"
+        assert type(top_seq_ids) == list, f"top_seq_ids must be a list, got {type(top_seq_ids)}"
         assert (
             len(top_seq_ids) == round_size
         ), f"Must choose {round_size} variants per rounds, only chose {len(top_seq_ids)}"
@@ -248,9 +234,7 @@ def _run_single_simulation(
         # Compute metrics for this round's predictions
         # TOOD(jacob): Compute metrics for every round, eg validation or test correlation.
         whole_dataset_spearman = spearmanr(
-            golden_activity_df.loc[predicted_activity_series.index][
-                activity_column
-            ].values,
+            golden_activity_df.loc[predicted_activity_series.index][activity_column].values,
             predicted_activity_series.values,
         )[0]
         round_metrics = RoundMetrics(
@@ -328,9 +312,7 @@ def simulate_campaign(
     # Run simulations for each configuration
     for config_idx, model_config in enumerate(config_list):
         # Set random seed for reproducibility
-        logger.info(
-            f"Running simulations for configuration {config_idx+1}/{len(config_list)}"
-        )
+        logger.info(f"Running simulations for configuration {config_idx+1}/{len(config_list)}")
         logger.info(f"Config: {model_config}")
 
         # Load dataset for this configuration

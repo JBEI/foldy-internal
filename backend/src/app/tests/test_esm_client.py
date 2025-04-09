@@ -19,9 +19,7 @@ ESM3_VOCAB_SIZE = 64
 
 @pytest.fixture
 def mock_torch_device():
-    with patch("torch.device") as mock_device, patch(
-        "torch.cuda.is_available", return_value=False
-    ):
+    with patch("torch.device") as mock_device, patch("torch.cuda.is_available", return_value=False):
         mock_device.return_value = "cpu"
         yield mock_device
 
@@ -39,9 +37,7 @@ def mock_esmc_client():
         mock_client.encode.return_value = Mock()
 
         # Mock logits method with embeddings
-        mock_embeddings = torch.randn(
-            1, len(TEST_SEQUENCE), 1280
-        )  # Example embedding size
+        mock_embeddings = torch.randn(1, len(TEST_SEQUENCE), 1280)  # Example embedding size
         mock_logits_output = Mock(embeddings=mock_embeddings)
         mock_client.logits.return_value = mock_logits_output
 
@@ -61,9 +57,7 @@ def mock_esm3_client():
         mock_client.encode.return_value = Mock()
 
         # Mock logits method with embeddings
-        mock_embeddings = torch.randn(
-            1, len(TEST_SEQUENCE), 1280
-        )  # Example embedding size
+        mock_embeddings = torch.randn(1, len(TEST_SEQUENCE), 1280)  # Example embedding size
         mock_logits_output = Mock(embeddings=mock_embeddings)
         mock_client.logits.return_value = mock_logits_output
 

@@ -119,9 +119,7 @@ class BradleyTerryMLP(nn.Module):
         """
         return self.mlp(x)
 
-    def predict_preference(
-        self, emb_i: torch.Tensor, emb_j: torch.Tensor
-    ) -> torch.Tensor:
+    def predict_preference(self, emb_i: torch.Tensor, emb_j: torch.Tensor) -> torch.Tensor:
         """Predict preference between two embeddings.
 
         Args:
@@ -172,10 +170,7 @@ def batch_bradley_terry_loss(
     y_pred = scores[i_valid] - scores[j_valid]
 
     pred_prob = torch.sigmoid(y_pred)
-    loss = -(
-        y_true * torch.log(pred_prob + 1e-7)
-        + (1 - y_true) * torch.log(1 - pred_prob + 1e-7)
-    )
+    loss = -(y_true * torch.log(pred_prob + 1e-7) + (1 - y_true) * torch.log(1 - pred_prob + 1e-7))
     return loss.mean()
 
 
@@ -336,9 +331,7 @@ class PreferenceTrainer:
             train_loss = 0.0
             num_batches = 0
 
-            for batch_number, (batch_embeddings, batch_activity_labels) in enumerate(
-                train_loader
-            ):
+            for batch_number, (batch_embeddings, batch_activity_labels) in enumerate(train_loader):
                 batch_embeddings = batch_embeddings.to(self.device)
                 batch_activity_labels = batch_activity_labels.to(self.device)
 
@@ -368,8 +361,7 @@ class PreferenceTrainer:
 
                 # Check if gradients are being computed
                 has_grad = all(
-                    p.grad is not None and torch.any(p.grad != 0)
-                    for p in self.model.parameters()
+                    p.grad is not None and torch.any(p.grad != 0) for p in self.model.parameters()
                 )
                 # if not has_grad:
                 #     logger.warning(
@@ -384,9 +376,7 @@ class PreferenceTrainer:
                     for p1, p2 in zip(pre_loss_params, self.model.parameters())
                 )
                 if not params_changed:
-                    logger.warning(
-                        "Model parameters did not change after optimization step"
-                    )
+                    logger.warning("Model parameters did not change after optimization step")
 
                 train_loss += loss.item()
                 num_batches += 1
@@ -411,9 +401,7 @@ class PreferenceTrainer:
                     best_val_loss = val_loss
                     no_improve_epochs = 0
                 else:
-                    no_improve_epochs += (
-                        val_frequency  # Increment by val_frequency instead of 1
-                    )
+                    no_improve_epochs += val_frequency  # Increment by val_frequency instead of 1
 
                 if no_improve_epochs >= patience:
                     if verbose:
@@ -501,18 +489,14 @@ class PreferenceTrainer:
             Array of shape (n_samples,) with preference scores
         """
         self.model.eval()
-        embeddings_tensor = torch.tensor(embeddings, dtype=torch.float32).to(
-            self.device
-        )
+        embeddings_tensor = torch.tensor(embeddings, dtype=torch.float32).to(self.device)
 
         with torch.no_grad():
             scores: np.ndarray = self.model(embeddings_tensor).squeeze(-1).cpu().numpy()
 
         return scores
 
-    def evaluate_ranking(
-        self, embeddings: np.ndarray, true_labels: np.ndarray
-    ) -> Dict[str, float]:
+    def evaluate_ranking(self, embeddings: np.ndarray, true_labels: np.ndarray) -> Dict[str, float]:
         """Evaluate ranking performance on embeddings.
 
         Args:
@@ -663,9 +647,7 @@ def create_preference_model(
     Returns:
         Tuple containing (model, trainer)
     """
-    model = BradleyTerryMLP(
-        embedding_dim=embedding_dim, hidden_dims=hidden_dims, dropout=dropout
-    )
+    model = BradleyTerryMLP(embedding_dim=embedding_dim, hidden_dims=hidden_dims, dropout=dropout)
 
     trainer = PreferenceTrainer(
         model=model,

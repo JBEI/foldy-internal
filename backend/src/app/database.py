@@ -57,9 +57,7 @@ class PkModel(Model):
     id = Column(db.Integer, primary_key=True)
 
     @classmethod
-    def get_by_id(
-        cls: Type[Model], record_id: Union[str, bytes, int, float]
-    ) -> Optional[Any]:
+    def get_by_id(cls: Type[Model], record_id: Union[str, bytes, int, float]) -> Optional[Any]:
         """Get record by ID."""
         if any(
             (

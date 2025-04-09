@@ -180,9 +180,7 @@ def test_score_sequences_basic():
             return types.SimpleNamespace(logits=logits)
 
     class MockTokenizer:
-        def __call__(
-            self, sequences, padding=True, truncation=True, return_tensors="pt"
-        ):
+        def __call__(self, sequences, padding=True, truncation=True, return_tensors="pt"):
             return {"input_ids": torch.zeros(1, 5), "attention_mask": torch.ones(1, 5)}
 
         def convert_tokens_to_ids(self, token):
@@ -225,9 +223,7 @@ def test_score_sequences_multiple_mutations():
             return types.SimpleNamespace(logits=logits)
 
     class MockTokenizer:
-        def __call__(
-            self, sequences, padding=True, truncation=True, return_tensors="pt"
-        ):
+        def __call__(self, sequences, padding=True, truncation=True, return_tensors="pt"):
             return {"input_ids": torch.zeros(1, 5), "attention_mask": torch.ones(1, 5)}
 
         def convert_tokens_to_ids(self, token):
@@ -266,9 +262,7 @@ def test_score_sequences_empty_seq_ids():
             return types.SimpleNamespace(logits=torch.zeros(1, 5, 33))
 
     class MockTokenizer:
-        def __call__(
-            self, sequences, padding=True, truncation=True, return_tensors="pt"
-        ):
+        def __call__(self, sequences, padding=True, truncation=True, return_tensors="pt"):
             return {"input_ids": torch.zeros(1, 5), "attention_mask": torch.ones(1, 5)}
 
         def convert_tokens_to_ids(self, token):

@@ -49,9 +49,7 @@ def test_one_mutant_starting_seq_ids(wt_seq):
     """Test the function with empty starting sequence IDs."""
     starting_seq_ids = ["A1C"]
     result = get_seq_ids_for_deep_mutational_scan(wt_seq, starting_seq_ids, [])
-    assert (
-        len(result) == 19 * 3 + 1
-    ), "Expected one mutation per residue per amino acid."
+    assert len(result) == 19 * 3 + 1, "Expected one mutation per residue per amino acid."
 
 
 def test_two_starting_seq_ids(wt_seq):
@@ -82,9 +80,7 @@ def test_starting_seq_ids_works_with_extra_seq_ids(wt_seq):
     """Test that extra_seq_ids get added to starting_seq_ids."""
     starting_seq_ids = ["WT"]
     extra_seq_ids = ["A1T_D3T"]
-    result = get_seq_ids_for_deep_mutational_scan(
-        wt_seq, starting_seq_ids, extra_seq_ids
-    )
+    result = get_seq_ids_for_deep_mutational_scan(wt_seq, starting_seq_ids, extra_seq_ids)
     assert len(result) == 19 * 3 + 2
 
 
@@ -92,9 +88,7 @@ def test_one_extra_seq_ids(wt_seq):
     """Test the function with just one extra."""
     starting_seq_ids = []
     extra_seq_ids = ["A1W"]
-    result = get_seq_ids_for_deep_mutational_scan(
-        wt_seq, starting_seq_ids, extra_seq_ids
-    )
+    result = get_seq_ids_for_deep_mutational_scan(wt_seq, starting_seq_ids, extra_seq_ids)
     assert len(result) == 1, "Expected just one seq to come out, the one we put in."
 
 
@@ -102,9 +96,7 @@ def test_two_extra_seq_ids(wt_seq):
     """Test the function with two extras."""
     starting_seq_ids = []
     extra_seq_ids = ["A1W", "A1T_D3T"]
-    result = get_seq_ids_for_deep_mutational_scan(
-        wt_seq, starting_seq_ids, extra_seq_ids
-    )
+    result = get_seq_ids_for_deep_mutational_scan(wt_seq, starting_seq_ids, extra_seq_ids)
     assert set(result) == {
         "A1W",
         "A1T_D3T",

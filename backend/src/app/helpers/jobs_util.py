@@ -57,9 +57,7 @@ def _live_update_tail(stdout: str) -> str:
 AddLogFn = Callable[..., None]
 
 
-def try_run_job_with_logging(
-    f: Callable[[AddLogFn], None], invokation: Invokation
-) -> None:
+def try_run_job_with_logging(f: Callable[[AddLogFn], None], invokation: Invokation) -> None:
     """
     Execute a job function with logging and exception handling.
 
@@ -197,9 +195,7 @@ class LoggingRecorder(logging.Handler):
         self.invokation = invokation
         self.logs: List[str] = []
         self.starttime: float = time.time()
-        self.final_state: str = (
-            "failed"  # Default state, will be set to "finished" on success
-        )
+        self.final_state: str = "failed"  # Default state, will be set to "finished" on success
         self._previous_level: int = logging.INFO
         self._previous_handlers: List[logging.Handler] = []
 
@@ -255,9 +251,7 @@ class LoggingRecorder(logging.Handler):
         logger.addHandler(self)
         return self
 
-    def __exit__(
-        self, exc_type: Optional[type], exc_val: Optional[Exception], exc_tb: Any
-    ) -> None:
+    def __exit__(self, exc_type: Optional[type], exc_val: Optional[Exception], exc_tb: Any) -> None:
         """
         Restore previous logging state when exiting the context.
 
@@ -273,9 +267,7 @@ class LoggingRecorder(logging.Handler):
             if exc_type is not None:
                 # Capture the full traceback
                 full_traceback = traceback.format_exc()
-                logging.error(
-                    f"Job failed with exception:\n\n{exc_val}\n{full_traceback}"
-                )
+                logging.error(f"Job failed with exception:\n\n{exc_val}\n{full_traceback}")
             else:
                 self.final_state = "finished"
         finally:

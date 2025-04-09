@@ -16,9 +16,7 @@ from werkzeug.exceptions import BadRequest
 def test_invokation(app, test_fold):
     """Create a test invokation."""
     with app.app_context():
-        invokation = Invokation(
-            fold_id=test_fold.id, type="embed_test1", state="queued"
-        )
+        invokation = Invokation(fold_id=test_fold.id, type="embed_test1", state="queued")
         db.session.add(invokation)
         db.session.commit()
         yield invokation
@@ -156,9 +154,7 @@ def test_run_embed_invalid_amino_acid_third_case(
             get_esm_embeddings(embed_id=embedding.id)
 
 
-def test_run_embed_fails_no_torch(
-    app, client, tmp_path, mock_storage_manager, test_fold_embedding
-):
+def test_run_embed_fails_no_torch(app, client, tmp_path, mock_storage_manager, test_fold_embedding):
     """We don't run torch in tests, so this is as far as we can go for a test."""
     with app.app_context():
         with pytest.raises(AssertionError, match=ERROR_MESSAGE_IF_EVERYTHING_GOES_WELL):

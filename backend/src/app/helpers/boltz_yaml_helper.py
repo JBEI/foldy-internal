@@ -108,9 +108,7 @@ class BoltzYamlHelper:
         """
         modifications_list = []
         for entry in self.sequences:
-            entity_data = list(entry.values())[
-                0
-            ]  # Get the entity data regardless of type
+            entity_data = list(entry.values())[0]  # Get the entity data regardless of type
             # entity_data might contain 'modifications'
             mods = entity_data.get("modifications", [])
             if mods:

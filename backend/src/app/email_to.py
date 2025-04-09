@@ -56,9 +56,7 @@ class Message(object):
         return "\n".join(self.body)
 
     def __repr__(self):
-        return "<Message: {0} and {1} more lines>".format(
-            self.body[0], (len(self.body) - 1)
-        )
+        return "<Message: {0} and {1} more lines>".format(self.body[0], (len(self.body) - 1))
 
     def mime(self):
         """Returns a MIMEMultipart message"""

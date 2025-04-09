@@ -26,9 +26,7 @@ def upgrade():
         sa.Column("state", sa.String(length=80), nullable=True),
         sa.Column("log", sa.Text(), nullable=True),
         sa.Column("timedelta", sa.Interval(), nullable=True),
-        sa.ForeignKeyConstraint(
-            ["fold_id"], ["roles.id"], onupdate="CASCADE", ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["fold_id"], ["roles.id"], onupdate="CASCADE", ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     # ### end Alembic commands ###

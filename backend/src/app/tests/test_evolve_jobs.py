@@ -16,9 +16,7 @@ from werkzeug.exceptions import BadRequest
 def test_invokation(app, test_fold):
     """Create a test invokation."""
     with app.app_context():
-        invokation = Invokation(
-            fold_id=test_fold.id, type="evolve_test1", state="running"
-        )
+        invokation = Invokation(fold_id=test_fold.id, type="evolve_test1", state="running")
         db.session.add(invokation)
         db.session.commit()
         yield invokation
@@ -76,9 +74,7 @@ def mock_foldy_storage(app, tmp_path, test_fold, test_fold_evolution):
     yield storage_dir
 
 
-def test_run_evolvepro_fails_nofile(
-    app, client, mock_storage_manager, test_fold_evolution
-):
+def test_run_evolvepro_fails_nofile(app, client, mock_storage_manager, test_fold_evolution):
     """Basic test for run_evolvepro function."""
     with app.app_context():
         with pytest.raises(AssertionError, match="xlsx not found"):

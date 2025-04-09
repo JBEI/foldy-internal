@@ -42,9 +42,7 @@ ALLOWED_ESM_MODELS: List[str] = [
     "esm1v",
 ]
 
-ALLOWED_LOGITS_MODELS: List[str] = ALLOWED_ESM_MODELS + [
-    "esm1v_t33_650M_UR90S_ensemble"
-]
+ALLOWED_LOGITS_MODELS: List[str] = ALLOWED_ESM_MODELS + ["esm1v_t33_650M_UR90S_ensemble"]
 
 
 embeddings_fields = ns.model(
@@ -82,9 +80,7 @@ class CalculateEmbeddingsResource(Resource):
         dms_starting_seq_ids: List[str] = req.get("dms_starting_seq_ids", [])
 
         extra_seq_ids = [seq_id.strip() for seq_id in extra_seq_ids if seq_id.strip()]
-        dms_starting_seq_ids = [
-            seq_id.strip() for seq_id in dms_starting_seq_ids if seq_id.strip()
-        ]
+        dms_starting_seq_ids = [seq_id.strip() for seq_id in dms_starting_seq_ids if seq_id.strip()]
 
         if embedding_model not in ALLOWED_ESM_MODELS:
             raise BadRequest(
@@ -155,9 +151,7 @@ class StartLogitsResource(Resource):
         if not fold:
             raise BadRequest(f"Fold with ID {fold_id} not found")
 
-        existing_logit = Logit.query.filter(
-            Logit.name == name, Logit.fold_id == fold_id
-        ).first()
+        existing_logit = Logit.query.filter(Logit.name == name, Logit.fold_id == fold_id).first()
         if existing_logit:
             logging.info(f"Deleting existing logit job {existing_logit.id} for {name}")
             existing_logit.delete()

@@ -153,9 +153,7 @@ class DockSdfResource(Resource):
         )
 
         if not dock:
-            raise BadRequest(
-                f"Dock for fold id {fold_id} ligand name {ligand_name} not found."
-            )
+            raise BadRequest(f"Dock for fold id {fold_id} ligand name {ligand_name} not found.")
 
         manager = FoldStorageManager()
         manager.setup()
@@ -203,9 +201,7 @@ class FoldFileResource(Resource):
 
 @ns.route("/file/download/<int:fold_id>/<path:subpath>")
 class FileDownloadResource(Resource):
-    def get(
-        self, fold_id: int, subpath: str
-    ) -> Union[Response, Tuple[Dict[str, str], int]]:
+    def get(self, fold_id: int, subpath: str) -> Union[Response, Tuple[Dict[str, str], int]]:
         """Download a file from fold storage with streaming.
 
         Args:

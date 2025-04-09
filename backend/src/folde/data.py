@@ -81,9 +81,7 @@ def get_available_proteingym_datasets(
             available_datasets.append(dms_id)
 
     # Filter metadata to only include datasets with both required files
-    filtered_metadata = dms_metadata[
-        dms_metadata["DMS_id"].isin(available_datasets)
-    ].copy()
+    filtered_metadata = dms_metadata[dms_metadata["DMS_id"].isin(available_datasets)].copy()
 
     logger.info(
         f"Found {len(filtered_metadata)} datasets with embedding model '{embedding_model_id}' and naturalness model '{naturalness_model_id}'"
@@ -137,16 +135,12 @@ def get_proteingym_dataset(
     # Load embeddings
     embedding_df = pd.read_csv(embedding_file_path)
     logger.info(f"Loaded embeddings for {dms_id} with {len(embedding_df)} rows")
-    embedding_df["seq_id"] = embedding_df["seq_id"].apply(
-        lambda x: maybe_modify_seq_id(dms_id, x)
-    )
+    embedding_df["seq_id"] = embedding_df["seq_id"].apply(lambda x: maybe_modify_seq_id(dms_id, x))
     embedding_df = embedding_df.set_index("seq_id", drop=False)
 
     # Load naturalness scores
     naturalness_df = pd.read_csv(naturalness_file_path)
-    logger.info(
-        f"Loaded naturalness scores for {dms_id} with {len(naturalness_df)} rows"
-    )
+    logger.info(f"Loaded naturalness scores for {dms_id} with {len(naturalness_df)} rows")
     naturalness_df["seq_id"] = naturalness_df["seq_id"].apply(
         lambda x: maybe_modify_seq_id(dms_id, x)
     )

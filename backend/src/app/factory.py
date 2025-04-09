@@ -109,9 +109,7 @@ def register_extensions(app: Flask) -> None:
             }
         }
 
-        def _sequence_formatter(
-            view: Any, context: Any, model: models.Fold, name: str
-        ) -> Markup:
+        def _sequence_formatter(view: Any, context: Any, model: models.Fold, name: str) -> Markup:
             """Format sequence field for display in admin view.
 
             Args:
@@ -123,9 +121,7 @@ def register_extensions(app: Flask) -> None:
             Returns:
                 Markup: HTML-safe content for rendering
             """
-            return Markup(
-                f"<div style='overflow-x: auto; width: 100px'>{model.sequence}</div>"
-            )
+            return Markup(f"<div style='overflow-x: auto; width: 100px'>{model.sequence}</div>")
 
         # def _features_log_formatter(view, context, model, name):
         #   return Markup(f"<div style='overflow-y: auto'>{model.features_log}</div>")

@@ -195,10 +195,7 @@ def run_annotate(
 
 
 def send_email(fold_id, protein_name, recipient):
-    if (
-        not current_app.config["EMAIL_USERNAME"]
-        or not current_app.config["EMAIL_PASSWORD"]
-    ):
+    if not current_app.config["EMAIL_USERNAME"] or not current_app.config["EMAIL_PASSWORD"]:
         raise KeyError("No email username / password provided: will not send email.")
 
     server = email_to.EmailServer(

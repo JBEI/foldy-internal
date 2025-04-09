@@ -50,9 +50,7 @@ def create_simulated_protein_dataset(
 
     # Create naturalness data
     naturalness_values = np.random.normal(-10, 2, num_samples)
-    naturalness_df = pd.DataFrame(
-        {"seq_id": seq_ids, "wt_marginal": naturalness_values}
-    )
+    naturalness_df = pd.DataFrame({"seq_id": seq_ids, "wt_marginal": naturalness_values})
     naturalness_df = naturalness_df.set_index("seq_id", drop=False)
 
     # Create embedding data
@@ -67,9 +65,7 @@ def create_simulated_protein_dataset(
 class MockZeroShotModel(ZeroShotModel):
     """Mock ZeroShotModel for testing campaign simulations."""
 
-    def __init__(
-        self, temperature=0.0, return_values=None, naturalness_col="wt_marginal"
-    ):
+    def __init__(self, temperature=0.0, return_values=None, naturalness_col="wt_marginal"):
         """Initialize mock model.
 
         Args:

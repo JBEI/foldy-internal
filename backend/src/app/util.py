@@ -39,9 +39,7 @@ def get_job_type_replacement(fold: Fold, job_type: str) -> int:
     """
     for job in fold.jobs:
         if job.type == job_type:
-            logging.info(
-                f"Deleting existing job {job.id} of type {job_type} for fold {fold.id}"
-            )
+            logging.info(f"Deleting existing job {job.id} of type {job_type} for fold {fold.id}")
             job.delete(commit=False)
 
     db.session.commit()
@@ -110,9 +108,7 @@ def start_stage(fold_id: int, stage: str, email_on_completion: bool) -> None:
             job_timeout="12h",
             result_ttl=48 * 60 * 60,  # 2 days
         )
-        logging.info(
-            f"Queued decompress_pkls job {decompress_pkls_job.id} for fold {fold_id}"
-        )
+        logging.info(f"Queued decompress_pkls job {decompress_pkls_job.id} for fold {fold_id}")
         email_dependent_jobs = [decompress_pkls_job]
 
     elif stage == "annotate":
@@ -277,9 +273,7 @@ def make_new_folds(
             )
             if existing_entry:
                 if not skip_duplicate_entries:
-                    logging.warning(
-                        f"Attempted duplicate fold creation: {fold_data['name']}"
-                    )
+                    logging.warning(f"Attempted duplicate fold creation: {fold_data['name']}")
                     raise BadRequest(
                         f'Someone has already submitted a fold named {fold_data["name"]} ({existing_entry.id}).'
                     )
@@ -309,9 +303,7 @@ def make_new_folds(
             new_fold_models.append(new_fold_model)
 
         # Bulk add!
-        db.session.bulk_save_objects(
-            new_fold_models, return_defaults=True, preserve_order=True
-        )
+        db.session.bulk_save_objects(new_fold_models, return_defaults=True, preserve_order=True)
         db.session.commit()
     except Exception as e:
         logging.error(f"Error creating fold models: {e}")
