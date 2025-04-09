@@ -3,7 +3,8 @@
 Copied from https://github.com/cookiecutter-flask/cookiecutter-flask
 """
 
-from typing import Type
+from typing import Any, Optional, Type, Union
+
 from app.extensions import db
 
 # Alias common SQLAlchemy names
@@ -39,8 +40,8 @@ class CRUDMixin(object):
         """Remove the record from the database."""
         db.session.delete(self)
         if commit:
-            return db.session.commit()
-        return
+            db.session.commit()
+        return None
 
 
 class Model(CRUDMixin, db.Model):
@@ -56,7 +57,9 @@ class PkModel(Model):
     id = Column(db.Integer, primary_key=True)
 
     @classmethod
-    def get_by_id(cls: Type[Model], record_id) -> Type[Model]:
+    def get_by_id(
+        cls: Type[Model], record_id: Union[str, bytes, int, float]
+    ) -> Optional[Any]:
         """Get record by ID."""
         if any(
             (

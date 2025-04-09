@@ -15,16 +15,17 @@ the structure in the dataset, as each embedding is only processed once per batch
 but contributes to multiple preference pairs.
 """
 
-from typing import Dict, List, Optional, Tuple, Union, Any, Callable
 import logging
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader, TensorDataset
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import roc_auc_score
 from scipy.stats import spearmanr
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 logger = logging.getLogger(__name__)
 
@@ -263,11 +264,12 @@ class PreferenceTrainer:
         activity_labels: np.ndarray,
         batch_size: int = 32,
         epochs: int = 100,
-        val_ratio_or_indices: float | list = 0.1,
+        val_ratio_or_indices: Union[float, List[int], np.ndarray] = 0.1,
         patience: int = 10,
         exclude_pair_from_loss: Callable[[int, int], bool] = lambda i, j: False,
         verbose: bool = True,
         use_mse_loss: bool = False,
+        val_frequency: int = 10,
     ) -> Dict[str, List[float]]:
         """Train the Bradley-Terry model using batch-based training.
 
@@ -289,20 +291,23 @@ class PreferenceTrainer:
                 'val_loss': List of validation losses for each epoch
         """
         # Split data into train and validation sets
-        train_indices, val_indices = None, None
-        if type(val_ratio_or_indices) == float:
+        train_indices: np.ndarray
+        val_indices: np.ndarray
+        if isinstance(val_ratio_or_indices, float):
             indices = np.arange(len(embeddings))
             train_indices, val_indices = train_test_split(
-                indices, test_size=val_ratio, random_state=42
+                indices, test_size=val_ratio_or_indices, random_state=42
             )
-        elif (
-            type(val_ratio_or_indices) == list
-            or type(val_ratio_or_indices) == np.ndarray
-        ):
-            val_indices = val_ratio_or_indices
-            train_indices = [
-                v for v in np.arange(len(embeddings)) if v not in val_indices
-            ]
+        elif isinstance(val_ratio_or_indices, (list, np.ndarray)):
+            # Ensure val_indices is a proper numpy array, never None
+            val_indices = (
+                np.array(val_ratio_or_indices)
+                if val_ratio_or_indices is not None
+                else np.array([], dtype=int)
+            )
+            all_indices = np.arange(len(embeddings))
+            val_set = set(val_indices.tolist())
+            train_indices = np.array([v for v in all_indices if v not in val_set])
         else:
             raise KeyError(
                 f"val_ratio_or_indices should be float or list, got {type(val_ratio_or_indices)} {val_ratio_or_indices}"
@@ -320,7 +325,7 @@ class PreferenceTrainer:
             train_dataset, batch_size=batch_size, shuffle=True, drop_last=False
         )
 
-        metrics = {"train_loss": [], "val_loss": []}
+        metrics: Dict[str, List[float]] = {"train_loss": [], "val_loss": []}
 
         best_val_loss = float("inf")
         no_improve_epochs = 0
@@ -415,10 +420,12 @@ class PreferenceTrainer:
                         logger.info(f"Early stopping at epoch {epoch+1}")
                     break
             else:
-                # Add None or repeat last val_loss for epochs where we don't calculate it
-                metrics["val_loss"].append(
-                    metrics["val_loss"][-1] if metrics["val_loss"] else None
-                )
+                # Repeat last val_loss for epochs where we don't calculate it
+                if metrics["val_loss"]:
+                    metrics["val_loss"].append(metrics["val_loss"][-1])
+                else:
+                    # Add placeholder value for epochs where we don't have validation
+                    metrics["val_loss"].append(float("inf"))
 
             # Logging
             if verbose and (epoch + 1) % 10 == 0:
@@ -499,7 +506,7 @@ class PreferenceTrainer:
         )
 
         with torch.no_grad():
-            scores = self.model(embeddings_tensor).squeeze(-1).cpu().numpy()
+            scores: np.ndarray = self.model(embeddings_tensor).squeeze(-1).cpu().numpy()
 
         return scores
 
@@ -547,24 +554,25 @@ class PreferenceTrainer:
                 "auc": 0.5,  # Random classifier
             }
 
-        pairs = np.array(pairs)
-        y_true = np.array(y_true)
+        # Convert to numpy arrays explicitly with type annotation
+        pairs_array: np.ndarray = np.array(pairs)
+        y_true_array = np.array(y_true)
 
         # Compute preference predictions
-        y_pred = []
-        for i, j in pairs:
-            pred_i = predicted_scores[i]
-            pred_j = predicted_scores[j]
-            y_pred.append(pred_i - pred_j)
+        y_pred: List[float] = []
+        for i, j in pairs_array:
+            pred_i = predicted_scores[int(i)]
+            pred_j = predicted_scores[int(j)]
+            y_pred.append(float(pred_i - pred_j))
 
-        y_pred = np.array(y_pred)
+        y_pred_array = np.array(y_pred)
 
         # Compute preference accuracy
-        correct_prefs = np.sum((y_pred > 0) == (y_true > 0.5))
+        correct_prefs: int = int(np.sum((y_pred_array > 0) == (y_true_array > 0.5)))
         preference_accuracy = correct_prefs / len(pairs)
 
         # Compute ROC AUC for preference prediction
-        auc = roc_auc_score(y_true, y_pred)
+        auc = roc_auc_score(y_true_array, y_pred_array)
 
         return {
             "spearman_corr": spearman_corr,
@@ -617,7 +625,7 @@ class PreferenceTrainer:
         y_pred = predicted_scores[i_valid] - predicted_scores[j_valid]
 
         # 7. Compute preference accuracy
-        correct_count = np.sum((y_pred > 0) == (y_true > 0.5))
+        correct_count: int = int(np.sum((y_pred > 0) == (y_true > 0.5)))
         preference_accuracy = correct_count / len(y_true)
 
         # 8. Compute ROC AUC for preference prediction
