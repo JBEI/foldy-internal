@@ -1,70 +1,72 @@
 import datetime
-from datetime import timezone
 import io
-import logging
 import json
-import time
+import logging
+import os
 import re
 import tempfile
+import time
 import zipfile
-import os
-from typing import List, Dict, Any, Optional, Union, Tuple, cast
-
-from dnachisel import biotools
-from flask import current_app
-from flask import abort
-from google.cloud.storage.client import Client
-import numpy as np
-from redis import Redis
-from rq.job import Retry, Job
-from sqlalchemy.sql.elements import or_
-from sqlalchemy.orm import joinedload
-from werkzeug.exceptions import BadRequest
+from datetime import timezone
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
-from app.jobs import other_jobs, boltz_jobs
-from app.models import Dock, Fold, Invokation, User
+import numpy as np
 from app.extensions import compress, db, rq
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.sequence_util import back_translate, validate_aa_sequence
+from app.jobs import boltz_jobs, other_jobs
+from app.models import Dock, Fold, Invokation, User
+from dnachisel import biotools
+from flask import abort, current_app
+from google.cloud.storage.client import Client
+from redis import Redis
+from rq.job import Job, Retry
+from sqlalchemy.orm import joinedload
+from sqlalchemy.sql.elements import or_
+from werkzeug.exceptions import BadRequest
 
 
 def get_job_type_replacement(fold: Fold, job_type: str) -> int:
     """Replace any existing job of the given type with a new one.
-    
+
     Args:
         fold: The fold containing the jobs
         job_type: Type of job to replace
-        
+
     Returns:
         ID of the newly created invokation
     """
     for job in fold.jobs:
         if job.type == job_type:
-            logging.info(f"Deleting existing job {job.id} of type {job_type} for fold {fold.id}")
+            logging.info(
+                f"Deleting existing job {job.id} of type {job_type} for fold {fold.id}"
+            )
             job.delete(commit=False)
-            
+
     db.session.commit()
-    
+
     new_invokation = Invokation(fold_id=fold.id, type=job_type, state="queued")
     new_invokation.save()
-    
-    logging.info(f"Created new invokation {new_invokation.id} of type {job_type} for fold {fold.id}")
+
+    logging.info(
+        f"Created new invokation {new_invokation.id} of type {job_type} for fold {fold.id}"
+    )
     return new_invokation.id
 
 
 def start_stage(fold_id: int, stage: str, email_on_completion: bool) -> None:
     """Start the provided stage of processing.
-    
+
     Args:
         fold_id: ID of the fold to process
-        stage: Stage to start (features, models, email, both, write_fastas, 
+        stage: Stage to start (features, models, email, both, write_fastas,
                decompress_pkls, annotate)
         email_on_completion: Whether to send an email when processing completes
-        
+
     Raises:
         BadRequest: If fold not found or unsupported stage requested
-        
+
     Returns:
         None
     """
@@ -108,7 +110,9 @@ def start_stage(fold_id: int, stage: str, email_on_completion: bool) -> None:
             job_timeout="12h",
             result_ttl=48 * 60 * 60,  # 2 days
         )
-        logging.info(f"Queued decompress_pkls job {decompress_pkls_job.id} for fold {fold_id}")
+        logging.info(
+            f"Queued decompress_pkls job {decompress_pkls_job.id} for fold {fold_id}"
+        )
         email_dependent_jobs = [decompress_pkls_job]
 
     elif stage == "annotate":
@@ -221,14 +225,14 @@ def make_new_folds(
         start_fold_job: Whether to start processing jobs for new folds
         email_on_completion: Whether to send email when processing completes
         skip_duplicate_entries: Whether to skip entries that already exist
-        
+
     Raises:
         BadRequest: If validation fails or user not found
-        
+
     Returns:
         True if successful
-        
-    Note: 
+
+    Note:
         Folds in folds_data should not have an ID or status.
     """
 
@@ -273,7 +277,9 @@ def make_new_folds(
             )
             if existing_entry:
                 if not skip_duplicate_entries:
-                    logging.warning(f"Attempted duplicate fold creation: {fold_data['name']}")
+                    logging.warning(
+                        f"Attempted duplicate fold creation: {fold_data['name']}"
+                    )
                     raise BadRequest(
                         f'Someone has already submitted a fold named {fold_data["name"]} ({existing_entry.id}).'
                     )

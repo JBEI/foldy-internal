@@ -131,7 +131,7 @@ dmypy.json
 .vscode
 
 # Secrets
-cluster_config.yamlok 
+cluster_config.yamlok
 config.yaml
 prod_secrets.yaml
 dev_secrets.env

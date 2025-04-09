@@ -1,25 +1,34 @@
 import io
 import re
-from typing import Dict, Any, List, Tuple, Union, Optional, BinaryIO, Generator, Iterator
+from typing import (
+    Any,
+    BinaryIO,
+    Dict,
+    Generator,
+    Iterator,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
-from flask import Response, stream_with_context
-from flask import current_app, request, send_file, make_response
-from flask_jwt_extended.utils import get_jwt_identity, get_jwt
-from flask_restx import Namespace
-from flask_jwt_extended import jwt_required
-from flask_restx import Resource
-from flask_restx import fields
-from flask_restx import reqparse
-from sqlalchemy.sql.elements import and_
-from werkzeug.exceptions import BadRequest
-
-from app.models import Dock, Fold, Invokation
+from app.authorization import user_jwt_grants_edit_access, verify_has_edit_access
 from app.extensions import db, rq
 from app.helpers.fold_storage_manager import FoldStorageManager
-from app.authorization import (
-    user_jwt_grants_edit_access,
-    verify_has_edit_access,
+from app.models import Dock, Fold, Invokation
+from flask import (
+    Response,
+    current_app,
+    make_response,
+    request,
+    send_file,
+    stream_with_context,
 )
+from flask_jwt_extended import jwt_required
+from flask_jwt_extended.utils import get_jwt, get_jwt_identity
+from flask_restx import Namespace, Resource, fields, reqparse
+from sqlalchemy.sql.elements import and_
+from werkzeug.exceptions import BadRequest
 
 ns = Namespace("file_views", decorators=[jwt_required(fresh=True)])
 
@@ -37,11 +46,11 @@ class FoldResource(Resource):
     @ns.marshal_with(fold_pdb_fields)
     def get(self, fold_id: int, model_number: int) -> Dict[str, str]:
         """Get PDB string for a specific fold and model number.
-        
+
         Args:
             fold_id: ID of the fold
             model_number: Model number to retrieve
-            
+
         Returns:
             Dict containing PDB string
         """
@@ -66,13 +75,13 @@ class FoldPdbZipResource(Resource):
     @ns.expect(fold_file_zip_fields)
     def post(self):
         """Get zip file containing multiple fold files.
-        
+
         Returns:
             Zip file with requested fold files
         """
         manager = FoldStorageManager()
         manager.setup()
-        
+
         json_data = request.get_json()
         fold_ids = json_data["fold_ids"]
         relative_fpath = json_data["relative_fpath"]
@@ -94,11 +103,11 @@ class FoldPdbZipResource(Resource):
 class FoldPklResource(Resource):
     def post(self, fold_id: int, model_number: int):
         """Get pickle file for a specific fold and model number.
-        
+
         Args:
             fold_id: ID of the fold
             model_number: Model number to retrieve
-            
+
         Returns:
             Pickle file of the model
         """
@@ -120,14 +129,14 @@ class FoldPklResource(Resource):
 class DockSdfResource(Resource):
     def post(self, fold_id: int, ligand_name: str):
         """Get SDF file for a specific dock.
-        
+
         Args:
             fold_id: ID of the fold/protein
             ligand_name: Name of the ligand
-            
+
         Returns:
             File response with SDF data
-            
+
         Raises:
             BadRequest: If dock is not found
         """
@@ -161,14 +170,14 @@ class DockSdfResource(Resource):
 
 @ns.route("/file/list/<int:fold_id>")
 class FoldFileResource(Resource):
-    def get(self, fold_id: int) -> List[str]:
+    def get(self, fold_id: int) -> List[Dict[str, Any]]:
         """List all files for a given fold.
-        
+
         Args:
             fold_id: ID of the fold
-            
+
         Returns:
-            List of file paths
+            List of dictionaries with file information
         """
         manager = FoldStorageManager()
         manager.setup()
@@ -194,13 +203,15 @@ class FoldFileResource(Resource):
 
 @ns.route("/file/download/<int:fold_id>/<path:subpath>")
 class FileDownloadResource(Resource):
-    def get(self, fold_id: int, subpath: str) -> Union[Response, Tuple[Dict[str, str], int]]:
+    def get(
+        self, fold_id: int, subpath: str
+    ) -> Union[Response, Tuple[Dict[str, str], int]]:
         """Download a file from fold storage with streaming.
-        
+
         Args:
             fold_id: ID of the fold
             subpath: Path to file within fold storage
-            
+
         Returns:
             Streaming response with file data or error message with status code
         """
@@ -220,7 +231,7 @@ class FileDownloadResource(Resource):
 
         def generate() -> Generator[bytes, None, None]:
             """Generate file chunks for streaming.
-            
+
             Yields:
                 Chunks of file data
             """

@@ -44,7 +44,7 @@ WORKER_BOLTZ_TAG=$GOOGLE_CLOUD_REGION-docker.pkg.dev/$GOOGLE_CLOUD_PROJECT_ID/$G
 
 # TODO: delete
 # echo "Building Alphafold (required for worker)..."
-# DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t $FOLDY_ALPHAFOLD_TAG -f worker/alphafold/docker/Dockerfile worker/alphafold 
+# DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t $FOLDY_ALPHAFOLD_TAG -f worker/alphafold/docker/Dockerfile worker/alphafold
 # # docker tag FOLDY_ALPHAFOLD_TAG_OLD FOLDY_ALPHAFOLD_TAG
 
 echo "Building backend..."
@@ -55,7 +55,7 @@ DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t $WORKER_TAG -f worker/Docker
 
 # TODO: delete
 #   --build-arg FOLDY_ALPHAFOLD_TAG=$FOLDY_ALPHAFOLD_TAG \
-  
+
 echo "Building worker ESM..."
 DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t $WORKER_ESM_TAG -f worker/Dockerfile.esm \
   .
@@ -74,8 +74,7 @@ docker push $WORKER_ESM_TAG
 docker push $WORKER_BOLTZ_TAG
 docker push $FRONTEND_TAG
 
-# TODO: delete  
+# TODO: delete
 # if [ "$#" -eq 1 ]; then
 #   docker push $FOLDY_ALPHAFOLD_TAG
 # fi
-

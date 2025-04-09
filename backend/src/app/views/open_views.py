@@ -1,22 +1,20 @@
-from re import DEBUG
 import urllib
-
-from authlib.integrations.flask_client import OAuth
-from flask import redirect, current_app, request, jsonify
-from flask_restx import Namespace
-from flask import current_app, url_for
-from flask_restx import fields
-from flask_restx import Resource
-from flask_jwt_extended import create_access_token
-from flask_jwt_extended import set_access_cookies, unset_jwt_cookies
+from re import DEBUG
 
 from app.authorization import (
     email_should_get_edit_permission_by_default,
     email_should_get_upgraded_to_admin,
 )
-from app.models import User
-from app.extensions import db
-
+from app.extensions import db, rq
+from app.models import Invokation, User
+from authlib.integrations.flask_client import OAuth
+from flask import current_app, jsonify, redirect, request, url_for
+from flask_jwt_extended import (
+    create_access_token,
+    set_access_cookies,
+    unset_jwt_cookies,
+)
+from flask_restx import Namespace, Resource, fields
 
 ns = Namespace("open_views")
 

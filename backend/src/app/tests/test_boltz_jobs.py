@@ -1,15 +1,15 @@
-import pytest
-from unittest.mock import MagicMock, patch
-from flask import Flask
-from werkzeug.exceptions import BadRequest
-import pandas as pd
 import random
-import numpy as np
+from unittest.mock import MagicMock, patch
 
+import numpy as np
+import pandas as pd
+import pytest
 from app.extensions import db
 from app.helpers.fold_storage_manager import FoldStorageManager
-from app.models import User, Fold, Evolution, Invokation
-from app.jobs.boltz_jobs import run_boltz, cif_to_pdb
+from app.jobs.boltz_jobs import cif_to_pdb, run_boltz
+from app.models import Evolution, Fold, Invokation, User
+from flask import Flask
+from werkzeug.exceptions import BadRequest
 
 
 @pytest.fixture

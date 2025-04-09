@@ -1,14 +1,15 @@
-import pytest
+import random
 from unittest.mock import MagicMock, patch
-from flask import Flask
-from werkzeug.exceptions import BadRequest
+
+import numpy as np
 import pandas as pd
+import pytest
 from app.extensions import db
 from app.helpers.fold_storage_manager import FoldStorageManager
-from app.models import User, Fold, Evolution, Invokation
 from app.jobs.evolve_jobs import run_evolvepro
-import random
-import numpy as np
+from app.models import Evolution, Fold, Invokation, User
+from flask import Flask
+from werkzeug.exceptions import BadRequest
 
 
 @pytest.fixture(autouse=True)

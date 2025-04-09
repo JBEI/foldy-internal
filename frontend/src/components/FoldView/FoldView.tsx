@@ -566,7 +566,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
         return (
             <div className="tool-page">
                 <h2
-                    className="uk-margin-left uk-margin-right uk-text-center" // uk-heading-line 
+                    className="uk-margin-left uk-margin-right uk-text-center" // uk-heading-line
                     style={{
                         marginBottom: "0px",
                         // paddingBottom: "20px",

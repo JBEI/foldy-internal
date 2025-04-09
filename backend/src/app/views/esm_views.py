@@ -1,31 +1,29 @@
 import io
-import re
 import logging
-from typing import Dict, Any, List, Tuple, Union, Optional, cast
+import re
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
-from flask import Response, stream_with_context
-from flask import current_app, request, send_file, make_response
-from flask_jwt_extended.utils import get_jwt_identity, get_jwt
-from flask_restx import Namespace
+from app.authorization import user_jwt_grants_edit_access, verify_has_edit_access
+from app.extensions import db, rq
+from app.helpers.fold_storage_manager import FoldStorageManager
+from app.jobs import esm_jobs, other_jobs
+from app.models import Dock, Embedding, Fold, Invokation, Logit
+from app.util import get_job_type_replacement, make_new_folds
+from app.views.other_views import logit_fields
+from flask import (
+    Response,
+    current_app,
+    make_response,
+    request,
+    send_file,
+    stream_with_context,
+)
 from flask_jwt_extended import jwt_required
-from flask_restx import Resource
-from flask_restx import fields
-from flask_restx import reqparse
+from flask_jwt_extended.utils import get_jwt, get_jwt_identity
+from flask_restx import Namespace, Resource, fields, reqparse
+from rq.job import Job
 from sqlalchemy.sql.elements import and_
 from werkzeug.exceptions import BadRequest
-from rq.job import Job
-
-from app.jobs import other_jobs
-from app.jobs import esm_jobs
-from app.models import Dock, Fold, Invokation, Embedding, Logit
-from app.extensions import db, rq
-from app.util import get_job_type_replacement, make_new_folds
-from app.helpers.fold_storage_manager import FoldStorageManager
-from app.authorization import (
-    user_jwt_grants_edit_access,
-    verify_has_edit_access,
-)
-from app.views.other_views import logit_fields
 
 ns = Namespace("esm_views", decorators=[jwt_required(fresh=True)])
 
@@ -44,7 +42,9 @@ ALLOWED_ESM_MODELS: List[str] = [
     "esm1v",
 ]
 
-ALLOWED_LOGITS_MODELS: List[str] = ALLOWED_ESM_MODELS + ["esm1v_t33_650M_UR90S_ensemble"]
+ALLOWED_LOGITS_MODELS: List[str] = ALLOWED_ESM_MODELS + [
+    "esm1v_t33_650M_UR90S_ensemble"
+]
 
 
 embeddings_fields = ns.model(
@@ -64,13 +64,13 @@ class CalculateEmbeddingsResource(Resource):
     @ns.expect(embeddings_fields)
     def post(self, fold_id: int) -> bool:
         """Create a new embedding calculation job for a fold.
-        
+
         Args:
             fold_id: ID of the fold to create embeddings for
-            
+
         Returns:
             True if the embedding job was successfully created
-            
+
         Raises:
             BadRequest: If embedding model is not allowed or fold doesn't exist
         """
@@ -92,7 +92,7 @@ class CalculateEmbeddingsResource(Resource):
             )
 
         fold = Fold.get_by_id(fold_id)
-        
+
         if not fold:
             raise BadRequest(f"Fold with ID {fold_id} not found")
 
@@ -114,8 +114,10 @@ class CalculateEmbeddingsResource(Resource):
             job_timeout="12h",
             result_ttl=48 * 60 * 60,  # 2 days
         )
-        
-        logging.info(f"Queued embedding job {enqueued_job.id} for fold {fold_id}, model {embedding_model}")
+
+        logging.info(
+            f"Queued embedding job {enqueued_job.id} for fold {fold_id}, model {embedding_model}"
+        )
         return True
 
 
@@ -126,13 +128,13 @@ class StartLogitsResource(Resource):
     @ns.marshal_with(logit_fields)
     def post(self, fold_id: int) -> Logit:
         """Create a new logit calculation job for a fold.
-        
+
         Args:
             fold_id: ID of the fold to create logits for
-            
+
         Returns:
-            The created Logit record 
-            
+            The created Logit record
+
         Raises:
             BadRequest: If logit model is not allowed or fold doesn't exist
         """
@@ -149,7 +151,7 @@ class StartLogitsResource(Resource):
             )
 
         fold = Fold.get_by_id(fold_id)
-        
+
         if not fold:
             raise BadRequest(f"Fold with ID {fold_id} not found")
 
@@ -178,7 +180,7 @@ class StartLogitsResource(Resource):
             job_timeout="12h",
             result_ttl=48 * 60 * 60,  # 2 days
         )
-        
+
         logging.info(
             f"Queued logit job {enqueued_job.id} for fold {fold_id}, model {logit_model}, "
             f"use_structure={use_structure}, get_depth_two_logits={get_depth_two_logits}"

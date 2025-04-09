@@ -1,10 +1,11 @@
-import pytest
-from unittest.mock import Mock, patch
-import torch
-import pandas as pd
-import numpy as np
-from app.helpers.esm_util import get_naturalness
 from typing import Optional
+from unittest.mock import Mock, patch
+
+import numpy as np
+import pandas as pd
+import pytest
+import torch
+from app.helpers.esm_util import get_naturalness
 
 
 @pytest.fixture

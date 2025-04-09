@@ -1,42 +1,40 @@
 import io
+import logging
 import re
 import time
-import logging
 from typing import (
-    Dict,
     Any,
-    List,
-    Tuple,
-    Union,
-    Optional,
     BinaryIO,
+    Dict,
     Generator,
     Iterator,
+    List,
+    Optional,
+    Tuple,
+    Union,
     cast,
 )
 
-from flask import Response, stream_with_context
-from flask import current_app, request, send_file, make_response
-from flask_jwt_extended.utils import get_jwt_identity, get_jwt
-from flask_restx import Namespace
+import numpy as np
+from app.authorization import user_jwt_grants_edit_access, verify_has_edit_access
+from app.extensions import db, rq
+from app.helpers.fold_storage_manager import FoldStorageManager
+from app.jobs import esm_jobs, other_jobs
+from app.models import Dock, Fold, Invokation
+from app.util import get_job_type_replacement, make_new_folds, start_stage
+from flask import (
+    Response,
+    current_app,
+    make_response,
+    request,
+    send_file,
+    stream_with_context,
+)
 from flask_jwt_extended import jwt_required
-from flask_restx import Resource
-from flask_restx import fields
-from flask_restx import reqparse
+from flask_jwt_extended.utils import get_jwt, get_jwt_identity
+from flask_restx import Namespace, Resource, fields, reqparse
 from sqlalchemy.sql.elements import and_
 from werkzeug.exceptions import BadRequest
-import numpy as np
-
-from app.jobs import other_jobs
-from app.jobs import esm_jobs
-from app.models import Dock, Fold, Invokation
-from app.extensions import db, rq
-from app.util import start_stage, get_job_type_replacement, make_new_folds
-from app.helpers.fold_storage_manager import FoldStorageManager
-from app.authorization import (
-    user_jwt_grants_edit_access,
-    verify_has_edit_access,
-)
 
 ns = Namespace("other_views", decorators=[jwt_required(fresh=True)])
 

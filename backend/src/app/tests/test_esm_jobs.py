@@ -1,14 +1,15 @@
-import pytest
+import random
 from unittest.mock import MagicMock, patch
-from flask import Flask
-from werkzeug.exceptions import BadRequest
+
+import numpy as np
 import pandas as pd
+import pytest
 from app.extensions import db
 from app.helpers.fold_storage_manager import FoldStorageManager
-from app.models import User, Fold, Evolution, Invokation, Embedding
 from app.jobs.esm_jobs import get_esm_embeddings
-import random
-import numpy as np
+from app.models import Embedding, Evolution, Fold, Invokation, User
+from flask import Flask
+from werkzeug.exceptions import BadRequest
 
 
 @pytest.fixture
@@ -121,7 +122,7 @@ def test_run_embed_invalid_amino_acid(
             get_esm_embeddings(embed_id=embedding.id)
 
 
-def test_run_embed_invalid_amino_acid(
+def test_run_embed_invalid_amino_acid_with_custom_message(
     app, client, tmp_path, mock_storage_manager, test_fold, test_invokation
 ):
     with app.app_context():
@@ -139,7 +140,7 @@ def test_run_embed_invalid_amino_acid(
             get_esm_embeddings(embed_id=embedding.id)
 
 
-def test_run_embed_invalid_amino_acid(
+def test_run_embed_invalid_amino_acid_third_case(
     app, client, tmp_path, mock_storage_manager, test_fold, test_invokation
 ):
     with app.app_context():

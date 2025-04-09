@@ -86,7 +86,7 @@ export const getFoldPkl = async (
     modelNumber: number
 ): Promise<Blob> => {
     const response = await axiosInstance.post(
-        `/api/fold_pkl/${foldId}/${modelNumber}`, 
+        `/api/fold_pkl/${foldId}/${modelNumber}`,
         null,
         { responseType: 'blob' }
     );
@@ -101,7 +101,7 @@ export const getFoldPdbZip = async (
     dirname: string
 ): Promise<Blob> => {
     const response = await axiosInstance.post(
-        '/api/fold_pdb_zip', 
+        '/api/fold_pdb_zip',
         { fold_ids: foldIds, dirname },
         { responseType: 'blob' }
     );
@@ -140,7 +140,7 @@ export const getFoldPae = async (
 };
 
 /**
- * Gets contact probability data for a fold model 
+ * Gets contact probability data for a fold model
  */
 export const getFoldContactProb = async (
     foldId: number,

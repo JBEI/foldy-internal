@@ -1,37 +1,36 @@
-import time
-from io import BytesIO
-from datetime import datetime, UTC, timedelta
-import traceback
-import json
-import io
-import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestRegressor
-from werkzeug.exceptions import BadRequest
-from pathlib import Path
-import joblib
-import tempfile
-import subprocess
-from tempfile import TemporaryDirectory
-import os
 import glob
+import io
+import json
+import os
+import subprocess
+import tempfile
+import time
+import traceback
+from datetime import UTC, datetime, timedelta
+from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-from Bio.PDB import MMCIFParser, PDBIO
-
-from app.models import Fold, Evolution, Invokation
+import joblib
+import numpy as np
+import pandas as pd
+from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.fold_storage_manager import FoldStorageManager
-from app.helpers.sequence_util import (
-    get_measured_and_unmeasured_mutant_seq_ids,
-    get_loci_set,
-    process_and_validate_evolve_input_files,
-)
 from app.helpers.jobs_util import (
     _live_update_tail,
     _psql_tail,
-    try_run_job_with_logging,
     get_torch_cuda_is_available_and_add_logs,
+    try_run_job_with_logging,
 )
-from app.helpers.boltz_yaml_helper import BoltzYamlHelper
+from app.helpers.sequence_util import (
+    get_loci_set,
+    get_measured_and_unmeasured_mutant_seq_ids,
+    process_and_validate_evolve_input_files,
+)
+from app.models import Evolution, Fold, Invokation
+from Bio.PDB import PDBIO, MMCIFParser
+from sklearn.ensemble import RandomForestRegressor
+from werkzeug.exceptions import BadRequest
 
 
 def cif_to_pdb(cif_file: str, structure_id: str):

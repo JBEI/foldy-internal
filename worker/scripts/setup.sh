@@ -5,7 +5,7 @@ export DEBIAN_FRONTEND=noninteractive
 ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime
 echo "Etc/UTC" > /etc/timezone
 
-apt-get update 
+apt-get update
 apt-get install -y --no-install-recommends \
     ca-certificates \
     gnupg2 \

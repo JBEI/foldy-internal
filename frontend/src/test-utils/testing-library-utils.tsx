@@ -32,10 +32,10 @@ function customRender(
   options?: CustomRenderOptions
 ): RenderResult {
   const { route = '/', ...renderOptions } = options || {};
-  
+
   // Set the URL before rendering
   window.history.pushState({}, 'Test page', route);
-  
+
   return render(ui, { wrapper: AllProviders, ...renderOptions });
 }
 

@@ -1,12 +1,12 @@
-import time
-from datetime import datetime, timedelta, UTC, timezone
-import traceback
-import os
 import logging
+import os
+import time
+import traceback
 from contextlib import contextmanager
-from typing import Optional, Callable, Any, Dict, List, Union, TypeVar, cast
-from app.models import Invokation
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Any, Callable, Dict, List, Optional, TypeVar, Union, cast
 
+from app.models import Invokation
 
 PSQL_CHAR_LIMIT: int = 100 * 1000 * 1000
 
@@ -14,11 +14,11 @@ PSQL_CHAR_LIMIT: int = 100 * 1000 * 1000
 def _tail(stdout: str, max_char: int = 5000) -> str:
     """
     Return just the last few lines of the stdout string.
-    
+
     Args:
         stdout: The complete stdout string
         max_char: Maximum number of characters to include
-        
+
     Returns:
         A truncated string containing the last max_char characters
     """
@@ -30,10 +30,10 @@ def _tail(stdout: str, max_char: int = 5000) -> str:
 def _psql_tail(stdout: str) -> str:
     """
     Truncate stdout to fit within PostgreSQL character limits.
-    
+
     Args:
         stdout: The complete stdout string
-        
+
     Returns:
         A truncated string that fits within PostgreSQL limits
     """
@@ -43,10 +43,10 @@ def _psql_tail(stdout: str) -> str:
 def _live_update_tail(stdout: str) -> str:
     """
     Choose a tail size appropriate for streaming/live updates.
-    
+
     Args:
         stdout: The complete stdout string
-        
+
     Returns:
         A truncated string suitable for live updates
     """
@@ -56,13 +56,13 @@ def _live_update_tail(stdout: str) -> str:
 # Define type for the add_log function
 AddLogFn = Callable[..., None]
 
+
 def try_run_job_with_logging(
-    f: Callable[[AddLogFn], None], 
-    invokation: Invokation
+    f: Callable[[AddLogFn], None], invokation: Invokation
 ) -> None:
     """
     Execute a job function with logging and exception handling.
-    
+
     Args:
         f: The job function to execute, which takes an add_log function
         invokation: The Invokation model instance to update with logs and state
@@ -74,10 +74,10 @@ def try_run_job_with_logging(
     def sanitize_log(log_str: str) -> str:
         """
         Remove or replace problematic characters from log strings.
-        
+
         Args:
             log_str: The log string to sanitize
-            
+
         Returns:
             A sanitized string with problematic characters removed
         """
@@ -90,13 +90,11 @@ def try_run_job_with_logging(
         return sanitized
 
     def add_log(
-        msg: str, 
-        tail_function: Callable[[str], str] = _live_update_tail, 
-        **kwargs: Any
+        msg: str, tail_function: Callable[[str], str] = _live_update_tail, **kwargs: Any
     ) -> None:
         """
         Add a log message and update the invokation record.
-        
+
         Args:
             msg: The log message to add
             tail_function: Function to truncate logs for display
@@ -141,8 +139,9 @@ def try_run_job_with_logging(
         )
 
         if final_state != "finished":
+            logs_tail = _psql_tail("\n".join(logs))
             print(
-                f'Job finished in state {final_state} with logs:\n\n{_psql_tail("\n".join(logs))}',
+                f"Job finished in state {final_state} with logs:\n\n{logs_tail}",
                 flush=True,
             )
             assert False, _psql_tail("\n".join(logs))
@@ -151,10 +150,10 @@ def try_run_job_with_logging(
 def get_torch_cuda_is_available_and_add_logs(add_log: Callable[[str], Any]) -> bool:
     """
     Check CUDA availability and log GPU diagnostics.
-    
+
     Args:
         add_log: Function to add log messages
-        
+
     Returns:
         True if CUDA is available, False otherwise
     """
@@ -198,10 +197,12 @@ class LoggingRecorder(logging.Handler):
         self.invokation = invokation
         self.logs: List[str] = []
         self.starttime: float = time.time()
-        self.final_state: str = "failed"  # Default state, will be set to "finished" on success
+        self.final_state: str = (
+            "failed"  # Default state, will be set to "finished" on success
+        )
         self._previous_level: int = logging.INFO
         self._previous_handlers: List[logging.Handler] = []
-        
+
         try:
             self.invokation.update(
                 state="running",
@@ -213,7 +214,7 @@ class LoggingRecorder(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         """
         Process a log record by adding it to the invokation.
-        
+
         Args:
             record: The logging record to process
         """
@@ -232,10 +233,10 @@ class LoggingRecorder(logging.Handler):
             timedelta=timedelta(seconds=time.time() - self.starttime),
         )
 
-    def __enter__(self) -> 'LoggingRecorder':
+    def __enter__(self) -> "LoggingRecorder":
         """
         Set up logging when entering the context.
-        
+
         Returns:
             The LoggingRecorder instance
         """
@@ -254,16 +255,16 @@ class LoggingRecorder(logging.Handler):
         logger.addHandler(self)
         return self
 
-    def __exit__(self, exc_type: Optional[type], exc_val: Optional[Exception], exc_tb: Any) -> bool:
+    def __exit__(
+        self, exc_type: Optional[type], exc_val: Optional[Exception], exc_tb: Any
+    ) -> None:
         """
         Restore previous logging state when exiting the context.
-        
+
         Args:
             exc_type: The type of exception raised, if any
             exc_val: The exception instance raised, if any
             exc_tb: The traceback information, if an exception was raised
-            
-        Returns:
             False to propagate exceptions
         """
         logger = logging.getLogger()
@@ -295,10 +296,9 @@ class LoggingRecorder(logging.Handler):
 
             # If the job failed, print logs and raise assertion
             if self.final_state != "finished":
+                logs_tail = _psql_tail("\n".join(self.logs))
                 print(
-                    f'Job finished in state {self.final_state} with logs:\n\n{_psql_tail("\n".join(self.logs))}',
+                    f"Job finished in state {self.final_state} with logs:\n\n{logs_tail}",
                     flush=True,
                 )
                 assert False, _psql_tail("\n".join(self.logs))
-
-            return False  # Re-raise any exceptions

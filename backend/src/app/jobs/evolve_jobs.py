@@ -1,30 +1,30 @@
-import time
-from io import BytesIO
-from datetime import datetime, UTC, timedelta
-import traceback
-import json
 import io
-import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestRegressor
-from werkzeug.exceptions import BadRequest
+import json
+import time
+import traceback
+from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from pathlib import Path
-import joblib
 
-from app.models import Fold, Evolution, Invokation
+import joblib
+import numpy as np
+import pandas as pd
+from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.fold_storage_manager import FoldStorageManager
-from app.helpers.sequence_util import (
-    get_measured_and_unmeasured_mutant_seq_ids,
-    get_loci_set,
-    process_and_validate_evolve_input_files,
-    train_and_predict_activities,
-)
 from app.helpers.jobs_util import (
     _live_update_tail,
     _psql_tail,
     try_run_job_with_logging,
 )
-from app.helpers.boltz_yaml_helper import BoltzYamlHelper
+from app.helpers.sequence_util import (
+    get_loci_set,
+    get_measured_and_unmeasured_mutant_seq_ids,
+    process_and_validate_evolve_input_files,
+    train_and_predict_activities,
+)
+from app.models import Evolution, Fold, Invokation
+from sklearn.ensemble import RandomForestRegressor
+from werkzeug.exceptions import BadRequest
 
 
 def run_evolvepro(evolve_id: int):

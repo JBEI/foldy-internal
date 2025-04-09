@@ -1,9 +1,10 @@
-from typing import Callable, List, Dict, Tuple, Any, Union, Optional, cast
-import pandas as pd
-import re
 import json
-from app.helpers.jobs_util import get_torch_cuda_is_available_and_add_logs
 import logging
+import re
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
+
+import pandas as pd
+from app.helpers.jobs_util import get_torch_cuda_is_available_and_add_logs
 from app.helpers.sequence_util import (
     get_seq_ids_for_deep_mutational_scan,
     seq_id_to_seq,
@@ -18,13 +19,13 @@ def get_naturalness(
 ) -> Tuple[str, pd.DataFrame]:
     """
     Compute naturalness scores for a given wild-type amino acid sequence.
-    
+
     Args:
         wt_aa_seq: Wild-type amino acid sequence
         logit_model: ESM model name to use for logit computation
         get_depth_two_logits: If True, compute logits for all second-order mutants
         pdb_file_path: Optional path to PDB file for structure-aware models
-        
+
     Returns:
         Tuple containing:
             - JSON string of position probabilities (empty for depth-two logits)
@@ -32,8 +33,8 @@ def get_naturalness(
     """
     # Import ESM client
     logging.info(f"Creating ESM client for {logit_model}")
-    from app.helpers.esm_client import FoldyESMClient
     import torch
+    from app.helpers.esm_client import FoldyESMClient
 
     # Log cache directories
     torch_cache_dir = torch.hub.get_dir()

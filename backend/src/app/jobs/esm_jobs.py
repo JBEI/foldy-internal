@@ -1,46 +1,43 @@
-from datetime import datetime, UTC, timedelta
-from flask import current_app
+import json
+import logging
+import os
+import re
 import signal
 import subprocess
 import sys
-import time
-from io import StringIO
-import json
-import traceback
-import os
-import re
 import tempfile
+import time
+import traceback
+from datetime import UTC, datetime, timedelta
+from io import BytesIO, StringIO
 from pathlib import Path
-from io import BytesIO
-from werkzeug.exceptions import BadRequest
-import logging
 
 import docker
 import pandas as pd
-
+from app import email_to
 from app.database import db
 from app.extensions import rq
-from app.models import Fold, Invokation, Dock, Embedding, Evolution
+from app.helpers.boltz_yaml_helper import BoltzYamlHelper
+from app.helpers.esm_client import FoldyESMClient
+from app.helpers.esm_util import get_naturalness
 from app.helpers.fold_storage_manager import FoldStorageManager
-from app import email_to
-from app.models import Fold, Invokation, Dock, Logit
-from app.helpers.sequence_util import (
-    get_seq_ids_for_deep_mutational_scan,
-    seq_id_to_seq,
-    maybe_get_seq_id_error_message,
-    process_and_validate_evolve_input_files,
-    get_loci_set,
-)
 from app.helpers.jobs_util import (
+    LoggingRecorder,
     _live_update_tail,
     _psql_tail,
-    try_run_job_with_logging,
     get_torch_cuda_is_available_and_add_logs,
-    LoggingRecorder,
+    try_run_job_with_logging,
 )
-from app.helpers.boltz_yaml_helper import BoltzYamlHelper
-from app.helpers.esm_util import get_naturalness
-from app.helpers.esm_client import FoldyESMClient
+from app.helpers.sequence_util import (
+    get_loci_set,
+    get_seq_ids_for_deep_mutational_scan,
+    maybe_get_seq_id_error_message,
+    process_and_validate_evolve_input_files,
+    seq_id_to_seq,
+)
+from app.models import Dock, Embedding, Evolution, Fold, Invokation, Logit
+from flask import current_app
+from werkzeug.exceptions import BadRequest
 
 
 def get_esm_embeddings(
@@ -163,6 +160,13 @@ def get_esm_embeddings(
         fsm.setup()
         fsm.storage_manager.write_file(fold.id, embedding_path, embedding_csv_string)
 
+    # Define the logger function that will be passed to try_run_job_with_logging
+    def run_get_esm_embeddings_with_logger() -> None:
+        """Run the ESM embeddings computation with logging."""
+        # Since we're already inside the function that's doing the work,
+        # there's no need to call a separate function
+        pass
+
     try_run_job_with_logging(run_get_esm_embeddings_with_logger, invokation)
 
 
@@ -267,8 +271,8 @@ def finetune_esm_model(evolve_id: int):
         logging.info("Starting finetuning...")
 
         logging.info("Loading training code.")
-        from app.helpers.finetuning.training import train_per_protein, score_sequences
         import torch
+        from app.helpers.finetuning.training import score_sequences, train_per_protein
 
         if not fold.yaml_config:
             raise ValueError("Fold does not have a YAML config!")

@@ -1,25 +1,21 @@
 """Flask views for admin usage (eg, upgrading DBs, killing jobs, etc)."""
 
 import logging
-from typing import Dict, Any, List, Tuple, Union, Optional, Type, cast
+from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
 
+from app.authorization import verify_has_edit_access
+from app.extensions import db, rq
+from app.jobs import other_jobs
+from app.models import Fold, Invokation
+from app.util import start_stage
 from flask import request
-from flask_migrate import stamp, upgrade
-from flask_restx import Namespace
 from flask_jwt_extended import jwt_required
-from flask_restx import Resource
-from flask_restx import fields
+from flask_migrate import stamp, upgrade
+from flask_restx import Namespace, Resource, fields
 from rq.command import send_shutdown_command
 from rq.registry import FailedJobRegistry
 from sqlalchemy.sql.elements import and_
 from werkzeug.exceptions import BadRequest
-
-from app.jobs import other_jobs
-from app.models import Fold, Invokation
-from app.extensions import db, rq
-from app.authorization import verify_has_edit_access
-from app.util import start_stage
-
 
 ns = Namespace(
     "admin_views", decorators=[jwt_required(fresh=True), verify_has_edit_access]
@@ -30,7 +26,7 @@ ns = Namespace(
 class CreateDbsResource(Resource):
     def post(self) -> None:
         """Create all database tables.
-        
+
         Returns:
             None
         """
@@ -41,7 +37,7 @@ class CreateDbsResource(Resource):
 class UpgradeDbsResource(Resource):
     def post(self) -> None:
         """Upgrade database to latest migration.
-        
+
         Returns:
             None
         """
@@ -61,7 +57,7 @@ class StampDbsResource(Resource):
     @ns.expect(stamp_dbs_fields)
     def post(self) -> None:
         """Stamp database with specified migration revision.
-        
+
         Returns:
             None
         """
@@ -78,10 +74,10 @@ class RemoveFailedJobsResource(Resource):
     @ns.expect(remove_failed_jobs_fields)
     def post(self) -> None:
         """Remove all failed jobs from specified queue.
-        
+
         Returns:
             None
-            
+
         Raises:
             BadRequest: If queue doesn't exist
         """
@@ -89,7 +85,7 @@ class RemoveFailedJobsResource(Resource):
         queue_name = data["queue"]
         q = rq.get_queue(queue_name)
         registry = FailedJobRegistry(queue=q)
-        
+
         count = 0
         for job_id in registry.get_job_ids():
             try:
@@ -97,7 +93,7 @@ class RemoveFailedJobsResource(Resource):
                 count += 1
             except Exception as e:
                 logging.error(f"Error removing job {job_id}: {e}")
-        
+
         logging.info(f"Removed {count} failed jobs from {queue_name} queue")
 
 
@@ -109,7 +105,7 @@ class KillWorkerResource(Resource):
     @ns.expect(kill_worker_fields)
     def post(self) -> None:
         """Send shutdown command to a specific worker.
-        
+
         Returns:
             None
         """
@@ -123,7 +119,7 @@ class KillWorkerResource(Resource):
 class SetAllUnsetModelPresetsResource(Resource):
     def post(self) -> bool:
         """Set default model preset for all folds without one.
-        
+
         Returns:
             True if operation was successful
         """
@@ -145,13 +141,13 @@ class SetAllUnsetModelPresetsResource(Resource):
 class KillFoldsResource(Resource):
     def post(self, folds_range: str) -> bool:
         """Delete invocations for folds within a specific ID range.
-        
+
         Args:
             folds_range: Range of fold IDs in format "start-end"
-            
+
         Returns:
             True if operation was successful
-            
+
         Raises:
             BadRequest: If range format is invalid
         """
@@ -189,14 +185,14 @@ class KillFoldsResource(Resource):
 class BulkAddTagResource(Resource):
     def post(self, folds_range: str, new_tag: str) -> bool:
         """Add a tag to multiple folds within a specific ID range.
-        
+
         Args:
             folds_range: Range of fold IDs in format "start-end"
             new_tag: Tag to add to folds
-            
+
         Returns:
             True if operation was successful
-            
+
         Raises:
             BadRequest: If range format is invalid or tag is not alphanumeric
         """
@@ -249,7 +245,7 @@ class SendTestEmailResource(Resource):
     @verify_has_edit_access
     def post(self) -> bool:
         """Queue a test email job.
-        
+
         Returns:
             True if email job was queued successfully
         """
@@ -271,15 +267,17 @@ class AddInvokationToAllJobsResource(Resource):
     @verify_has_edit_access
     def post(self, job_type: str, job_state: str) -> bool:
         """Add invocation of specified type and state to all folds that don't have it.
-        
+
         Args:
             job_type: Type of job/invocation to add
             job_state: Initial state for the invocation
-            
+
         Returns:
             True if operation was successful
         """
-        logging.info(f"Adding invocation type={job_type}, state={job_state} to all folds")
+        logging.info(
+            f"Adding invocation type={job_type}, state={job_state} to all folds"
+        )
         count = 0
         for (fold_id,) in db.session.query(Fold.id).all():
             fold = Fold.get_by_id(fold_id)
@@ -288,7 +286,7 @@ class AddInvokationToAllJobsResource(Resource):
             new_invokation = Invokation(fold_id=fold.id, type=job_type, state=job_state)
             new_invokation.save()
             count += 1
-        
+
         logging.info(f"Added {count} new invocations")
         return True
 
@@ -298,16 +296,16 @@ class RunUnrunStagesResource(Resource):
     @verify_has_edit_access
     def post(self, stage_name: str) -> bool:
         """Run a specific stage for all folds that haven't run it successfully.
-        
+
         Args:
             stage_name: Name of the stage to run
-            
+
         Returns:
             True if operation was successful
         """
         logging.info(f"Running stage {stage_name} for folds that haven't run it")
         count = 0
-        
+
         for (fold_id,) in db.session.query(Fold.id).all():
             if stage_name == "write_fastas":
                 start_stage(fold_id, stage_name, False)
@@ -321,7 +319,7 @@ class RunUnrunStagesResource(Resource):
                 if j.type == stage_name and j.state != "failed":
                     is_already_run = True
                     break
-                    
+
             if is_already_run:
                 continue
 

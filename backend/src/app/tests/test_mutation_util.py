@@ -1,14 +1,14 @@
 # backend/src/app/tests/test_mutation_util.py
 
+import random
+
+import numpy as np
 import pytest
 from app.helpers.sequence_util import (
+    get_cross_validation_holdout_sets_with_stratification,
     get_seq_ids_for_deep_mutational_scan,
     seq_id_to_seq,
-    get_cross_validation_holdout_sets_with_stratification,
 )
-import pytest
-import numpy as np
-import random
 
 
 @pytest.fixture(autouse=True)

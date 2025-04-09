@@ -1,5 +1,6 @@
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import yaml
-from typing import List, Tuple, Optional, Any, Dict, Union
 
 
 class BoltzYamlHelper:

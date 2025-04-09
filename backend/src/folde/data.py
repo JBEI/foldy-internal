@@ -5,16 +5,17 @@ This module provides functions for loading and processing protein engineering
 datasets, including Deep Mutational Scanning (DMS) data from ProteinGym.
 """
 
-from typing import Dict, List, Any, Optional, Union, Tuple
-import os
-import glob
-import logging
-import pandas as pd
-import numpy as np
-from pathlib import Path
 import ast
+import glob
 import json
+import logging
+import os
 import re
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 

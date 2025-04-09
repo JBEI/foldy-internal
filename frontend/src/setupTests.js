@@ -91,18 +91,18 @@ beforeAll(() => {
     if (
         /Warning.*not wrapped in act/.test(args[0]) ||
         /Warning.*Received .* for a non-boolean attribute/.test(args[0]) ||
-        (typeof args[0] === 'string' && 
-         (args[0].includes('Warning: ReactDOM.render') || 
+        (typeof args[0] === 'string' &&
+         (args[0].includes('Warning: ReactDOM.render') ||
           args[0].includes('Warning: React.createElement')))
     ) {
         return;
     }
     originalError.call(console, ...args);
   };
-  
+
   console.warn = (...args) => {
     if (
-      typeof args[0] === 'string' && 
+      typeof args[0] === 'string' &&
       args[0].includes('Warning: validateDOMNesting')
     ) {
       return;

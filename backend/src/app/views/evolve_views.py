@@ -1,30 +1,28 @@
-import pandas as pd
 import json
 import logging
-from typing import Dict, Any, List, Tuple, Union, Optional, BinaryIO, cast
+from pathlib import Path
+from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
-from flask import request
-from flask_restx import Resource, fields
-from flask_jwt_extended import jwt_required
-from flask_restx import Namespace
-from werkzeug.datastructures import FileStorage
-from werkzeug.exceptions import BadRequest
-from sklearn.ensemble import RandomForestRegressor
-from pathlib import Path
-from rq.job import Job
-
-from app.views.other_views import evolution_fields
+import pandas as pd
 from app.authorization import verify_has_edit_access
 from app.extensions import db, rq
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.sequence_util import (
-    maybe_get_seq_id_error_message,
     get_measured_and_unmeasured_mutant_seq_ids,
+    maybe_get_seq_id_error_message,
 )
-from app.models import Fold, Evolution
+from app.jobs import esm_jobs, evolve_jobs
+from app.models import Evolution, Fold
 from app.util import get_job_type_replacement
-from app.jobs import evolve_jobs, esm_jobs
+from app.views.other_views import evolution_fields
+from flask import request
+from flask_jwt_extended import jwt_required
+from flask_restx import Namespace, Resource, fields
+from rq.job import Job
+from sklearn.ensemble import RandomForestRegressor
+from werkzeug.datastructures import FileStorage
+from werkzeug.exceptions import BadRequest
 
 ns = Namespace("evolve_views", decorators=[jwt_required(fresh=True)])
 
@@ -46,10 +44,10 @@ class EvolveResource(Resource):
     @ns.marshal_with(evolution_fields)
     def get(self, evolution_id: int) -> Evolution:
         """Get evolution record by ID.
-        
+
         Args:
             evolution_id: ID of the evolution to retrieve
-            
+
         Returns:
             Evolution record
         """
@@ -62,10 +60,10 @@ class EvolveResource(Resource):
     # @ns.consumes('multipart/form-data')
     def post(self) -> Evolution:
         """Create a new evolution job with activity data file.
-        
+
         Returns:
             Newly created Evolution record
-            
+
         Raises:
             BadRequest: If required fields are missing or if fold is not found
         """
@@ -107,7 +105,9 @@ class EvolveResource(Resource):
         ).first()
         if existing_evolve:
             # Delete existing evolve job.
-            logging.info(f"Deleting existing evolution job {existing_evolve.id} for {name}")
+            logging.info(
+                f"Deleting existing evolution job {existing_evolve.id} for {name}"
+            )
             existing_evolve.delete()
 
         # 1. Upload the activity file to the storage manager.
@@ -139,7 +139,7 @@ class EvolveResource(Resource):
 
         # 4. Start the job based on mode
         enqueued_job: Job
-        
+
         if mode == "finetuning":
             enqueued_job = rq.get_queue("esm").enqueue(
                 esm_jobs.finetune_esm_model,
@@ -147,12 +147,16 @@ class EvolveResource(Resource):
                 job_timeout="12h",
                 result_ttl=48 * 60 * 60,  # 2 days
             )
-            logging.info(f"Queued finetuning job {enqueued_job.id} for evolution {evolve_record.id}")
+            logging.info(
+                f"Queued finetuning job {enqueued_job.id} for evolution {evolve_record.id}"
+            )
         else:
             enqueued_job = rq.get_queue("cpu").enqueue(
                 evolve_jobs.run_evolvepro,
                 evolve_record.id,
             )
-            logging.info(f"Queued {mode} job {enqueued_job.id} for evolution {evolve_record.id}")
-            
+            logging.info(
+                f"Queued {mode} job {enqueued_job.id} for evolution {evolve_record.id}"
+            )
+
         return evolve_record

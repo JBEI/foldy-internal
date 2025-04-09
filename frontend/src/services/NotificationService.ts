@@ -22,8 +22,8 @@ class NotificationService {
         return NotificationService.instance;
     }
 
-    show({ 
-        message, 
+    show({
+        message,
         type = 'primary',
         timeout = 3000,
         position = 'top-right'
@@ -60,4 +60,4 @@ class NotificationService {
     }
 }
 
-export const notify = NotificationService.getInstance(); 
+export const notify = NotificationService.getInstance();

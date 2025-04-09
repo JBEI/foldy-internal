@@ -1,32 +1,32 @@
 # my_esm_lib/training.py
 
+import logging
 import os
-import re
 import random
+import re
+import types
+
+import evaluate
 import numpy as np
 import pandas as pd
 import torch
-import evaluate
-from sklearn.metrics import accuracy_score
-from scipy.stats import spearmanr
-import logging
-import types
-
 import torch.nn.functional as F
+from app.helpers.sequence_util import seq_id_to_seq
 from datasets import Dataset
+from scipy.stats import spearmanr
+from sklearn.metrics import accuracy_score
 from transformers import (
+    AutoModel,
+    AutoModelForMaskedLM,
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    DataCollatorWithPadding,
     Trainer,
     TrainingArguments,
     set_seed,
-    AutoTokenizer,
-    AutoModelForSequenceClassification,
-    AutoModel,
-    AutoModelForMaskedLM,
-    DataCollatorWithPadding,
 )
 from transformers.integrations import TensorBoardCallback
 from transformers.trainer_callback import TrainerCallback
-from app.helpers.sequence_util import seq_id_to_seq
 
 # from .modeling_esm import load_esm_model
 # from .ranking_trainer import RankingTrainer
@@ -174,7 +174,7 @@ def train_per_protein(
     train_df: pd.DataFrame,
     valid_df: pd.DataFrame,
     device: torch.device,
-    loss: ["dpo", "entropy"] = "dpo",
+    loss: str = "dpo",  # can be "dpo" or "entropy"
     train_batch_size: int = 4,
     grad_accum_steps: int = 1,
     val_batch_size: int = 4,
@@ -346,7 +346,7 @@ def load_esm_model(
     """
     Load an ESM model for masked language modeling to calculate mutation scores.
     """
-    from transformers import AutoTokenizer, AutoModelForMaskedLM
+    from transformers import AutoModelForMaskedLM, AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
@@ -627,8 +627,8 @@ def score_sequences(model, tokenizer, wt_aa_seq, seq_ids):
         - sequence: Full amino acid sequence
         - log_wt_marginal: Sum of wild-type amino acid log probabilities
     """
-    import torch
     import pandas as pd
+    import torch
     from tqdm import tqdm
 
     model.eval()

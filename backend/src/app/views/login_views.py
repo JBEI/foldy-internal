@@ -1,22 +1,21 @@
-import urllib
 import logging
-from typing import Dict, Any, List, Tuple, Union, Optional, cast
-
-from authlib.integrations.flask_client import OAuth
-from flask import redirect, current_app, request, jsonify, url_for, Response
-from flask_restx import Namespace
-from flask_restx import fields
-from flask_restx import Resource
-from flask_jwt_extended import create_access_token
-from flask_jwt_extended import set_access_cookies, unset_jwt_cookies
+import urllib
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from app.authorization import (
     email_should_get_edit_permission_by_default,
     email_should_get_upgraded_to_admin,
 )
-from app.models import User
 from app.extensions import db
-
+from app.models import User
+from authlib.integrations.flask_client import OAuth
+from flask import Response, current_app, jsonify, redirect, request, url_for
+from flask_jwt_extended import (
+    create_access_token,
+    set_access_cookies,
+    unset_jwt_cookies,
+)
+from flask_restx import Namespace, Resource, fields
 
 ns = Namespace("login_views")
 
@@ -33,7 +32,7 @@ oauth.register(
 class LoginResource(Resource):
     def get(self) -> Response:
         """Initiate the OAuth login flow.
-        
+
         Returns:
             Flask redirect response to either OAuth provider or directly to authorize endpoint
         """
@@ -50,7 +49,9 @@ class LoginResource(Resource):
             assert (
                 current_app.config["ENV"] == "development"
             ), "It would be a grave mistake to disable OAuth authentication in production."
-            logging.info("OAuth authentication disabled, redirecting directly to authorize endpoint")
+            logging.info(
+                "OAuth authentication disabled, redirecting directly to authorize endpoint"
+            )
             return redirect(
                 url_for("login_views_authorize_resource", state=state, _external=True)
             )
@@ -64,15 +65,17 @@ class LoginResource(Resource):
 
 def make_error_redirect(message: str) -> Response:
     """Create a redirect response to frontend with error message in query params.
-    
+
     Args:
         message: Error message to add to the redirect URL
-        
+
     Returns:
         Flask redirect response with error message in query parameters
     """
     frontend_parsed = urllib.parse.urlparse(current_app.config["FRONTEND_URL"])
-    frontend_queries: Dict[str, str] = dict(urllib.parse.parse_qsl(frontend_parsed.query))
+    frontend_queries: Dict[str, str] = dict(
+        urllib.parse.parse_qsl(frontend_parsed.query)
+    )
     frontend_queries["error_message"] = message
     frontend_parsed = frontend_parsed._replace(
         query=urllib.parse.urlencode(frontend_queries)
@@ -86,10 +89,10 @@ def make_error_redirect(message: str) -> Response:
 class AuthorizeResource(Resource):
     def get(self) -> Response:
         """Handle OAuth callback and create user session.
-        
+
         Returns:
             Flask redirect response to frontend with access token
-            
+
         Raises:
             AssertionError: If OAuth is disabled outside of development environment
         """
@@ -116,7 +119,7 @@ class AuthorizeResource(Resource):
         matching_users = list(db.session.query(User).filter_by(email=email))
         user: Optional[User] = matching_users[0] if matching_users else None
         user_was_registered: bool = user is not None
-        
+
         if not user_was_registered:
             new_user_type: str = (
                 "editor"
@@ -160,7 +163,9 @@ class AuthorizeResource(Resource):
         )
 
         frontend_parsed = urllib.parse.urlparse(frontend_url)
-        frontend_queries: Dict[str, str] = dict(urllib.parse.parse_qsl(frontend_parsed.query))
+        frontend_queries: Dict[str, str] = dict(
+            urllib.parse.parse_qsl(frontend_parsed.query)
+        )
         frontend_queries["access_token"] = access_token
         if not user_was_registered:
             frontend_queries["new_user"] = "true"
@@ -179,7 +184,7 @@ class AuthorizeResource(Resource):
 class LogoutResource(Resource):
     def get(self) -> Response:
         """Log user out by unsetting JWT cookies.
-        
+
         Returns:
             Flask redirect response to frontend with cleared cookies
         """

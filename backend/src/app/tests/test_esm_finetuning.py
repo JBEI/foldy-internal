@@ -1,16 +1,17 @@
-import pytest
-from unittest.mock import Mock, patch
-import torch
-import pandas as pd
-import numpy as np
-from app.helpers.finetuning.training import (
-    train_per_protein,
-    load_esm_model,
-    full_ranking_bce,
-    calculate_log_wt_marginal_from_logits,
-    score_sequences,
-)
 import types
+from unittest.mock import Mock, patch
+
+import numpy as np
+import pandas as pd
+import pytest
+import torch
+from app.helpers.finetuning.training import (
+    calculate_log_wt_marginal_from_logits,
+    full_ranking_bce,
+    load_esm_model,
+    score_sequences,
+    train_per_protein,
+)
 
 
 def test_full_ranking_bce_basic():

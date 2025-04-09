@@ -79,7 +79,7 @@ else
       --samples_per_complex 40 \
       --batch_size 10 \
       --actual_steps 18 \
-      --no_final_step_noise 
+      --no_final_step_noise
   cd -
 
   # Combine all the ranked SDFs into one SDF for easy downloading.

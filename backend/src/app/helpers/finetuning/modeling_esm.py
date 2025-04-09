@@ -1,8 +1,8 @@
 # my_esm_lib/modeling_esm.py
 
 import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from peft import LoraConfig, inject_adapter_in_model
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 
 def load_esm_model(

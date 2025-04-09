@@ -65,7 +65,7 @@ Create the name of the service account to use
 {{/*
 Create a ScaledJob to process RQ tasks from the specified queue.
 
-The passed context must include: 
+The passed context must include:
   .RqQueueName: the name of the RQ pool to listen on.
 
 Usage example:
@@ -97,7 +97,7 @@ spec:
     strategy: gradual                         # Optional. Default: default. Which Rollout Strategy KEDA will use.
     # propagationPolicy: foreground             # Optional. Default: background. Kubernetes propagation policy for cleaning up existing jobs during rollout.
   scalingStrategy:
-    strategy: "accurate"                        # Optional. Default: default. Which Scaling Strategy to use. 
+    strategy: "accurate"                        # Optional. Default: default. Which Scaling Strategy to use.
     # customScalingQueueLengthDeduction: 1      # Optional. A parameter to optimize custom ScalingStrategy.
     # customScalingRunningJobPercentage: "0.5"  # Optional. A parameter to optimize custom ScalingStrategy.
     # pendingPodConditions:                     # Optional. A parameter to calculate pending job count per the specified pod conditions
@@ -140,7 +140,7 @@ spec:
           - name: dshm
             emptyDir:
               medium: Memory
-              sizeLimit: 20Gi  
+              sizeLimit: 20Gi
 
         nodeSelector:
           iam.gke.io/gke-metadata-server-enabled: "true"

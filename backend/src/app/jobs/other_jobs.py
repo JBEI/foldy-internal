@@ -1,22 +1,21 @@
-from datetime import datetime, timedelta, timezone
-from flask import current_app
+import json
 import signal
 import subprocess
 import sys
 import time
-from io import StringIO
-import json
 import traceback
+from datetime import datetime, timedelta, timezone
+from io import StringIO
 
 import docker
 import pandas as pd
-
+from app import email_to
 from app.database import db
 from app.extensions import rq
-from app.models import Fold, Invokation, Dock
 from app.helpers.fold_storage_manager import FoldStorageManager
-from app import email_to
-from app.helpers.jobs_util import _tail, _live_update_tail, _psql_tail
+from app.helpers.jobs_util import _live_update_tail, _psql_tail, _tail
+from app.models import Dock, Fold, Invokation
+from flask import current_app
 
 
 def start_generic_script(invokation_id, process_args):

@@ -374,8 +374,8 @@ spec:
 
 ---
 # The following daemonset installs nvidia drivers on the nodes in the GPU
-# worker nodepools when the first spin up. 
-# 
+# worker nodepools when the first spin up.
+#
 # https://cloud.google.com/kubernetes-engine/docs/how-to/gpus
 #
 # curl https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/master/nvidia-driver-installer/cos/daemonset-preloaded-latest.yaml

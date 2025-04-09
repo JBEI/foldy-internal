@@ -70,7 +70,7 @@ def decompress_pkls(run_dir, out_dir):
         for np_key in NUMPY_KEYS:
             if np_key in model_pkl:
                 np.save(rank_dir / f'{np_key}.npy', model_pkl[np_key])
-        
+
         # Compute contact distances.
         #
         # Supplemental of https://www.science.org/doi/full/10.1126/science.abm4805

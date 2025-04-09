@@ -1,12 +1,13 @@
 """Copied from the email_to package, for adding ssl support."""
+
 from __future__ import absolute_import
 
 # -*- coding: utf-8 -*-
 
 """Main module."""
+import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-import smtplib
 
 import markdown
 import premailer

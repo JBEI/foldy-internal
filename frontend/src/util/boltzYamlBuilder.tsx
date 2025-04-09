@@ -382,7 +382,7 @@ const schemaBridge = new JSONSchemaBridge({
     validator: schemaValidator
 });
 
-/** 
+/**
  * 3) Convert a BoltzYamlHelper instance to our simpler Uniforms model.
  */
 function fromBoltzObjectToModel(helper: BoltzYamlHelper): BoltzFormModel {
@@ -425,9 +425,9 @@ function fromBoltzObjectToModel(helper: BoltzYamlHelper): BoltzFormModel {
     };
 }
 
-/** 
+/**
  * 4) Convert our simpler Uniforms model => full Boltz-style object => YAML.
- *    i.e. 
+ *    i.e.
  *      sequences: [
  *        { protein: { id: [...], sequence: "..." }},
  *        { ligand: { id: [...], smiles: "...", ccd: "..." }},
@@ -565,7 +565,7 @@ const SequenceField = connectField((props: any) => {
     );
 });
 
-/** 
+/**
  * A small helper that conditionally shows fields based on entity type
  */
 const EntityTypeConditionalFields = connectField((props: { value: BoltzFormModel['sequences'][number] }) => {

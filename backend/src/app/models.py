@@ -1,17 +1,15 @@
-""" Database models.
+"""Database models.
 
 Copied from https://github.com/cookiecutter-flask/cookiecutter-flask
 """
 
-from datetime import datetime, UTC
-from typing import List, Dict, Any, Optional, Union
-
-from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
-from sqlalchemy import func
-from sqlalchemy.orm import deferred
-from sqlalchemy import Index
+from datetime import UTC, datetime
+from typing import Any, Dict, List, Optional, Union
 
 from app.database import Column, PkModel, db, reference_col, relationship
+from sqlalchemy import Index, func
+from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
+from sqlalchemy.orm import deferred
 
 
 class Invokation(PkModel):
@@ -59,7 +57,8 @@ class User(PkModel):
 
     @hybrid_property
     def num_folds(self) -> int:
-        return self.folds.count(self)
+        count: int = self.folds.count(self)
+        return count
 
 
 class Fold(PkModel):
@@ -135,8 +134,10 @@ class Fold(PkModel):
     @hybrid_property
     def tags(self) -> List[str]:
         if not self.tagstring:
-            return []
-        return self.tagstring.split(",")
+            empty_list: List[str] = []
+            return empty_list
+        result: List[str] = self.tagstring.split(",")
+        return result
 
 
 class Dock(PkModel):

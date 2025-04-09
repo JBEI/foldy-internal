@@ -1,32 +1,30 @@
-from datetime import timezone, UTC, datetime
 import io
-import logging
 import json
-import time
-import re
-from re import fullmatch
-import tempfile
-import zipfile
+import logging
 import os
+import re
 import shutil
+import tempfile
+import time
+import zipfile
+from datetime import UTC, datetime, timezone
+from pathlib import Path, PurePosixPath
+from re import fullmatch
 from typing import Any, Dict, List, Optional, Union
 
-from dnachisel import biotools
-from flask import current_app
-from flask import abort
-from google.cloud.storage.client import Client
 import numpy as np
+from app.extensions import compress, db, rq
+from app.helpers.boltz_yaml_helper import BoltzYamlHelper
+from app.helpers.sequence_util import back_translate
+from app.models import Dock, Fold, Invokation, User
+from dnachisel import biotools
+from flask import abort, current_app
+from google.cloud.storage.client import Client
 from redis import Redis
 from rq.job import Retry
-from sqlalchemy.sql.elements import or_
 from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.sql.elements import or_
 from werkzeug.exceptions import BadRequest
-from pathlib import Path, PurePosixPath
-
-from app.models import Dock, Fold, Invokation, User
-from app.extensions import compress, db, rq
-from app.helpers.sequence_util import back_translate
-from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 
 
 class StorageAccessor:

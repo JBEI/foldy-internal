@@ -1,42 +1,36 @@
 import json
 import os
-from typing import Dict, Any, Optional, Tuple, Union, Type, List, Callable
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
+import rq_dashboard
+import werkzeug
+from app import models
+from app.authorization import user_jwt_grants_edit_access
+from app.extensions import admin, compress, db, migrate, rq
 from flask import Flask, jsonify
 from flask.helpers import make_response
 from flask_admin.contrib.sqla import ModelView
 from flask_admin.form.fields import JSONField
-from flask_jwt_extended.view_decorators import (
-    jwt_required,
-    verify_jwt_in_request,
-)
-from flask_restx import Api
-from flask_restx import Resource
 from flask_cors import CORS
-from flask_jwt_extended.exceptions import JWTExtendedException
-from jwt.exceptions import ExpiredSignatureError
 from flask_jwt_extended import JWTManager
+from flask_jwt_extended.exceptions import JWTExtendedException
 from flask_jwt_extended.utils import get_jwt
+from flask_jwt_extended.view_decorators import jwt_required, verify_jwt_in_request
+from flask_restx import Api, Resource
+from jwt.exceptions import ExpiredSignatureError
 from markupsafe import Markup
-import werkzeug
+from prometheus_client import make_wsgi_app
 from werkzeug.exceptions import BadRequest, HTTPException
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
-from prometheus_client import make_wsgi_app
 from wtforms import TextAreaField
 from wtforms.widgets import TextArea
-
-from app import models
-from app.extensions import admin, db, migrate, rq, compress
-from app.authorization import user_jwt_grants_edit_access
-import rq_dashboard
-
 
 app = Flask(__name__)
 
 
 def createRestxApi() -> Api:
     """Creates and configures a Flask-RestX API instance with error handlers.
-    
+
     Returns:
         Api: Configured Flask-RestX API instance
     """
@@ -45,7 +39,9 @@ def createRestxApi() -> Api:
     # Handle authentication errors.
     @api.errorhandler(JWTExtendedException)
     @api.errorhandler(ExpiredSignatureError)
-    def handle_expired_signature(error: Union[JWTExtendedException, ExpiredSignatureError]) -> Tuple[Dict[str, str], int]:
+    def handle_expired_signature(
+        error: Union[JWTExtendedException, ExpiredSignatureError],
+    ) -> Tuple[Dict[str, str], int]:
         return {"message": f"Login failed: {str(error)}"}, 401
 
     return api
@@ -53,7 +49,7 @@ def createRestxApi() -> Api:
 
 def register_extensions(app: Flask) -> None:
     """Registers Flask extensions and configures admin views.
-    
+
     Args:
         app: Flask application instance
     """
@@ -61,12 +57,13 @@ def register_extensions(app: Flask) -> None:
     class VerifiedModelView(ModelView):
         def is_accessible(self) -> bool:
             """Checks if the current user has access to this admin view.
-            
+
             Returns:
                 bool: True if user has edit access, False otherwise
             """
             verify_jwt_in_request()
-            return user_jwt_grants_edit_access(get_jwt()["user_claims"])
+            result: bool = user_jwt_grants_edit_access(get_jwt()["user_claims"])
+            return result
 
         # Add these defaults for all model views
         column_display_pk = True
@@ -101,7 +98,7 @@ def register_extensions(app: Flask) -> None:
             "features_log",
             "models_log",
         ]
-        column_default_sort = ("id", True)
+        column_default_sort = "id"  # Use consistent type (string, not tuple)
         form_overrides = {
             "yaml_config": TextAreaField,
         }
@@ -112,15 +109,17 @@ def register_extensions(app: Flask) -> None:
             }
         }
 
-        def _sequence_formatter(view: Any, context: Any, model: models.Fold, name: str) -> Markup:
+        def _sequence_formatter(
+            view: Any, context: Any, model: models.Fold, name: str
+        ) -> Markup:
             """Format sequence field for display in admin view.
-            
+
             Args:
                 view: Admin view instance
                 context: Rendering context
                 model: Fold model instance
                 name: Field name
-                
+
             Returns:
                 Markup: HTML-safe content for rendering
             """
@@ -186,9 +185,13 @@ def register_extensions(app: Flask) -> None:
 
         # Add custom CSS to truncate/scroll long text in extra_seq_ids column
         column_formatters = {
-            "extra_seq_ids": lambda v, c, m, p: Markup(
-                f'<div style="max-width:200px; overflow-x:auto; white-space:nowrap;">{m.extra_seq_ids}</div>'
-            ) if m.extra_seq_ids else ""
+            "extra_seq_ids": lambda v, c, m, p: (
+                Markup(
+                    f'<div style="max-width:200px; overflow-x:auto; white-space:nowrap;">{m.extra_seq_ids}</div>'
+                )
+                if m.extra_seq_ids
+                else ""
+            )
         }
 
     class EvolutionModelView(VerifiedModelView):
@@ -223,7 +226,7 @@ def create_app(config_object: str = "settings") -> Flask:
 
     Args:
         config_object: Python module with configuration variables
-        
+
     Returns:
         Flask: Configured Flask application
     """
@@ -239,11 +242,12 @@ def create_app(config_object: str = "settings") -> Flask:
 
     jwt = JWTManager(app)
 
-    from app.views.login_views import ns as login_views_ns, oauth
     from app.views.admin_views import ns as admin_views_ns
-    from app.views.file_views import ns as file_views_ns
     from app.views.esm_views import ns as esm_views_ns
     from app.views.evolve_views import ns as evolve_views_ns
+    from app.views.file_views import ns as file_views_ns
+    from app.views.login_views import ns as login_views_ns
+    from app.views.login_views import oauth
     from app.views.other_views import ns as other_views_ns
 
     api = createRestxApi()
@@ -253,7 +257,7 @@ def create_app(config_object: str = "settings") -> Flask:
     class HealthCheckResource(Resource):
         def get(self) -> bool:
             """Simple health check endpoint.
-            
+
             Returns:
                 bool: Always returns True if the service is running
             """
@@ -263,12 +267,14 @@ def create_app(config_object: str = "settings") -> Flask:
     @app.errorhandler(BadRequest)
     @api.errorhandler(BadRequest)
     @api.errorhandler(ValueError)
-    def handle_unexpected_error(error: Union[ValueError, BadRequest]) -> Tuple[Dict[str, str], int]:
+    def handle_unexpected_error(
+        error: Union[ValueError, BadRequest],
+    ) -> Tuple[Dict[str, str], int]:
         """Handle ValueError and BadRequest exceptions.
-        
+
         Args:
             error: The exception that was raised
-            
+
         Returns:
             Tuple containing error response dictionary and HTTP status code
         """
@@ -298,7 +304,7 @@ def create_app(config_object: str = "settings") -> Flask:
     @jwt_required(fresh=True)
     def before_request() -> None:
         """Protect RQ dashboard pages with JWT authentication.
-        
+
         Returns:
             None: Function doesn't return anything, but has side effect of verifying JWT
         """

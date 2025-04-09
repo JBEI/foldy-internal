@@ -1,13 +1,14 @@
-import pytest
 from unittest.mock import Mock, patch
-import torch
-import pandas as pd
+
 import numpy as np
+import pandas as pd
+import pytest
+import torch
 from app.helpers.esm_client import (
-    FoldyESMClient,
-    FoldyESMCClient,
     FoldyESM1and2Client,
     FoldyESM3Client,
+    FoldyESMCClient,
+    FoldyESMClient,
 )
 
 # Test sequences

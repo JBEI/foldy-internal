@@ -19,7 +19,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           plotly: ['plotly.js/dist/plotly'],
-          pdbeMolstar: ['pdbe-molstar/build/pdbe-molstar-plugin'],   
+          pdbeMolstar: ['pdbe-molstar/build/pdbe-molstar-plugin'],
           vendor: [
             'react',
             'react-dom',

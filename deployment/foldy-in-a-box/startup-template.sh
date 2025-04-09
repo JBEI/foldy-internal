@@ -64,7 +64,7 @@ echo "Connecting to $FOLDY_BOX_URL"
 
 # if [ -f "/foldydbs/FINISHED" ]; then
 #     echo "Foldy DBs already finished downloading."
-# else 
+# else
 #     echo "Downloading Foldy Databases... might take up to 48 hours."
 #     /usr/bin/docker compose \
 #         -f deployment/foldy-in-a-box/docker-compose.yml \

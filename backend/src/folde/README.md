@@ -6,11 +6,11 @@ This module provides infrastructure for evaluating machine learning models on pr
 
 This module uses data from **ProteinGym**, a comprehensive benchmark for assessing protein fitness prediction models. ProteinGym was developed by Cheng et al. and provides a standardized collection of Deep Mutational Scanning (DMS) datasets.
 
-**Citation**:  
-Cheng, Y., Raghuram, J., Aghazadeh, A., Huang, P.-S., & Russ, W. P. (2023). ProteinGym: Large-scale benchmarks for protein fitness prediction and design. *Nature Methods*.  
+**Citation**:
+Cheng, Y., Raghuram, J., Aghazadeh, A., Huang, P.-S., & Russ, W. P. (2023). ProteinGym: Large-scale benchmarks for protein fitness prediction and design. *Nature Methods*.
 DOI: [10.1038/s41592-023-01953-5](https://doi.org/10.1038/s41592-023-01953-5)
 
-**ProteinGym Repository**:  
+**ProteinGym Repository**:
 [https://github.com/OATML-Markslab/ProteinGym](https://github.com/OATML-Markslab/ProteinGym)
 
 ## Data Structure
