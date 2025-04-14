@@ -50,8 +50,9 @@ embeddings_fields = ns.model(
     {
         "batch_name": fields.String(required=True),
         "embedding_model": fields.String(required=True),
-        "extra_seq_ids": fields.List(fields.String(), required=False),
-        "dms_starting_seq_ids": fields.List(fields.String(), required=False),
+        "extra_seq_ids": fields.String(required=False),
+        "dms_starting_seq_ids": fields.String(required=False),
+        "extra_layers": fields.String(required=False),
     },
 )
 
@@ -76,11 +77,19 @@ class CalculateEmbeddingsResource(Resource):
 
         batch_name: str = req["batch_name"]
         embedding_model: str = req["embedding_model"]
-        extra_seq_ids: List[str] = req.get("extra_seq_ids", [])
-        dms_starting_seq_ids: List[str] = req.get("dms_starting_seq_ids", [])
+        extra_seq_ids_str: str = req.get("extra_seq_ids", "")
+        dms_starting_seq_ids_str: str = req.get("dms_starting_seq_ids", "")
+        extra_layers_str: str = req.get("extra_layers", "")
 
-        extra_seq_ids = [seq_id.strip() for seq_id in extra_seq_ids if seq_id.strip()]
-        dms_starting_seq_ids = [seq_id.strip() for seq_id in dms_starting_seq_ids if seq_id.strip()]
+        extra_seq_ids: list[str] = [
+            seq_id.strip() for seq_id in extra_seq_ids_str.split(",") if seq_id.strip()
+        ]
+        dms_starting_seq_ids: list[str] = [
+            seq_id.strip() for seq_id in dms_starting_seq_ids_str.split(",") if seq_id.strip()
+        ]
+        extra_layers: list[str] = [
+            layer.strip() for layer in extra_layers_str.split(",") if layer.strip()
+        ]
 
         if embedding_model not in ALLOWED_ESM_MODELS:
             raise BadRequest(
@@ -100,6 +109,7 @@ class CalculateEmbeddingsResource(Resource):
             embedding_model=embedding_model,
             extra_seq_ids=",".join(extra_seq_ids),
             dms_starting_seq_ids=",".join(dms_starting_seq_ids),
+            extra_layers=",".join(extra_layers),
             invokation_id=new_invokation_id,
         )
 

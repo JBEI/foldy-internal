@@ -26,7 +26,6 @@ from app.helpers.jobs_util import (
     _live_update_tail,
     _psql_tail,
     get_torch_cuda_is_available_and_add_logs,
-    try_run_job_with_logging,
 )
 from app.helpers.sequence_util import (
     get_loci_set,
@@ -59,6 +58,11 @@ def get_esm_embeddings(
         embed_record.dms_starting_seq_ids.split(",") if embed_record.dms_starting_seq_ids else []
     )
     extra_seq_ids = embed_record.extra_seq_ids.split(",") if embed_record.extra_seq_ids else []
+    extra_layers = (
+        [int(ii) for ii in embed_record.extra_layers.split(",")]
+        if embed_record.extra_layers
+        else []
+    )
 
     fold = embed_record.fold
     if not fold:
@@ -117,11 +121,17 @@ def get_esm_embeddings(
         foldy_esm_client = FoldyESMClient.get_client(embedding_model)
 
         def get_embedding_dict(seq_id, seq):
-            return {
+            embedding_list = foldy_esm_client.embed(seq, extra_layers=extra_layers)
+            output_dict = {
                 "seq_id": seq_id,
                 "seq": seq,
-                "embedding": json.dumps(foldy_esm_client.embed(seq)),
+                "embedding": json.dumps(embedding_list[-1]),
             }
+            for extra_layer_idx, extra_layer_embedding in zip(extra_layers, embedding_list[:-1]):
+                output_dict[f"embedding_layer_{extra_layer_idx}"] = json.dumps(
+                    extra_layer_embedding
+                )
+            return output_dict
 
         embedding_dicts = []
 
@@ -145,15 +155,6 @@ def get_esm_embeddings(
         fsm = FoldStorageManager()
         fsm.setup()
         fsm.storage_manager.write_file(fold.id, embedding_path, embedding_csv_string)
-
-    # Define the logger function that will be passed to try_run_job_with_logging
-    def run_get_esm_embeddings_with_logger() -> None:
-        """Run the ESM embeddings computation with logging."""
-        # Since we're already inside the function that's doing the work,
-        # there's no need to call a separate function
-        pass
-
-    try_run_job_with_logging(run_get_esm_embeddings_with_logger, invokation)
 
 
 def get_esm_logits(logit_id: int):

@@ -23,6 +23,7 @@ export const startEmbeddings = async (
     batchName: string,
     dmsStartingSeqIds: string[],
     extraSeqIds: string[],
+    extraLayers: string[],
     embeddingModel: string
 ): Promise<boolean> => {
     const response = await axiosInstance.post(
@@ -32,6 +33,7 @@ export const startEmbeddings = async (
             embedding_model: embeddingModel,
             dms_starting_seq_ids: dmsStartingSeqIds,
             extra_seq_ids: extraSeqIds,
+            extra_layers: extraLayers,
         }
     );
     return response.data;

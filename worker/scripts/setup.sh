@@ -6,6 +6,9 @@ ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime
 echo "Etc/UTC" > /etc/timezone
 
 apt-get update
+apt-get install -y --no-install-recommends ubuntu-keyring
+apt-get update
+
 apt-get install -y --no-install-recommends \
     ca-certificates \
     gnupg2 \
@@ -65,4 +68,13 @@ rm /tmp/miniconda.sh
 # 7) Install pip packages for your worker environment
 /opt/conda/envs/worker/bin/pip install --no-cache-dir -r /backend/requirements.txt
 
-rm -rf /var/lib/apt/lists/*
+# Clean conda & pip
+/opt/conda/bin/conda clean -a -y
+rm -rf /opt/conda/pkgs
+rm -rf /root/.cache/pip
+
+# Clean Rust if not needed
+rm -rf /root/.cargo /root/.rustup
+
+# Remove APT caches & temporary files
+rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*

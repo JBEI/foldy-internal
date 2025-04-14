@@ -20,7 +20,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Install special requirements.
 # RUN /opt/conda/envs/worker/bin/pip install esm tokenizers==0.13.2 transformers==4.26.1 datasets==2.9.0 evaluate==0.4.0 peft==0.9.0 deepspeed==0.8.1
-RUN /opt/conda/envs/worker/bin/pip install \
+RUN /opt/conda/envs/worker/bin/pip --no-cache-dir install \
     tokenizers==0.15.2 \
     transformers==4.37.2 \
     datasets==2.16.1 \

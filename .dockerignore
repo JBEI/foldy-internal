@@ -1,7 +1,10 @@
 **/.git
 **/venv
+**/.venv
+**/.mypy_cache
+**/.pytest_cache
 **/node_modules
 **/.vscode
 .boltz/
 backend/src/notebooks/
-backend/src/folde/data/*
+backend/src/folde/data/

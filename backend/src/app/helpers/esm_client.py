@@ -1,4 +1,6 @@
 import json
+import logging
+import sys
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union, cast
 
@@ -8,6 +10,7 @@ import pandas as pd
 SequenceType = str
 ComplexType = List[Tuple[str, str]]
 SequenceOrComplexType = Union[SequenceType, ComplexType]
+
 
 # Import for type checking only
 if TYPE_CHECKING:
@@ -51,7 +54,8 @@ class FoldyESMClient(ABC):
         self,
         sequence_or_complex: SequenceOrComplexType,
         pdb_file_path: Optional[str] = None,
-    ) -> List[float]:
+        extra_layers: List[int] = [],
+    ) -> List[List[float]]:
         """
         Get embedding for a protein sequence or complex.
 
@@ -61,15 +65,13 @@ class FoldyESMClient(ABC):
             pdb_file_path: Optional path to a PDB file for structure-aware models
 
         Returns:
-            A list of floats representing the embedding vector
+            A list of list of floats representing embedding vectors for extra_layers, and the final layer.
         """
         pass
 
     @abstractmethod
     def get_logits(
-        self,
-        sequence_or_complex: SequenceOrComplexType,
-        pdb_file_path: Optional[str] = None,
+        self, sequence_or_complex: SequenceOrComplexType, pdb_file_path: Optional[str] = None
     ) -> pd.DataFrame:
         """
         Get logits for a protein sequence or complex.
@@ -170,7 +172,8 @@ class FoldyESMCClient(FoldyESMClient):
         self,
         sequence_or_complex: SequenceOrComplexType,
         pdb_file_path: Optional[str] = None,
-    ) -> List[float]:
+        extra_layers: List[int] = [],
+    ) -> List[List[float]]:
         """
         Get embedding for a protein sequence or complex.
 
@@ -180,7 +183,7 @@ class FoldyESMCClient(FoldyESMClient):
             pdb_file_path: Optional path to a PDB file (not supported for ESM-C)
 
         Returns:
-            A list of floats representing the embedding vector
+            A list of list of floats representing embedding vectors for extra_layers, and the final layer.
         """
         from esm.sdk.api import ESMProtein, LogitsConfig
         from esm.utils.structure.protein_complex import ProteinComplex
@@ -194,11 +197,25 @@ class FoldyESMCClient(FoldyESMClient):
                 sequence_or_complex, pdb_file_path
             )
         logits_output = self.client.logits(
-            protein_tensor, LogitsConfig(sequence=False, return_embeddings=True)
+            protein_tensor,
+            LogitsConfig(
+                sequence=False,
+                return_embeddings=True,
+                return_hidden_states=True if extra_layers else False,
+            ),
         )
-        # Average across residue dimension
-        embedding = logits_output.embeddings.mean(dim=1).squeeze(0)
-        return embedding.tolist()
+
+        embeddings = []
+
+        if extra_layers:
+            all_embeddings = logits_output.hidden_states.mean(dim=-2).squeeze()
+            logging.info(f"embedding shape [num_layers, hidden_size]: {all_embeddings.shape}")
+            for extra_layer_idx in extra_layers:
+                embeddings.append(all_embeddings[extra_layer_idx, :])
+
+        embeddings.append(logits_output.embeddings.mean(dim=1).squeeze(0))
+
+        return embeddings
 
     def get_logits(
         self,
@@ -358,6 +375,16 @@ class FoldyESM1and2Client(FoldyESMClient):
         """
         import torch
 
+        logging.info(
+            f"Loading ESM-1/2 model: {model_name} (note: we have esm in sys.modules: {'esm' in sys.modules})"
+        )
+        if "esm" in sys.modules:
+            logging.error(
+                f"WE ARE BOOTING ESM FROM sys.modules... GOD HELP US. This is effectively uninstalling ESMC/ESM3 from the system. If they get used later, they will mysteriously fail."
+            )
+            sys.modules.pop("esm")
+
+        self.model_name = model_name
         self.model, self.alphabet = torch.hub.load("facebookresearch/esm:main", model_name)
         self.batch_converter = self.alphabet.get_batch_converter()
         self.model.eval()  # Set to evaluation mode
@@ -372,7 +399,8 @@ class FoldyESM1and2Client(FoldyESMClient):
         self,
         sequence_or_complex: SequenceOrComplexType,
         pdb_file_path: Optional[str] = None,
-    ) -> List[float]:
+        extra_layers: List[int] = [],
+    ) -> List[List[float]]:
         """
         Get embedding for a protein sequence.
 
@@ -381,7 +409,7 @@ class FoldyESM1and2Client(FoldyESMClient):
             pdb_file_path: Not supported for ESM-1/2
 
         Returns:
-            A list of floats representing the embedding vector
+            A list of list of floats representing embedding vectors for extra_layers, and the final layer.
 
         Raises:
             ValueError: If a complex or PDB file is provided (not supported)
@@ -398,13 +426,40 @@ class FoldyESM1and2Client(FoldyESMClient):
         _, _, batch_tokens = self.batch_converter(data)
         batch_tokens = batch_tokens.to(self.device)
 
+        MODEL_TO_NUM_LAYERS = {
+            "esm2_t48_15B_UR50D": 48,
+            "esm2_t36_3B_UR50D": 36,
+            "esm2_t33_650M_UR50D": 33,
+            "esm2_t30_150M_UR50D": 30,
+            "esm2_t12_35M_UR50D": 12,
+            "esm2_t6_8M_UR50D": 6,
+            "esm1v_t33_650M_UR90S_1": 33,
+            "esm1v_t33_650M_UR90S_2": 33,
+            "esm1v_t33_650M_UR90S_3": 33,
+            "esm1v_t33_650M_UR90S_4": 33,
+            "esm1v_t33_650M_UR90S_5": 33,
+            "esm_msa1b_t12_100M_UR50S": 12,
+            "esm_msa1_t12_100M_UR50S": 12,
+            "esm1b_t33_650M_UR50S": 33,
+            "esm1_t34_670M_UR50S": 34,
+            "esm1_t34_670M_UR50D": 34,
+            "esm1_t34_670M_UR100": 34,
+            "esm1_t12_85M_UR50S": 12,
+            "esm1_t6_43M_UR50S": 6,
+        }
+
         with torch.no_grad():
-            results = self.model(batch_tokens, repr_layers=[33])
-        token_embeddings = results["representations"][33]
+            results = self.model(
+                batch_tokens, repr_layers=[MODEL_TO_NUM_LAYERS.get(self.model_name)]
+            )
+        logging.info(
+            f'Results shape: {len(results["representations"])} {results["representations"]}'
+        )
+        token_embeddings = results["representations"][MODEL_TO_NUM_LAYERS.get(self.model_name)]
 
         # Remove cls and eos tokens, then average
         protein_embedding = token_embeddings[0, 1:-1].mean(0)
-        return protein_embedding.cpu().tolist()
+        return [protein_embedding.cpu().tolist()]
 
     def get_logits(
         self,

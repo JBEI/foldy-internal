@@ -58,7 +58,9 @@ def mock_esm3_client():
 
         # Mock logits method with embeddings
         mock_embeddings = torch.randn(1, len(TEST_SEQUENCE), 1280)  # Example embedding size
-        mock_logits_output = Mock(embeddings=mock_embeddings)
+        mock_logits_output = Mock(
+            embeddings=mock_embeddings, hidden_states=torch.randn(33, len(TEST_SEQUENCE), 1280)
+        )
         mock_client.logits.return_value = mock_logits_output
 
         yield mock_client
@@ -106,7 +108,8 @@ def test_esmc_embed(mock_torch_device, mock_esmc_client):
     embedding = client.embed(TEST_SEQUENCE)
 
     assert isinstance(embedding, list)
-    assert len(embedding) == 1280  # Expected embedding dimension
+    assert len(embedding) == 1
+    assert len(embedding[0]) == 1280  # Expected embedding dimension
 
 
 def test_esmc_embed_with_pdb_fails(mock_torch_device, mock_esmc_client):
@@ -120,7 +123,8 @@ def test_esm3_embed_with_pdb_succeeds(mock_torch_device, mock_esm3_client):
     embedding = client.embed(TEST_SEQUENCE, TEST_PDB_PATH)
 
     assert isinstance(embedding, list)
-    assert len(embedding) == 1280
+    assert len(embedding) == 1
+    assert len(embedding[0]) == 1280
 
 
 def test_esm2_embed_with_pdb_fails(mock_torch_device, mock_esm2_hub):
@@ -150,7 +154,8 @@ def test_esm2_embed(mock_torch_device, mock_esm2_hub):
     embedding = client.embed(TEST_SEQUENCE)
 
     assert isinstance(embedding, list)
-    assert len(embedding) == 1280
+    assert len(embedding) == 1
+    assert len(embedding[0]) == 1280
 
 
 def test_esm2_embed_with_pdb(mock_torch_device, mock_esm2_hub):
@@ -173,6 +178,18 @@ def test_esm2_get_logits_with_pdb(mock_torch_device, mock_esm2_hub):
     client = FoldyESMClient.get_client("esm2_t33_650M_UR50D")
     with pytest.raises(ValueError):
         client.get_logits(TEST_SEQUENCE, TEST_PDB_PATH)
+
+
+def test_esm3_embed_with_extra_layers(mock_torch_device, mock_esm3_client):
+    client = FoldyESMClient.get_client("esm3_t36_3B_UR50D")
+    embedding = client.embed(TEST_SEQUENCE, extra_layers=[1, 2, 3])
+
+    assert isinstance(embedding, list)
+    assert len(embedding) == 4
+    assert len(embedding[0]) == 1280
+    assert len(embedding[1]) == 1280
+    assert len(embedding[2]) == 1280
+    assert len(embedding[3]) == 1280
 
 
 # Helper function to verify DataFrame structure

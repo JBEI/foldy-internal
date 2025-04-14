@@ -18,6 +18,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings 
     const [batchName, setBatchName] = useState<string | null>(null);
     const [dmsStartingSeqIds, setDmsStartingSeqIds] = useState<string>('WT');
     const [extraSequenceIDs, setExtraSequenceIDs] = useState<string>('');
+    const [extraLayers, setExtraLayers] = useState<string>('');
     const [showEmbeddingSection, setShowEmbeddingSection] = useState<boolean>(false);
     const [model, setModel] = useState<string>('esmc_300m');
 
@@ -29,6 +30,10 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings 
         setExtraSequenceIDs(event.target.value);
     };
 
+    const handleExtraLayersTextareaChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+        setExtraLayers(event.target.value);
+    };
+
     const handleStartDmsEmbeddings = async () => {
         const dmsStartingSeqIdsArray: string[] = dmsStartingSeqIds
             .split('\n')
@@ -38,6 +43,10 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings 
             .split('\n')
             .map(line => line.trim())
             .filter(line => line !== '');
+        const extraLayersArray: string[] = extraLayers
+            .split(',')
+            .map(line => line.trim())
+            .filter(line => line !== '');
 
         if (!batchName) {
             notify.error('Batch name is required.');
@@ -45,7 +54,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings 
         }
 
         try {
-            await startEmbeddings(foldId, batchName, dmsStartingSeqIdsArray, extraIDsArray, model);
+            await startEmbeddings(foldId, batchName, dmsStartingSeqIdsArray, extraIDsArray, extraLayersArray, model);
             notify.success('Started embedding run.');
         } catch (error) {
             console.error('Error starting embedding run:', error);
@@ -80,6 +89,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings 
         setBatchName(embedding.name);
         setDmsStartingSeqIds(embedding.dms_starting_seq_ids.split(',').join('\n'));
         setExtraSequenceIDs(embedding.extra_seq_ids.split(',').join('\n'));
+        setExtraLayers(embedding.extra_layers.split(',').join(','));
         setShowEmbeddingSection(true);
         setModel(embedding.embedding_model);
     };
@@ -174,20 +184,20 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings 
                 {showEmbeddingSection && (
                     <div style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
                         <h4>Start a New Embedding Run</h4>
-                        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-                            {/* Batch Name */}
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                <label htmlFor="batch-name" className="uk-form-label">Batch Name</label>
-                                <input
-                                    id="batch-name"
-                                    className="uk-input"
-                                    type="text"
-                                    placeholder="Enter batch name"
-                                    value={batchName || ''}
-                                    onChange={(e) => setBatchName(e.target.value)}
-                                />
-                            </div>
+                        {/* Batch Name */}
+                        <div style={{ flex: 1, minWidth: '200px' }}>
+                            <label htmlFor="batch-name" className="uk-form-label">Batch Name</label>
+                            <input
+                                id="batch-name"
+                                className="uk-input"
+                                type="text"
+                                placeholder="Enter batch name"
+                                value={batchName || ''}
+                                onChange={(e) => setBatchName(e.target.value)}
+                            />
+                        </div>
 
+                        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
                             {/* Extra Sequence IDs */}
                             <div style={{ flex: 1, minWidth: '200px' }}>
                                 <label htmlFor="extra-sequence-ids" className="uk-form-label">Extra Sequence IDs</label>
@@ -219,6 +229,19 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings 
                             value={model}
                             onChange={setModel}
                         />
+
+                        {/* Extra Layers */}
+                        <div style={{ flex: 1, minWidth: '200px' }}>
+                            <label htmlFor="extra-layers" className="uk-form-label">Extra Layers</label>
+                            <textarea
+                                id="extra-layers"
+                                className="uk-input"
+                                // rows={5}
+                                placeholder="Enter extra embedding layers to extract like 5,10,15"
+                                value={extraLayers}
+                                onChange={handleExtraLayersTextareaChange}
+                            ></textarea>
+                        </div>
 
                         <div style={{ marginTop: '20px' }}>
                             <button

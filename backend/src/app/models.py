@@ -204,6 +204,8 @@ class Embedding(PkModel):
     extra_seq_ids = Column(db.String)
     dms_starting_seq_ids = Column(db.String)
 
+    extra_layers = Column(db.String, nullable=True)
+
     # State tracking.
     invokation_id = Column(
         db.Integer,

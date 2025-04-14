@@ -175,6 +175,7 @@ def register_extensions(app: Flask) -> None:
             "embedding_model",
             "extra_seq_ids",
             "dms_starting_seq_ids",
+            "extra_layers",
         ]
         column_sortable_list = ["id", "name", "embedding_model"]
         column_searchable_list = ["name", "embedding_model"]

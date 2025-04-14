@@ -122,9 +122,10 @@ export interface Embedding {
     name: string;
     fold_id: number;
     embedding_model: string;
-    extra_seq_ids: string;
-    dms_starting_seq_ids: string;
-    invokation_id: number;
+    extra_seq_ids: string | null;
+    dms_starting_seq_ids: string | null;
+    extra_layers: string | null;
+    invokation_id: number | null;
 }
 
 export interface Evolution {

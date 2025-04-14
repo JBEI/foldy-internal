@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
 
 import numpy as np
 import pandas as pd
+from app.helpers.preference_ranking import create_preference_model
 from folde.util import internal_sample_n_indices
 from numpy.typing import NDArray
 from pandas import DataFrame, Series
@@ -374,6 +375,66 @@ class RandomForestFewShotModel(FewShotModel):
                     debug_info["n_estimators"] = len(first_model.estimators_)
 
         return debug_info
+
+
+@register_few_shot_model
+class TorchMLPFewShotModel(FewShotModel):
+    """Custom, torch-backed MLP model."""
+
+    def __init__(self, **kwargs):
+        """Initialize the Random Forest regressor with any parameters supported by sklearn's RandomForestRegressor."""
+        super().__init__(
+            temperature=kwargs.pop("temperature", 0.0),
+            epsilon=kwargs.pop("epsilon", 0.0),
+        )
+        self.model, self.trainer = create_preference_model(**kwargs)
+
+    def fit(
+        self,
+        X: NDArray[np.float64],
+        y: NDArray[np.float64],
+        validation_data: Optional[Tuple[NDArray[np.float64], NDArray[np.float64]]] = None,
+        **kwargs,
+    ) -> "TorchMLPFewShotModel":
+        # assert False, "Double check this logic for validation data."
+        validation_indices = []
+        if validation_data:
+            validation_indices = list(range(X.shape[0], X.shape[0] + validation_data[0].shape[0]))
+            X = np.concatenate([X, validation_data[0]])
+            y = np.concatenate([y, validation_data[1]])
+
+        TRAIN_EPOCHS = 100 * int(256 / y.shape[0])
+        PATIENCE = 200
+        USE_MSE_LOSS = False
+        VALIDATION_FREQUENCY = 10
+        metrics = self.trainer.train(
+            embeddings=X,
+            activity_labels=y,
+            val_ratio_or_indices=validation_indices,  # No validation data.
+            batch_size=min(16, y.shape[0]),
+            epochs=TRAIN_EPOCHS,
+            patience=PATIENCE,
+            verbose=True,
+            use_mse_loss=USE_MSE_LOSS,
+            val_frequency=VALIDATION_FREQUENCY,
+        )
+
+        self._is_fitted = True
+        self._fitting_metrics = metrics
+
+        return self
+
+    def predict(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Make predictions using the trained Random Forest."""
+        if not self._is_fitted:
+            raise ValueError("Model has not been trained yet. Call fit() first.")
+        return self.trainer.predict_scores(X)
+
+    def get_debug_info(self) -> Dict[str, Any]:
+        """Get debug information for the Random Forest."""
+        if not self._is_fitted:
+            raise ValueError("Model has not been trained yet. Call fit() first.")
+        return self._fitting_metrics
 
 
 def get_few_shot_model(model_name: str, **kwargs) -> FewShotModel:

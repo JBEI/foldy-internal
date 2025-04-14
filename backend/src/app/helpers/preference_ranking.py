@@ -311,8 +311,8 @@ class PreferenceTrainer:
         # Create datasets
         train_embeddings = embeddings[train_indices]
         train_activity_labels = activity_labels[train_indices]
-        val_embeddings = embeddings[val_indices]
-        val_activity_labels = activity_labels[val_indices]
+        val_embeddings = embeddings[val_indices] if len(val_indices) > 0 else None
+        val_activity_labels = activity_labels[val_indices] if len(val_indices) > 0 else None
 
         # Create datasets and dataloaders
         train_dataset = PreferenceDataset(train_embeddings, train_activity_labels)
@@ -387,7 +387,7 @@ class PreferenceTrainer:
             metrics["train_loss"].append(train_loss)
 
             # Validation - only run every val_frequency epochs
-            if (epoch + 1) % val_frequency == 0:
+            if (epoch + 1) % val_frequency == 0 and len(val_indices) > 0:
                 val_loss = self.evaluate(
                     val_embeddings,
                     val_activity_labels,
@@ -615,10 +615,16 @@ class PreferenceTrainer:
         # 8. Compute ROC AUC for preference prediction
         auc_val = roc_auc_score(y_true, y_pred)
 
+        # assert False, "MUST FINISH GETTING THIS THRESHOLDING FUNCTION FINISHED"
+        # top16_binarization = true_labels.rank(descending=False) < 16
+        # top16_auc = compute_auc(predicted_scores, top16_binarization)
+        top16_auc = 0.0
+
         return {
             "spearman_corr": spearman_corr,
             "preference_accuracy": preference_accuracy,
             "auc": auc_val,
+            "top16_auc": top16_auc,
         }
 
 

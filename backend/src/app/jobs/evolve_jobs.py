@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import time
 import traceback
 from datetime import UTC, datetime, timedelta
@@ -12,9 +13,9 @@ import pandas as pd
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.jobs_util import (
+    LoggingRecorder,
     _live_update_tail,
     _psql_tail,
-    try_run_job_with_logging,
 )
 from app.helpers.sequence_util import (
     get_loci_set,
@@ -39,7 +40,7 @@ def run_evolvepro(evolve_id: int):
     if not invokation:
         raise BadRequest(f"Invokation {evolve.invokation_id} not found")
 
-    def run_evolvepro_with_logger(add_log):
+    with LoggingRecorder(invokation):
         """Helper function to run evolvepro with a logger."""
         if not fold.yaml_config:
             raise ValueError("Fold does not have a YAML config!")
@@ -58,13 +59,13 @@ def run_evolvepro(evolve_id: int):
         # 1. Get the activity file.
         evolve_directory = Path("evolve") / evolve.name
         activity_file_path = evolve_directory / "activity.xlsx"
-        add_log(f"Getting the activity file {activity_file_path}")
+        logging.info(f"Getting the activity file {activity_file_path}")
         activity_file = fsm.storage_manager.get_binary(evolve.fold_id, str(activity_file_path))
         raw_activity_df = pd.read_excel(BytesIO(activity_file))
 
         # 2. Read and merge all embedding CSVs
         embedding_paths = evolve.embedding_files.split(",")
-        add_log(f"Reading {len(embedding_paths)} embedding files")
+        logging.info(f"Reading {len(embedding_paths)} embedding files")
         embedding_dfs = []
         chunk_size = 10000  # Adjust based on memory constraints
 
@@ -87,13 +88,13 @@ def run_evolvepro(evolve_id: int):
 
         # Combine all embeddings
         raw_embedding_df = pd.concat(embedding_dfs, ignore_index=True)
-        add_log(f"Found {raw_embedding_df.shape[0]} embeddings")
+        logging.info(f"Found {raw_embedding_df.shape[0]} embeddings")
 
         # 3. Process the activity and embedding data.
         activity_df, embedding_df = process_and_validate_evolve_input_files(
             wt_aa_seq, raw_activity_df, raw_embedding_df
         )
-        add_log(
+        logging.info(
             f"Found {activity_df.shape[0]} activity measurements among {activity_df.seq_id.unique().shape[0]} mutants"
         )
 
@@ -101,12 +102,14 @@ def run_evolvepro(evolve_id: int):
             train_and_predict_activities(activity_df, embedding_df, mode)
         )
 
-        add_log(
+        logging.info(
             f"Finished fitting model. {len(measured_mutants)} measured mutants and {len(unmeasured_mutants)} unmeasured mutants, all of which had activity predicted."
         )
 
         # 6. Store model, visualizations, and predicted activities in storage manager.
-        add_log(f"Storing model, visualizations, and predicted activities in {evolve_directory}")
+        logging.info(
+            f"Storing model, visualizations, and predicted activities in {evolve_directory}"
+        )
         model_buffer = io.BytesIO()
         joblib.dump(model, model_buffer)
         serialized_model_binary_string = model_buffer.getvalue()
@@ -123,5 +126,3 @@ def run_evolvepro(evolve_id: int):
             str(evolve_directory / "predicted_activity.csv"),
             predicted_activity_csv_str,
         )
-
-    try_run_job_with_logging(run_evolvepro_with_logger, invokation)
