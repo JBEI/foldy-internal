@@ -8,7 +8,7 @@ This module uses data from **ProteinGym**, a comprehensive benchmark for assessi
 
 **Citation**:
 Cheng, Y., Raghuram, J., Aghazadeh, A., Huang, P.-S., & Russ, W. P. (2023). ProteinGym: Large-scale benchmarks for protein fitness prediction and design. *Nature Methods*.
-DOI: [10.1038/s41592-023-01953-5](https://doi.org/10.1038/s41592-023-01953-5)
+DOI: [link](https://pubmed.ncbi.nlm.nih.gov/38106144/)
 
 **ProteinGym Repository**:
 [https://github.com/OATML-Markslab/ProteinGym](https://github.com/OATML-Markslab/ProteinGym)
@@ -21,16 +21,16 @@ The `prediction/data` directory contains datasets and related files organized as
 
 ```
 prediction/data/
-├── DMS_substitutions.csv           # Metadata file from ProteinGym listing all available DMS datasets
-├── DMS_ProteinGym_substitutions/   # Directory containing DMS datasets from ProteinGym
+├── DMS_substitutions.csv           # Metadata file from ProteinGym listing all available DMS datasets. Download it from the [ProteinGym github](https://github.com/OATML-Markslab/ProteinGym/blob/main/reference_files/DMS_substitutions.csv).
+├── DMS_ProteinGym_substitutions/   # Directory containing DMS datasets from ProteinGym. Get a zip file with this content from the [ProteinGym website](https://proteingym.org/download): Go to ProteinGym.com/download, then select DMS Assays > Substitutions
 │   ├── PROTEIN_ID1.csv             # Individual DMS dataset files
 │   ├── PROTEIN_ID2.csv
 │   └── ...
-├── embeddings/                     # Directory containing protein embeddings
+├── embeddings/                     # Directory containing protein embeddings. Download these from a Foldy instance where embeddings have been run. Recommend downloading from the "Embed" tab directly, rather than the files tab, so the file names are correctly formatted.
 │   ├── PROTEIN_ID1_embedding_MODEL_ID.csv  # Embedding files with MODEL_ID identifier
 │   ├── PROTEIN_ID2_embedding_MODEL_ID.csv
 │   └── ...
-└── naturalness/                    # Directory containing protein naturalness scores
+└── naturalness/                    # Directory containing protein naturalness scores.  Download these from a Foldy instance where embeddings have been run. Recommend downloading from the "Naturalness" tab directly, rather than the files tab, so the file names are correctly formatted.
     ├── PROTEIN_ID1_naturalness_MODEL_ID.csv  # Naturalness files with MODEL_ID identifier
     ├── PROTEIN_ID2_naturalness_MODEL_ID.csv
     └── ...
