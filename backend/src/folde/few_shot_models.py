@@ -110,9 +110,11 @@ def get_ensemble_prediction(
     if decision_mode == "max":
         return np.max(pred_arr, axis=0)
     elif decision_mode == "ucb":
-        return np.max(pred_arr, axis=0) + np.std(pred_arr, axis=0)
+        return np.mean(pred_arr, axis=0) + np.std(pred_arr, axis=0)
     elif decision_mode == "median":
         return np.median(pred_arr, axis=0)
+    elif decision_mode == "mean":
+        return np.mean(pred_arr, axis=0)
     raise ValueError(f"Invalid decision mode {decision_mode}")
 
 
@@ -273,6 +275,7 @@ class RandomForestFewShotModel(FewShotModel):
         ]
         self.metrics_: Dict[str, float] = {}
         self._is_fitted: bool = False
+        self.decision_mode = kwargs.pop("decision_mode", "median")
 
     def fit(
         self,
@@ -327,7 +330,7 @@ class RandomForestFewShotModel(FewShotModel):
         """Make predictions using the trained Random Forest."""
         if not self._is_fitted:
             raise ValueError("Model has not been trained yet. Call fit() first.")
-        return get_ensemble_prediction(self.models, X, "ucb")
+        return get_ensemble_prediction(self.models, X, self.decision_mode)
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information for the Random Forest."""
