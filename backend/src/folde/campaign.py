@@ -342,7 +342,8 @@ def simulate_campaign(
         with ProcessPoolExecutor() as executor:
             futures = []
             for sim_idx in range(number_of_simulations):
-                bootstrapped_seq_ids = np.random.choice(
+                rng = np.random.RandomState(random_seed + sim_idx)
+                bootstrapped_seq_ids = rng.choice(
                     activity_df.index.values,
                     size=int(len(activity_df) * 0.5),
                     replace=False,
@@ -354,7 +355,7 @@ def simulate_campaign(
                         activity_df.loc[bootstrapped_seq_ids],
                         naturalness_df.loc[bootstrapped_seq_ids],
                         embedding_df.loc[bootstrapped_seq_ids],
-                        random_seed=random_seed,
+                        random_seed=random_seed + sim_idx,
                         round_size=round_size,
                         config=model_config,
                         activity_column=activity_column,

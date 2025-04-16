@@ -1,3 +1,4 @@
+import json
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -190,6 +191,11 @@ def test_esm3_embed_with_extra_layers(mock_torch_device, mock_esm3_client):
     assert len(embedding[1]) == 1280
     assert len(embedding[2]) == 1280
     assert len(embedding[3]) == 1280
+
+    assert type(json.dumps(embedding[0])) == str
+    assert type(json.dumps(embedding[1])) == str
+    assert type(json.dumps(embedding[2])) == str
+    assert type(json.dumps(embedding[3])) == str
 
 
 # Helper function to verify DataFrame structure

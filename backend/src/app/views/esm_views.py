@@ -9,7 +9,7 @@ from app.helpers.fold_storage_manager import FoldStorageManager
 from app.jobs import esm_jobs, other_jobs
 from app.models import Dock, Embedding, Fold, Invokation, Logit
 from app.util import get_job_type_replacement, make_new_folds
-from app.views.other_views import logit_fields
+from app.views.other_views import embedding_fields, logit_fields
 from flask import (
     Response,
     current_app,
@@ -45,23 +45,11 @@ ALLOWED_ESM_MODELS: List[str] = [
 ALLOWED_LOGITS_MODELS: List[str] = ALLOWED_ESM_MODELS + ["esm1v_t33_650M_UR90S_ensemble"]
 
 
-embeddings_fields = ns.model(
-    "Embeddings",
-    {
-        "batch_name": fields.String(required=True),
-        "embedding_model": fields.String(required=True),
-        "extra_seq_ids": fields.String(required=False),
-        "dms_starting_seq_ids": fields.String(required=False),
-        "extra_layers": fields.String(required=False),
-    },
-)
-
-
-@ns.route("/embeddings/<int:fold_id>")
+@ns.route("/embeddings")
 class CalculateEmbeddingsResource(Resource):
     @verify_has_edit_access
-    @ns.expect(embeddings_fields)
-    def post(self, fold_id: int) -> bool:
+    @ns.expect(embedding_fields)
+    def post(self) -> bool:
         """Create a new embedding calculation job for a fold.
 
         Args:
@@ -75,7 +63,8 @@ class CalculateEmbeddingsResource(Resource):
         """
         req = request.get_json()
 
-        batch_name: str = req["batch_name"]
+        fold_id: int = req["fold_id"]
+        embedding_name: str = req["name"]
         embedding_model: str = req["embedding_model"]
         extra_seq_ids_str: str = req.get("extra_seq_ids", "")
         dms_starting_seq_ids_str: str = req.get("dms_starting_seq_ids", "")
@@ -101,10 +90,10 @@ class CalculateEmbeddingsResource(Resource):
         if not fold:
             raise BadRequest(f"Fold with ID {fold_id} not found")
 
-        new_invokation_id = get_job_type_replacement(fold, f"embed_{batch_name}")
+        new_invokation_id = get_job_type_replacement(fold, f"embed_{embedding_name}")
 
         embed_record = Embedding.create(
-            name=batch_name,
+            name=embedding_name,
             fold_id=fold_id,
             embedding_model=embedding_model,
             extra_seq_ids=",".join(extra_seq_ids),

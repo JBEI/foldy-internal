@@ -87,9 +87,9 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings 
         UIkit.notification({ message: `Repopulating "New Embedding Run" with parameters from ${embedding.name}.`, timeout: 2000 });
         console.log(embedding);
         setBatchName(embedding.name);
-        setDmsStartingSeqIds(embedding.dms_starting_seq_ids.split(',').join('\n'));
-        setExtraSequenceIDs(embedding.extra_seq_ids.split(',').join('\n'));
-        setExtraLayers(embedding.extra_layers.split(',').join(','));
+        setDmsStartingSeqIds(embedding.dms_starting_seq_ids?.split(',').join('\n') || '');
+        setExtraSequenceIDs(embedding.extra_seq_ids?.split(',').join('\n') || '');
+        setExtraLayers(embedding.extra_layers?.split(',').join(',') || '');
         setShowEmbeddingSection(true);
         setModel(embedding.embedding_model);
     };

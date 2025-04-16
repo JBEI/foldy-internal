@@ -176,9 +176,5 @@ def test_run_embed_with_extra_layers(
             extra_layers="1,2,3",
             invokation_id=test_invokation.id,
         )
-        get_esm_embeddings(embed_id=embedding.id)
-        padded_fold_id = f"{test_fold.id:06d}"
-        embed_dir = mock_foldy_storage / padded_fold_id / "embed"
-        assert (
-            embed_dir / f"{padded_fold_id}_embeddings_esm2_t6_8M_UR50D_name1.csv"
-        ).exists(), f"File does not exist, found {list(embed_dir.glob('*'))}"
+        with pytest.raises(Exception, match="ESM1 and 2 do not support extra layers"):
+            get_esm_embeddings(embed_id=embedding.id)

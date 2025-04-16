@@ -422,7 +422,7 @@ class PreferenceTrainer:
                     if (epoch + 1) % val_frequency == 0
                     else "Val Loss: N/A"
                 )
-                logger.info(
+                logger.debug(
                     f"Epoch {epoch+1}/{epochs} - "
                     f"Train Loss: {train_loss:.4f}, "
                     f"{val_loss_str}"

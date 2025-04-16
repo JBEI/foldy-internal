@@ -27,13 +27,14 @@ export const startEmbeddings = async (
     embeddingModel: string
 ): Promise<boolean> => {
     const response = await axiosInstance.post(
-        `/api/embeddings/${foldId}`,
+        `/api/embeddings`,
         {
-            batch_name: batchName,
+            fold_id: foldId,
+            name: batchName,
             embedding_model: embeddingModel,
-            dms_starting_seq_ids: dmsStartingSeqIds,
-            extra_seq_ids: extraSeqIds,
-            extra_layers: extraLayers,
+            dms_starting_seq_ids: dmsStartingSeqIds.join(','),
+            extra_seq_ids: extraSeqIds.join(','),
+            extra_layers: extraLayers.join(','),
         }
     );
     return response.data;

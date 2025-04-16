@@ -99,6 +99,7 @@
     ]
   },
   "devDependencies": {
+    "@swc/core": "^1.11.21",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^12.1.5",
     "@testing-library/user-event": "^14.6.1",
@@ -111,6 +112,7 @@
     "@types/react-plotly.js": "^2.5.0",
     "@types/streamsaver": "^2.0.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react-swc": "^3.9.0",
     "cross-env": "^7.0.3",
     "jest": "^27.5.1",
     "jest-environment-jsdom": "^29.7.0",

@@ -111,13 +111,14 @@ logit_fields = ns.model(
 embedding_fields = ns.model(
     "EmbeddingFields",
     {
-        "id": fields.Integer(required=True),
         "name": fields.String(required=True),
         "fold_id": fields.Integer(required=True),
-        "embedding_model": fields.String(),
-        "extra_seq_ids": fields.String(),
-        "dms_starting_seq_ids": fields.String(),
-        "invokation_id": fields.Integer(),
+        "embedding_model": fields.String(required=True),
+        "id": fields.Integer(required=False),
+        "extra_seq_ids": fields.String(required=False),
+        "dms_starting_seq_ids": fields.String(required=False),
+        "extra_layers": fields.String(required=False),
+        "invokation_id": fields.Integer(required=False),
     },
 )
 
