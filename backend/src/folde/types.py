@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -7,6 +7,7 @@ class FolDEModelConfig(BaseModel):
     name: str
     naturalness_model_id: str
     embedding_model_id: str
+    embedding_column: Optional[str] = None
     zero_shot_model_name: str
     zero_shot_model_params: Dict[str, Any]
     few_shot_model_name: str
@@ -49,6 +50,9 @@ class CampaignResult(BaseModel):
     round_size: int
     number_of_simulations: int
     activity_column: str
+    min_activity: float
+    median_activity: float
+    max_activity: float
     max_rounds: int
     random_seed: int
     config_results: List[SingleConfigCampaignResult]

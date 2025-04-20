@@ -48,13 +48,13 @@ class ZeroShotModel(ABC):
 
     @abstractmethod
     def predict(
-        self, naturalness_df: DataFrame, embedding_df: Optional[DataFrame] = None
-    ) -> NDArray[np.float64]:
+        self, naturalness_series: pd.Series, embedding_series: Optional[pd.Series] = None
+    ) -> pd.Series:
         """Make predictions for protein variants.
 
         Args:
-            naturalness_df: DataFrame containing naturalness scores
-            embedding_df: Optional DataFrame containing protein embeddings
+            naturalness_series: Series containing naturalness scores
+            embedding_series: Optional Series containing protein embeddings
 
         Returns:
             Array of prediction scores for each variant
@@ -64,9 +64,9 @@ class ZeroShotModel(ABC):
     def get_top_n(
         self,
         n: int,
-        naturalness_df: DataFrame,
-        embedding_df: Optional[DataFrame] = None,
-    ) -> Tuple[List[str], Series]:
+        naturalness_series: pd.Series,
+        embedding_series: Optional[pd.Series] = None,
+    ) -> Tuple[List[str], pd.Series]:
         """Get the top N variants predicted by the model.
 
         This method predicts scores for all variants and returns the
@@ -82,28 +82,22 @@ class ZeroShotModel(ABC):
               * List of sequence IDs for the top N variants.
               * Series of predictions for all input variants with seq_id as index.
         """
-        if "seq_id" not in naturalness_df.columns:
-            raise ValueError(
-                f"naturalness_df must contain 'seq_id' column, found {naturalness_df.columns}"
-            )
-
         # Get predictions
-        predictions = self.predict(naturalness_df, embedding_df)
+        predictions = self.predict(naturalness_series, embedding_series)
 
         # Create a DataFrame with sequence IDs and predictions
-        results_df = pd.DataFrame({"seq_id": naturalness_df["seq_id"], "prediction": predictions})
+        # results_df = pd.DataFrame({"seq_id": naturalness_series.index, "prediction": predictions})
 
         chosen_indices = internal_sample_n_indices(
-            results_df.prediction.values,
+            predictions,
             n,
             temperature=self.temperature,
             epsilon=self.epsilon,
         )
-        chosen_seqs = results_df.iloc[chosen_indices]
 
         return (
-            chosen_seqs["seq_id"].tolist(),
-            results_df.set_index("seq_id").prediction,
+            naturalness_series.index[chosen_indices].tolist(),
+            predictions,
         )
 
     def get_debug_info(self) -> Dict[str, Any]:
@@ -130,8 +124,8 @@ class RandomZeroShotModel(ZeroShotModel):
     """
 
     def predict(
-        self, naturalness_df: DataFrame, embedding_df: Optional[DataFrame] = None
-    ) -> NDArray[np.float64]:
+        self, naturalness_series: pd.Series, embedding_series: Optional[pd.Series] = None
+    ) -> pd.Series:
         """Predict using naturalness scores.
 
         Args:
@@ -141,7 +135,9 @@ class RandomZeroShotModel(ZeroShotModel):
         Returns:
             Array of prediction scores based on naturalness
         """
-        return np.random.rand(naturalness_df.shape[0])
+        return pd.Series(
+            np.random.rand(naturalness_series.shape[0]), index=naturalness_series.index
+        )
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information about the model.
@@ -160,7 +156,7 @@ class NaturalnessZeroShotModel(ZeroShotModel):
     directly as the prediction, optionally with some transformation.
     """
 
-    def __init__(self, naturalness_col: str = "wt_marginal", **kwargs):
+    def __init__(self, **kwargs):
         """Initialize the naturalness-based model.
 
         Args:
@@ -169,11 +165,10 @@ class NaturalnessZeroShotModel(ZeroShotModel):
             **kwargs: Additional parameters
         """
         super().__init__(**kwargs)
-        self.naturalness_col = naturalness_col
 
     def predict(
-        self, naturalness_df: DataFrame, embedding_df: Optional[DataFrame] = None
-    ) -> NDArray[np.float64]:
+        self, naturalness_series: pd.Series, embedding_series: Optional[pd.Series] = None
+    ) -> pd.Series:
         """Predict using naturalness scores.
 
         Args:
@@ -183,13 +178,7 @@ class NaturalnessZeroShotModel(ZeroShotModel):
         Returns:
             Array of prediction scores based on naturalness
         """
-        if self.naturalness_col not in naturalness_df.columns:
-            raise ValueError(
-                f"naturalness_df must contain '{self.naturalness_col}' column, got {naturalness_df.columns}"
-            )
-
-        scores = naturalness_df[self.naturalness_col].values
-        return cast(NDArray[np.float64], scores)
+        return naturalness_series
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information about the model.
@@ -198,7 +187,6 @@ class NaturalnessZeroShotModel(ZeroShotModel):
             Dictionary containing model parameters
         """
         info = super().get_debug_info()
-        info["naturalness_col"] = self.naturalness_col
         return info
 
 

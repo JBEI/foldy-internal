@@ -137,7 +137,6 @@ class BradleyTerryMLP(nn.Module):
 
 
 def batch_bradley_terry_loss(
-    embeddings: torch.Tensor,  # not used directly
     scores: torch.Tensor,  # (batch_size, 1)
     activity_labels: torch.Tensor,
     exclude_pair_from_loss: Callable[[int, int], bool] = lambda i, j: False,
@@ -345,7 +344,6 @@ class PreferenceTrainer:
                     loss = F.mse_loss(scores.squeeze(-1), batch_activity_labels)
                 else:
                     loss = batch_bradley_terry_loss(
-                        batch_embeddings,
                         scores,
                         batch_activity_labels,
                         exclude_pair_from_loss,
@@ -468,7 +466,6 @@ class PreferenceTrainer:
 
                 # Compute loss across all pairs in batch
                 loss = batch_bradley_terry_loss(
-                    batch_embeddings,
                     scores,
                     batch_activity_labels,
                     exclude_pair_from_loss,

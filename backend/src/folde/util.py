@@ -111,6 +111,10 @@ def convert_compaign_result_collection_to_df(
                     round_num = round_metrics.round_num
                     mutants_this_round = mutant_metric_df[mutant_metric_df.round_found == round_num]
                     mutants_so_far = mutant_metric_df[mutant_metric_df.round_found <= round_num]
+                    best_activity_so_far = mutants_so_far.activity.max()
+                    normalized_best_activity_so_far = (
+                        best_activity_so_far - campaign_result.min_activity
+                    ) / (campaign_result.max_activity - campaign_result.min_activity)
                     round_metrics_list.append(
                         {
                             "dms_id": dms_id,
@@ -119,7 +123,8 @@ def convert_compaign_result_collection_to_df(
                             "variant_pool_size": sim_result.variant_pool_size,
                             "best_activity_this_round": mutants_this_round.activity.max(),
                             "best_percentile_this_round": mutants_this_round.activity.max(),
-                            "best_activity_so_far": mutants_so_far.activity.max(),
+                            "best_activity_so_far": best_activity_so_far,
+                            "normalized_best_activity_so_far": normalized_best_activity_so_far,
                             "best_percentile_so_far": mutants_so_far.percentile.max(),
                             **round_metrics.model_dump(),
                         }

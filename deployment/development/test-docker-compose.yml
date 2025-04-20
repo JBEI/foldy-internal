@@ -26,6 +26,8 @@ services:
       - "/src/app/tests/test_esm_finetuning.py"
       - "--ignore"
       - "/src/app/tests/test_esm_jobs.py"
+      - "--ignore"
+      - "/src/folde/tests"
 
   naturalness-tests:
     build:
@@ -51,6 +53,7 @@ services:
       - "/src/app/tests/test_esm_client.py"
       - "/src/app/tests/test_esm_finetuning.py"
       - "/src/app/tests/test_esm_jobs.py"
+      - "/src/folde/tests"
   frontend-tests:
     build:
       context: frontend/

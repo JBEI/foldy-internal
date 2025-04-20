@@ -31,18 +31,24 @@ class FewShotModel(ABC):
         self.epsilon = epsilon
 
     @abstractmethod
-    def fit(self, X: NDArray[np.float64], y: NDArray[np.float64], **kwargs) -> "FewShotModel":
+    def fit(
+        self,
+        naturalness_series: pd.Series,
+        embedding_series: pd.Series,
+        measured_activity_series: pd.Series,
+        **kwargs,
+    ) -> "FewShotModel":
         """Train the model on the given data."""
         pass
 
     @abstractmethod
-    def predict(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
+    def predict(self, naturalness_series: pd.Series, embedding_series: pd.Series) -> pd.Series:
         """Make predictions using the trained model."""
         pass
 
     def get_top_n(
-        self, n: int, naturalness_df: DataFrame, embedding_df: DataFrame
-    ) -> Tuple[List[str], Series]:
+        self, n: int, naturalness_series: pd.Series, embedding_series: pd.Series
+    ) -> Tuple[List[str], pd.Series]:
         """Get the top N variants predicted by the model.
 
         This method combines features from naturalness and embedding dataframes,
@@ -61,22 +67,21 @@ class FewShotModel(ABC):
         Raises:
             ValueError: If the model is not fitted or if required columns are missing
         """
+        assert naturalness_series.index.equals(embedding_series.index)
 
         # Convert list of embeddings to numpy array
-        embeddings_array = np.array([np.array(emb) for emb in embedding_df.embedding.values])
-        predictions = self.predict(embeddings_array)
-        results_df = pd.DataFrame({"seq_id": embedding_df["seq_id"], "prediction": predictions})
+        predictions = self.predict(naturalness_series, embedding_series)
 
         chosen_indices = internal_sample_n_indices(
-            results_df.prediction.values,
+            predictions.values,
             n,
             temperature=self.temperature,
             epsilon=self.epsilon,
         )
 
         return (
-            results_df.iloc[chosen_indices]["seq_id"].tolist(),
-            results_df.set_index("seq_id").prediction,
+            naturalness_series.index[chosen_indices].tolist(),
+            predictions,
         )
 
     @abstractmethod
@@ -123,11 +128,19 @@ def get_ensemble_prediction(
 class RandomFewShotModel(FewShotModel):
     """Just guess random activity."""
 
-    def fit(self, X: NDArray[np.float64], y: NDArray[np.float64], **kwargs) -> "RandomFewShotModel":
+    def fit(
+        self,
+        naturalness_series: pd.Series,
+        embedding_series: pd.Series,
+        measured_activity_series: pd.Series,
+        **kwargs,
+    ) -> "RandomFewShotModel":
         return self
 
-    def predict(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
-        return np.random.rand(len(X))
+    def predict(self, naturalness_series: pd.Series, embedding_series: pd.Series) -> pd.Series:
+        return pd.Series(
+            np.random.rand(naturalness_series.shape[0]), index=naturalness_series.index
+        )
 
     def get_debug_info(self) -> Dict[str, Any]:
         return {}
@@ -162,22 +175,28 @@ class MLPFewShotModel(FewShotModel):
 
     def fit(
         self,
-        X: NDArray[np.float64],
-        y: NDArray[np.float64],
+        naturalness_series: pd.Series,
+        embedding_series: pd.Series,
+        measured_activity_series: pd.Series,
         validation_data: Optional[Tuple[NDArray[np.float64], NDArray[np.float64]]] = None,
         **kwargs,
     ) -> "MLPFewShotModel":
         """Train the MLP regressor.
 
         Args:
-            X: Feature matrix of shape (n_samples, n_features)
-            y: Target values of shape (n_samples,)
-            validation_data: Optional tuple (X_val, y_val) for validation
+            naturalness_df: Naturalness dataframe for all mutants indexed by seq_id
+            embedding_df: Embedding dataframe for all mutants indexed by seq_id
+            measured_activity_series: Series of activity measurements indexed by seq_id
             **kwargs: Additional parameters passed to sklearn's fit method
 
         Returns:
             Self for method chaining
         """
+        assert naturalness_series.index.equals(embedding_series.index)
+
+        measured_embedding_series = embedding_series.loc[measured_activity_series.index]
+        X = np.array([np.array(emb) for emb in measured_embedding_series.values])
+        y = measured_activity_series.to_numpy()
         # Train the model
         for model in self.models:
             model.fit(X, y, **kwargs)
@@ -205,11 +224,14 @@ class MLPFewShotModel(FewShotModel):
 
         return self
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(self, naturalness_series: pd.Series, embedding_series: pd.Series) -> pd.Series:
         """Make predictions using the trained MLP."""
         if not self._is_fitted:
             raise ValueError("Model has not been trained yet. Call fit() first.")
-        return get_ensemble_prediction(self.models, X, "ucb")
+        X = np.array([np.array(emb) for emb in embedding_series.values])
+        return pd.Series(
+            get_ensemble_prediction(self.models, X, "ucb"), index=embedding_series.index
+        )
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information for the MLP."""
@@ -280,8 +302,9 @@ class RandomForestFewShotModel(FewShotModel):
 
     def fit(
         self,
-        X: NDArray[np.float64],
-        y: NDArray[np.float64],
+        naturalness_series: pd.Series,
+        embedding_series: pd.Series,
+        measured_activity_series: pd.Series,
         validation_data: Optional[Tuple[NDArray[np.float64], NDArray[np.float64]]] = None,
         **kwargs,
     ) -> "RandomForestFewShotModel":
@@ -296,6 +319,12 @@ class RandomForestFewShotModel(FewShotModel):
         Returns:
             Self for method chaining
         """
+        assert naturalness_series.index.equals(embedding_series.index)
+
+        measured_embedding_series = embedding_series.loc[measured_activity_series.index]
+        X = np.array([np.array(emb) for emb in measured_embedding_series.values])
+        y = measured_activity_series.to_numpy()
+
         # Train the model
         for model in self.models:
             model.fit(X, y, **kwargs)
@@ -327,11 +356,15 @@ class RandomForestFewShotModel(FewShotModel):
 
         return self
 
-    def predict(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
+    def predict(self, naturalness_series: pd.Series, embedding_series: pd.Series) -> pd.Series:
         """Make predictions using the trained Random Forest."""
         if not self._is_fitted:
             raise ValueError("Model has not been trained yet. Call fit() first.")
-        return get_ensemble_prediction(self.models, X, self.decision_mode)
+        X = np.array([np.array(emb) for emb in embedding_series.values])
+        return pd.Series(
+            get_ensemble_prediction(self.models, X, self.decision_mode),
+            index=embedding_series.index,
+        )
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information for the Random Forest."""
@@ -394,11 +427,18 @@ class TorchMLPFewShotModel(FewShotModel):
 
     def fit(
         self,
-        X: NDArray[np.float64],
-        y: NDArray[np.float64],
+        naturalness_series: pd.Series,
+        embedding_series: pd.Series,
+        measured_activity_series: pd.Series,
         validation_data: Optional[Tuple[NDArray[np.float64], NDArray[np.float64]]] = None,
         **kwargs,
     ) -> "TorchMLPFewShotModel":
+        assert naturalness_series.index.equals(embedding_series.index)
+
+        measured_embedding_series = embedding_series.loc[measured_activity_series.index]
+        X = np.array([np.array(emb) for emb in measured_embedding_series.values])
+        y = measured_activity_series.to_numpy()
+
         # assert False, "Double check this logic for validation data."
         validation_indices = []
         if validation_data:
@@ -427,11 +467,13 @@ class TorchMLPFewShotModel(FewShotModel):
 
         return self
 
-    def predict(self, X: NDArray[np.float64]) -> NDArray[np.float64]:
+    def predict(self, naturalness_series: pd.Series, embedding_series: pd.Series) -> pd.Series:
         """Make predictions using the trained Random Forest."""
         if not self._is_fitted:
             raise ValueError("Model has not been trained yet. Call fit() first.")
-        return self.trainer.predict_scores(X)
+        X = np.array([np.array(emb) for emb in embedding_series.values])
+        pred = self.trainer.predict_scores(X)
+        return pd.Series(pred, index=embedding_series.index)
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information for the Random Forest."""
