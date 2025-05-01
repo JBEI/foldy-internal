@@ -64,7 +64,7 @@ const parseCsvDataIntoRowData = (logitCsvDataString: string, useWtMarginalAsScor
     });
 
     if (errors.length > 0) {
-        UIkit.notification({ message: `Error parsing logit CSV: ${errors.map(error => error.message).join(', ')}`, status: 'danger' });
+        notify.error(`Error parsing logit CSV: ${errors.map(error => error.message).join(', ')}`);
         return null;
     }
 
@@ -268,7 +268,7 @@ const LogitTable: React.FC<LogitTableProps> = ({
     );
 };
 
-const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlConfig, jobs, logits, setSelectedSubsequence, setErrorText }) => {
+const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlConfig, jobs, logits, setSelectedSubsequence }) => {
     const [runName, setRunName] = useState<string>('');
     const [logitModel, setLogitModel] = useState<string>('esmc_600m');
     const [useStructure, setUseStructure] = useState<boolean>(false);
@@ -287,19 +287,13 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
 
     const handleStartLogit = async () => {
         try {
-            UIkit.notification({ message: 'Starting naturalness run...', timeout: 2000 });
+            notify.info('Starting naturalness run...');
             const logitRun = await startLogits(foldId, runName, logitModel, useStructure, getDepthTwoLogits);
             console.log(`logitRun: ${logitRun}`);
             console.log(`logitRun keys: ${Object.keys(logitRun)}`);
-            UIkit.notification({
-                message: `Logit run started with id ${logitRun.id} and name ${logitRun.name}`,
-                status: 'success'
-            });
+            notify.success(`Logit run started with id ${logitRun.id} and name ${logitRun.name}`);
         } catch (error) {
-            UIkit.notification({
-                message: `Failed to start logit run: ${error}`,
-                status: 'danger'
-            });
+            notify.error(`Failed to start logit run: ${error}`);
         }
     };
 
@@ -327,7 +321,7 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
     };
 
     const rerunLogit = async (logit: Logit) => {
-        UIkit.notification({ message: `Repopulating "New Logit Run" with parameters from ${logit.name}.`, timeout: 2000 });
+        notify.info(`Repopulating "New Logit Run" with parameters from ${logit.name}.`);
         setRunName(logit.name);
         setShowForm(true);
         setLogitModel(logit.logit_model);
@@ -338,7 +332,7 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
     const loadLogit = (logitId: number) => {
         const logit = logits?.find(logit => logit.id === logitId);
         if (!logit) {
-            UIkit.notification({ message: `Logit ${logitId} not found.`, status: 'danger' });
+            notify.error(`Logit ${logitId} not found.`);
             return;
         }
         setDisplayedLogitId(logitId);
@@ -631,7 +625,7 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
                                         .join('\n');
 
                                     navigator.clipboard.writeText(mutations);
-                                    UIkit.notification({ message: 'Mutations copied to clipboard!', status: 'success' });
+                                    notify.success('Mutations copied to clipboard!');
                                 }}
                             >
                                 Copy mutations to clipboard

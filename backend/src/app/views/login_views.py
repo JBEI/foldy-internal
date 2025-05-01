@@ -1,5 +1,4 @@
 import logging
-import urllib
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from app.authorization import (
@@ -16,7 +15,7 @@ from flask_jwt_extended import (
     unset_jwt_cookies,
 )
 from flask_restx import Namespace, Resource, fields
-
+from urllib.parse import urlparse, urlencode, parse_qsl, urlunparse
 ns = Namespace("login_views")
 
 oauth = OAuth()
@@ -70,11 +69,11 @@ def make_error_redirect(message: str) -> Response:
     Returns:
         Flask redirect response with error message in query parameters
     """
-    frontend_parsed = urllib.parse.urlparse(current_app.config["FRONTEND_URL"])
-    frontend_queries: Dict[str, str] = dict(urllib.parse.parse_qsl(frontend_parsed.query))
+    frontend_parsed = urlparse(current_app.config["FRONTEND_URL"])
+    frontend_queries: Dict[str, str] = dict(parse_qsl(frontend_parsed.query))
     frontend_queries["error_message"] = message
-    frontend_parsed = frontend_parsed._replace(query=urllib.parse.urlencode(frontend_queries))
-    rd_url = urllib.parse.urlunparse(frontend_parsed)
+    frontend_parsed = frontend_parsed._replace(query=(frontend_queries))
+    rd_url = urlunparse(frontend_parsed)
     logging.warning(f"Redirecting with error: {message}")
     return redirect(location=rd_url)
 
@@ -152,13 +151,13 @@ class AuthorizeResource(Resource):
             },
         )
 
-        frontend_parsed = urllib.parse.urlparse(frontend_url)
-        frontend_queries: Dict[str, str] = dict(urllib.parse.parse_qsl(frontend_parsed.query))
+        frontend_parsed = urlparse(frontend_url)
+        frontend_queries: Dict[str, str] = dict(parse_qsl(frontend_parsed.query))
         frontend_queries["access_token"] = access_token
         if not user_was_registered:
             frontend_queries["new_user"] = "true"
-        frontend_parsed = frontend_parsed._replace(query=urllib.parse.urlencode(frontend_queries))
-        rd_url = urllib.parse.urlunparse(frontend_parsed)
+        frontend_parsed = frontend_parsed._replace(query=urlencode(frontend_queries))
+        rd_url = urlunparse(frontend_parsed)
 
         response = redirect(location=rd_url)
         set_access_cookies(response, access_token)

@@ -19,13 +19,12 @@ from app.helpers.jobs_util import (
 )
 from app.helpers.sequence_util import (
     get_loci_set,
-    get_measured_and_unmeasured_mutant_seq_ids,
     process_and_validate_evolve_input_files,
-    train_and_predict_activities,
 )
 from app.models import Evolution, Fold, Invokation
 from sklearn.ensemble import RandomForestRegressor
 from werkzeug.exceptions import BadRequest
+from folde.few_shot_models import is_valid_few_shot_model_name, get_few_shot_model
 
 
 def run_evolvepro(evolve_id: int):
@@ -64,12 +63,20 @@ def run_evolvepro(evolve_id: int):
         raw_activity_df = pd.read_excel(BytesIO(activity_file))
 
         # 2. Read and merge all embedding CSVs
-        embedding_paths = evolve.embedding_files.split(",")
-        logging.info(f"Reading {len(embedding_paths)} embedding files")
+        if not evolve.embedding_files or not evolve.naturalness_files:
+            raise ValueError(f"These days, evolve jobs must specify both embedding files (found {evolve.embedding_files}) and naturalness files (found {evolve.naturalness_files})")
+        
+        if not evolve.few_shot_params:
+            raise ValueError(f"These days, few shot params are required, got {evolve.few_shot_params}")
+
+        embedding_files = evolve.embedding_files.split(",")
+        naturalness_files = evolve.naturalness_files.split(",")
+        logging.info(f"Reading {len(embedding_files)} embedding files and {len(naturalness_files)} naturalness files")
         embedding_dfs = []
+        naturalness_dfs = []
         chunk_size = 10000  # Adjust based on memory constraints
 
-        for path in embedding_paths:
+        for path in embedding_files:
             # Get the CSV content as a string
             csv_blob = fsm.storage_manager.get_blob(evolve.fold_id, path)
 
@@ -85,44 +92,72 @@ def run_evolvepro(evolve_id: int):
                 # Combine chunks for this path
                 if path_dfs:
                     embedding_dfs.append(pd.concat(path_dfs, ignore_index=True))
+        
+        for path in naturalness_files:
+            csv_blob = fsm.storage_manager.get_blob(evolve.fold_id, path)
+            with csv_blob.open("r") as csv_f:
+                naturalness_dfs.append(pd.read_csv(csv_f))
 
         # Combine all embeddings
         raw_embedding_df = pd.concat(embedding_dfs, ignore_index=True)
-        logging.info(f"Found {raw_embedding_df.shape[0]} embeddings")
+        raw_naturalness_df = pd.concat(naturalness_dfs, ignore_index=True)
+        logging.info(f"Found {raw_embedding_df.shape[0]} embeddings and {raw_naturalness_df.shape[0]} naturalness values")
 
         # 3. Process the activity and embedding data.
-        activity_df, embedding_df = process_and_validate_evolve_input_files(
-            wt_aa_seq, raw_activity_df, raw_embedding_df
+        activity_df, embedding_df, naturalness_df = process_and_validate_evolve_input_files(
+            wt_aa_seq, raw_activity_df, raw_embedding_df, raw_naturalness_df
         )
         logging.info(
-            f"Found {activity_df.shape[0]} activity measurements among {activity_df.seq_id.unique().shape[0]} mutants"
+            f"Found {activity_df.shape[0]} activity measurements among {activity_df.index.unique().shape[0]} mutants"
         )
 
-        (measured_mutants, unmeasured_mutants, model, predicted_activity_df) = (
-            train_and_predict_activities(activity_df, embedding_df, mode)
+        if not is_valid_few_shot_model_name(mode):
+            raise BadRequest(f'Old modes such as {mode} are no longer supported.')
+
+        # Compute naturalness for all mutants, where possible.
+        def get_naturalness_of_multi_mutant(seq_id) -> float:
+            if seq_id == 'WT':
+                return 1.0
+            try:
+                return naturalness_df.wt_marginal.loc[seq_id.split('_')].prod()
+            except Exception as e:
+                raise BadRequest(f'Failure computing naturalness for {seq_id}: {e}')
+
+        augmented_naturalness_series = pd.Series(
+            embedding_df.index.map(get_naturalness_of_multi_mutant),
+            index=embedding_df.index
         )
 
-        logging.info(
-            f"Finished fitting model. {len(measured_mutants)} measured mutants and {len(unmeasured_mutants)} unmeasured mutants, all of which had activity predicted."
+        for seq_id in activity_df.index:
+            if seq_id not in embedding_df.index:
+                raise ValueError(f"Activity seq id {seq_id} is missing either an embedding or naturalness value")
+
+        params = json.loads(evolve.few_shot_params)
+
+        few_shot_model = get_few_shot_model(
+            mode,
+            random_state=42,
+            **params,
         )
 
-        # 6. Store model, visualizations, and predicted activities in storage manager.
-        logging.info(
-            f"Storing model, visualizations, and predicted activities in {evolve_directory}"
+        few_shot_model.fit(
+            augmented_naturalness_series,
+            embedding_df.embedding,
+            activity_df.activity,
         )
-        model_buffer = io.BytesIO()
-        joblib.dump(model, model_buffer)
-        serialized_model_binary_string = model_buffer.getvalue()
 
-        predicted_activity_csv_str = predicted_activity_df.to_csv(index=False)
+        top_seq_ids, predicted_activity_ensemble = few_shot_model.get_top_n(
+            24,
+            augmented_naturalness_series,
+            embedding_df.embedding,
+        )
 
-        fsm.storage_manager.write_file(
-            evolve.fold_id,
-            str(evolve_directory / "model.joblib"),
-            serialized_model_binary_string,
+        predicted_activity_df = pd.DataFrame(
+            {f"model_{ii}": predicted_activity_ensemble[ii] for ii in range(len(predicted_activity_ensemble))},
+            index=predicted_activity_ensemble[0].index,
         )
         fsm.storage_manager.write_file(
             evolve.fold_id,
             str(evolve_directory / "predicted_activity.csv"),
-            predicted_activity_csv_str,
+            predicted_activity_df.to_csv(),
         )

@@ -1,6 +1,7 @@
 import glob
 import io
 import json
+import logging
 import os
 import subprocess
 import tempfile
@@ -17,14 +18,13 @@ import pandas as pd
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.jobs_util import (
+    LoggingRecorder,
     _live_update_tail,
     _psql_tail,
     get_torch_cuda_is_available_and_add_logs,
 )
 from app.helpers.sequence_util import (
     get_loci_set,
-    get_measured_and_unmeasured_mutant_seq_ids,
-    process_and_validate_evolve_input_files,
 )
 from app.models import Evolution, Fold, Invokation
 from Bio.PDB import PDBIO, MMCIFParser
@@ -64,6 +64,8 @@ def cif_to_pdb(cif_file: str, structure_id: str):
 def try_check_smiles_string_validity(smiles_string):
     """Try to check if a smiles string is valid."""
     try:
+        from rdkit import Chem
+
         mol = Chem.MolFromSmiles(smiles_string)
         if mol is None:
             logging.error(f"Invalid SMILES: {smiles_string}")
@@ -147,10 +149,7 @@ def run_boltz(fold_id, invokation_id):
                 "--write_full_pae",
                 "--write_full_pde",
             ]
-            logging.info(
-                f"Running boltz with command: {boltz_command}",
-                command=" ".join(boltz_command),
-            )
+            logging.info(f"Running boltz with command: {boltz_command}")
 
             process = subprocess.Popen(
                 boltz_command,

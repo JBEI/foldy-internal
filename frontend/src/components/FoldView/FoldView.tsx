@@ -27,91 +27,12 @@ import FileTab from "./FileTab";
 const REFRESH_STATE_PERIOD = 5000;
 const REFRESH_STATE_MAX_ITERS = 200;
 
-const getResidueCenter = (
-    pdb: ParsedPdb,
-    residueName: string
-): number[] | null => {
-    const found = residueName.match(/[A-Z](\d+)/);
-
-    if (!found || found.length !== 2) {
-        console.error(
-            `Residue did not match regex for getResidueCenter ${residueName} ${found}`
-        );
-        return null;
-    }
-
-    console.log(pdb);
-    const residueIdx = parseInt(found[1]);
-
-    const matchingResidues = pdb.atoms.filter((atom) => {
-        // TODO: Don't assume we are docking on chain A.
-        return atom.resSeq === residueIdx && atom.chainID === "A";
-    });
-    const numAtms = matchingResidues.length;
-    if (!numAtms) {
-        console.error(`No atoms found for residue ${residueName}`);
-        return null;
-    }
-    const loc = [
-        matchingResidues.map((e) => e.x / (1.0 * numAtms)).reduce((a, b) => a + b),
-        matchingResidues.map((e) => e.y / (1.0 * numAtms)).reduce((a, b) => a + b),
-        matchingResidues.map((e) => e.z / (1.0 * numAtms)).reduce((a, b) => a + b),
-    ];
-
-    return loc;
-};
-
-const getCubeEdges = (
-    center: number[],
-    rad: number
-): { start: number[]; end: number[] }[] => {
-    if (center.length !== 3) {
-        console.error(`Invalid cube center: ${center}`);
-    }
-    const x = center[0];
-    const y = center[1];
-    const z = center[2];
-
-    // Define the four corners.
-    const p000 = [x - rad, y - rad, z - rad];
-    const p001 = [x - rad, y - rad, z + rad];
-    const p010 = [x - rad, y + rad, z - rad];
-    const p011 = [x - rad, y + rad, z + rad];
-    const p100 = [x + rad, y - rad, z - rad];
-    const p101 = [x + rad, y - rad, z + rad];
-    const p110 = [x + rad, y + rad, z - rad];
-    const p111 = [x + rad, y + rad, z + rad];
-
-    var out: { start: number[]; end: number[] }[] = [];
-    // Define the back face.
-    out.push({ start: p000, end: p001 });
-    out.push({ start: p001, end: p011 });
-    out.push({ start: p011, end: p010 });
-    out.push({ start: p010, end: p000 });
-    // Define the front face.
-    out.push({ start: p100, end: p101 });
-    out.push({ start: p101, end: p111 });
-    out.push({ start: p111, end: p110 });
-    out.push({ start: p110, end: p100 });
-    // Define the connecting edges.
-    out.push({ start: p000, end: p100 });
-    out.push({ start: p001, end: p101 });
-    out.push({ start: p010, end: p110 });
-    out.push({ start: p011, end: p111 });
-    return out;
-};
 
 interface FoldProps {
     foldId: number;
     userType: string | null;
 }
 
-// interface DisplayedDock {
-//     sdf: Blob;
-//     frame: number;
-//     nglComponent: StructureComponent;
-//     boxComponents: NGLComponent[];
-// }
 
 interface FoldState {
     foldData: Fold | null;
@@ -128,12 +49,6 @@ interface FoldState {
     pfamAnnotations: Annotations | null;
     pfamColors: VariousColorSchemes | null;
 
-    // // Docking stuff.
-    // displayedDocks: { [ligandName: string]: DisplayedDock };
-
-    // // Nglviewer and other view management.
-    // pdbRepr: NGLRepresentationCollection | null;
-    // selectionRepr: NGLRepresentationCollection[] | null;
     pdbFailedToLoad: boolean;
     paeIsOnScreen: boolean;
     contactIsOnScreen: boolean;
@@ -165,10 +80,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
             pfamAnnotations: null,
             pfamColors: null,
 
-            // displayedDocks: {},
-
-            // pdbRepr: null,
-            // selectionRepr: null,
             pdbFailedToLoad: false,
             paeIsOnScreen: false,
             contactIsOnScreen: false,
@@ -316,10 +227,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         }
                         this.setState({
                             pfamAnnotations: pfam,
-                            // pfamColors: getColorsForAnnotations(
-                            //     this.state.foldData.sequence,
-                            //     pfam
-                            // ),
                         });
                     },
                     (e) => {
@@ -347,9 +254,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         console.log(`PDB is ${pdb.pdb_string.length} characters long.`);
                     },
                     (e) => {
-                        // TODO(jbr): In this case, have Foldy pop up saying the structure isn't available.
-                        // console.log('in the right place');
-                        // this.props.setErrorText(e.toString());
                         this.setState({ pdbFailedToLoad: true });
                     }
                 );
@@ -693,9 +597,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
 
         var nglViewerColorScheme = this.getNglColorSchemeName(newColorScheme);
 
-        // if (this.state.pdbRepr) {
-        //     this.state.pdbRepr.setColor(nglViewerColorScheme);
-        // }
         this.setState({ colorScheme: newColorScheme });
     };
 
@@ -726,102 +627,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
         ["AlphaFold2: Rerun Decompress Pickles job", "decompress_pkls"],
         ["Send notification email", "email"],
     ];
-
-    // displayLigandPose = (ligandName: string) => {
-    //     if (ligandName in this.state.displayedDocks) {
-    //         notify.info(`Hiding ${ligandName}`);
-    //         this.state.stage?.removeComponent(
-    //             this.state.displayedDocks[ligandName].nglComponent
-    //         );
-
-    //         for (const boxComponent of this.state.displayedDocks[ligandName]
-    //             .boxComponents) {
-    //             this.state.stage?.removeComponent(boxComponent);
-    //         }
-
-    //         const newDisplayedDocks = this.state.displayedDocks;
-    //         delete newDisplayedDocks[ligandName];
-    //         this.setState({ displayedDocks: newDisplayedDocks });
-    //         return;
-    //     }
-
-    //     const dock = this.state.foldData?.docks?.find(
-    //         (e) => e.ligand_name === ligandName
-    //     );
-    //     if (!dock) {
-    //         console.error(`No ligand found with name ${ligandName}`);
-    //         return;
-    //     }
-
-    //     notify.info(`Displaying SDF file for ${ligandName}`);
-    //     getDockSdf(this.props.foldId, ligandName).then(
-    //         (sdf: Blob) => {
-    //             if (!this.state.stage || !this.state.parsedPdb) {
-    //                 return;
-    //             }
-
-    //             var boxComponents = new Array<NGLComponent>();
-
-    //             if (dock.bounding_box_residue && dock.bounding_box_radius_angstrom) {
-    //                 // TODO: Parse PDB to get the residues selected:
-    //                 // https://www.npmjs.com/package/parse-pdb
-
-    //                 const resCenter = getResidueCenter(
-    //                     this.state.parsedPdb,
-    //                     dock.bounding_box_residue
-    //                 );
-    //                 if (resCenter) {
-    //                     for (const edge of getCubeEdges(
-    //                         resCenter,
-    //                         dock.bounding_box_radius_angstrom
-    //                     )) {
-    //                         // https://nglviewer.org/ngl/api/class/src/stage/stage.js~Stage.html
-    //                         // https://nglviewer.org/ngl/api/class/src/component/component.js~Component.html
-    //                         // https://nglviewer.org/ngl/api/class/src/component/shape-component.js~ShapeComponent.html
-    //                         // https://nglviewer.org/ngl/api/class/src/geometry/shape.js~Shape.html
-
-    //                         var shape = new NGL.Shape("shape");
-    //                         shape.addCylinder(edge.start, edge.end, [0.5, 0.5, 0.5], 0.1);
-    //                         var shapeComponent =
-    //                             this.state.stage.addComponentFromObject(shape);
-    //                         if (shapeComponent) {
-    //                             // @ts-ignore
-    //                             shapeComponent.addRepresentation("buffer");
-    //                             boxComponents.push(shapeComponent);
-    //                         }
-    //                     }
-    //                 }
-    //             }
-
-    //             this.state.stage // @ts-ignore
-    //                 .loadFile(sdf, { ext: "sdf", asTrajectory: true }) // @ts-ignore
-    //                 .then((o: any) => {
-    //                     o.addRepresentation("ball+stick");
-    //                     o.signals.trajectoryAdded.add((e: any) => {
-    //                         console.log("TRAJECTORY ADDED");
-    //                     });
-    //                     // How to set a frame: https://github.com/nglviewer/ngl/blob/4ab8753c38995da675e9efcae2291a298948ccca/examples/js/gui.js
-    //                     // All I have to do is get the trajectories: https://github.com/nglviewer/ngl/blob/4ab8753c38995da675e9efcae2291a298948ccca/src/trajectory/trajectory.ts
-    //                     // The above example uses an trajectoryadded listener, or something like that, which does exist on my repr...
-    //                     // After figuring it out I found a working example...: https://nglviewer.org/mdsrv/embedded.html
-    //                     o.addTrajectory(null, {});
-
-    //                     const newDisplayedDocks = this.state.displayedDocks;
-    //                     newDisplayedDocks[ligandName] = {
-    //                         sdf: sdf,
-    //                         frame: 0,
-    //                         nglComponent: o,
-    //                         boxComponents: boxComponents,
-    //                     };
-
-    //                     this.setState({ displayedDocks: newDisplayedDocks });
-    //                 });
-    //         },
-    //         (e) => {
-    //             this.props.setErrorText(e.toString());
-    //         }
-    //     );
-    // };
 
     deleteLigandPose = (ligandId: number, ligandName: string) => {
         UIkit.modal

@@ -18,27 +18,34 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, jobs, files, evolutions }
     const [evolutionName, setEvolutionName] = useState<string>('');
     const [showForm, setShowForm] = useState<boolean>(false);
     const [activityFile, setActivityFile] = useState<File | null>(null);
-    const [mode, setMode] = useState<'randomforest' | 'mlp' | 'finetuning'>('randomforest');
+    const [mode, setMode] = useState<string>('TorchMLPFewShotModel');
     const [selectedEmbeddingPaths, setSelectedEmbeddingPaths] = useState<string[]>([]);
+    const [selectedNaturalnessPaths, setSelectedNaturalnessPaths] = useState<string[]>([]);
     const [finetuningModelCheckpoint, setFinetuningModelCheckpoint] = useState<string>('facebook/esm2_t6_8M_UR50D');
+    const [fewShotParams, setFewShotParams] = useState<string>('');
 
-    const embeddingFiles = files?.filter(file =>
+    const availableEmbeddingFiles = files?.filter(file =>
         file.key.includes('embed')
     ) || [];
+    const availableNaturalnessFiles = files?.filter(file =>
+        file.key.includes('naturalness')
+    ) || [];
 
-    const handleFileSelection = (event: ChangeEvent<HTMLSelectElement>) => {
+    const handleEmbeddingFileSelection = (event: ChangeEvent<HTMLSelectElement>) => {
         const selectedOptions = Array.from(event.target.selectedOptions).map(option => option.value);
         setSelectedEmbeddingPaths(selectedOptions);
+    };
+
+    const handleNaturalnessFileSelection = (event: ChangeEvent<HTMLSelectElement>) => {
+        const selectedOptions = Array.from(event.target.selectedOptions).map(option => option.value);
+        setSelectedNaturalnessPaths(selectedOptions);
     };
 
     const handleActivityFileUpload = (event: ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (file) {
             if (!file.name.match(/\.(xlsx|xls)$/i)) {
-                UIkit.notification({
-                    message: 'Please upload an Excel file (.xlsx or .xls)',
-                    status: 'danger'
-                });
+                notify.error('Please upload an Excel file (.xlsx or .xls)');
                 return;
             }
             setActivityFile(file);
@@ -46,33 +53,26 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, jobs, files, evolutions }
     };
 
     const handleEvolve = async () => {
-        if (!activityFile || ((mode === 'randomforest' || mode === 'mlp') && selectedEmbeddingPaths.length === 0)) {
-            UIkit.notification({
-                message: 'Please fill in all required fields',
-                status: 'warning'
-            });
+        if (!activityFile || (selectedEmbeddingPaths.length === 0)) {
+            notify.warning('Please fill in all required fields');
             return;
         }
 
         try {
-            UIkit.notification({ message: 'Starting evolution...', timeout: 2000 });
+            notify.info('Starting evolution...');
             const foldEvolution = await evolve(
                 evolutionName,
                 foldId,
                 activityFile,
                 mode,
-                (mode === 'randomforest' || mode === 'mlp') ? selectedEmbeddingPaths : undefined,
-                mode === 'finetuning' ? finetuningModelCheckpoint : undefined
+                selectedEmbeddingPaths,
+                selectedNaturalnessPaths,
+                mode === 'finetuning' ? finetuningModelCheckpoint : undefined,
+                fewShotParams
             );
-            UIkit.notification({
-                message: `Evolution process started with id ${foldEvolution.id} and name ${foldEvolution.name}`,
-                status: 'success'
-            });
+            notify.success(`Evolution process started with id ${foldEvolution.id} and name ${foldEvolution.name}`);
         } catch (error) {
-            UIkit.notification({
-                message: `Failed to start evolution process: ${error}`,
-                status: 'danger'
-            });
+            notify.error(`Failed to start evolution process: ${error}`);
         }
     };
 
@@ -98,15 +98,21 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, jobs, files, evolutions }
     };
 
     const rerunEvolution = async (evolution: Evolution) => {
-        UIkit.notification({ message: `Repopulating "New Evolution Run" with parameters from ${evolution.name}. Make sure to add the activity file, you can download the previous one from Files tab.`, timeout: 2000 });
+        notify.info(`Repopulating "New Evolution Run" with parameters from ${evolution.name}. Make sure to add the activity file, you can download the previous one from Files tab.`);
         setEvolutionName(evolution.name);
         setMode(evolution.mode);
         if (evolution.embedding_files) {
             setSelectedEmbeddingPaths(evolution.embedding_files.split(','));
         }
+        if (evolution.naturalness_files) {
+            setSelectedNaturalnessPaths(evolution.naturalness_files.split(','));
+        }
         if (evolution.finetuning_model_checkpoint) {
             console.log(`Setting finetuning model checkpoint to ${evolution.finetuning_model_checkpoint}`);
             setFinetuningModelCheckpoint(evolution.finetuning_model_checkpoint);
+        }
+        if (evolution.few_shot_params) {
+            setFewShotParams(evolution.few_shot_params);
         }
         setShowForm(true);
     };
@@ -231,11 +237,13 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, jobs, files, evolutions }
                                 <select
                                     className="uk-select"
                                     value={mode}
-                                    onChange={(e) => setMode(e.target.value as 'finetuning' | 'randomforest')}
+                                    onChange={(e) => setMode(e.target.value)}
                                 >
-                                    <option value="randomforest">Random Forest</option>
-                                    <option value="mlp">Multi-Layer Perceptron</option>
-                                    <option value="finetuning">Finetuning</option>
+                                    <option value="TorchMLPFewShotModel">MLP Few Shot Model</option>
+                                    <option value="RandomForestFewShotModel">RandomForestFewShotModel</option>
+                                    <option value="randomforest">(old) Random Forest</option>
+                                    <option value="mlp">(old) Multi-Layer Perceptron</option>
+                                    <option value="finetuning">(old) Finetuning</option>
                                 </select>
                             </div>
 
@@ -255,28 +263,74 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, jobs, files, evolutions }
                                 </div>
                             )}
 
-                            {/* Show embedding files selection only for randomforest mode */}
-                            {(mode === 'randomforest' || mode === 'mlp') && (
-                                <div style={{ flex: '0 0 auto', width: '100%' }}>
-                                    <label className="uk-form-label">Select Embedding Files</label>
-                                    <select
-                                        className="uk-select"
-                                        multiple
-                                        size={Math.min(10, embeddingFiles.length || 1)}
-                                        value={selectedEmbeddingPaths}
-                                        onChange={handleFileSelection}
-                                    >
-                                        {embeddingFiles.map(file => (
-                                            <option key={file.key} value={file.key}>
-                                                {file.key.split('/').pop()}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <p className="uk-text-meta">
-                                        Selected {selectedEmbeddingPaths.length} embedding file(s)
-                                    </p>
-                                </div>
-                            )}
+                            <div style={{ flex: '0 0 auto', width: '100%' }}>
+                                <label className="uk-form-label">Select Embedding Files</label>
+                                <select
+                                    className="uk-select"
+                                    multiple
+                                    size={Math.min(10, availableEmbeddingFiles.length || 1)}
+                                    value={selectedEmbeddingPaths}
+                                    onChange={handleEmbeddingFileSelection}
+                                >
+                                    {availableEmbeddingFiles.map(file => (
+                                        <option key={file.key} value={file.key}>
+                                            {file.key.split('/').pop()}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="uk-text-meta">
+                                    Selected {selectedEmbeddingPaths.length} embedding file(s)
+                                </p>
+                            </div>
+
+                            <div style={{ flex: '0 0 auto', width: '100%' }}>
+                                <label className="uk-form-label">Select Naturalness Files</label>
+                                <select
+                                    className="uk-select"
+                                    multiple
+                                    size={Math.min(10, availableNaturalnessFiles.length || 1)}
+                                    value={selectedNaturalnessPaths}
+                                    onChange={handleNaturalnessFileSelection}
+                                >
+                                    {availableNaturalnessFiles.map(file => (
+                                        <option key={file.key} value={file.key}>
+                                            {file.key.split('/').pop()}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="uk-text-meta">
+                                    Selected {selectedNaturalnessPaths.length} naturalness file(s)
+                                </p>
+                            </div>
+
+                            {/* New Few Shot Parameters Input */}
+                            <div style={{ flex: '0 0 auto', width: '100%' }}>
+                                <label className="uk-form-label">Few Shot Parameters (JSON format)</label>
+                                <textarea
+                                    className="uk-textarea"
+                                    rows={4}
+                                    value={fewShotParams}
+                                    onChange={(e) => {
+                                        setFewShotParams(e.target.value);
+                                        // Try to validate JSON
+                                        try {
+                                            if (e.target.value) {
+                                                JSON.parse(e.target.value);
+                                                e.target.style.borderColor = '#32d296'; // Success color
+                                            } else {
+                                                e.target.style.borderColor = ''; // Default color
+                                            }
+                                        } catch (err) {
+                                            e.target.style.borderColor = '#f0506e'; // Error color
+                                        }
+                                    }}
+                                    placeholder='{"key": "value"}'
+                                    style={{ fontFamily: 'monospace' }}
+                                />
+                                <p className="uk-text-meta">
+                                    Enter a valid JSON object. Border will turn green when valid, red when invalid.
+                                </p>
+                            </div>
                         </div>
 
                         <button

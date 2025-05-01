@@ -134,7 +134,9 @@ export interface Evolution {
     fold_id: number;
     mode: "finetuning" | "randomforest";
     embedding_files: string | null;
+    naturalness_files: string | null;
     finetuning_model_checkpoint: string | null;
+    few_shot_params: string | null;
     invokation_id: number | null;
 }
 

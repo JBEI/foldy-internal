@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 from app.extensions import db
 from app.helpers.fold_storage_manager import FoldStorageManager
-from app.jobs.evolve_jobs import run_evolvepro
+from app.util import FoldStorageManager
 from app.models import Evolution, Fold, Invokation, User
 from flask import Flask
 from werkzeug.exceptions import BadRequest

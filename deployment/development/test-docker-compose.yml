@@ -26,8 +26,32 @@ services:
       - "/src/app/tests/test_esm_finetuning.py"
       - "--ignore"
       - "/src/app/tests/test_esm_jobs.py"
+      - "--ignore"
+      - "/src/app/tests/test_evolve_jobs.py"
+      - "--ignore"
+      - "/src/folde/tests"
 
-  naturalness-tests:
+  cpu-worker-tests:
+    build: backend/
+    platform: linux/amd64
+    environment:
+      - PYTHONPATH=/src/src
+      - FLASK_APP=main.py
+      - ENV=development
+      - DEBUG=True
+      - DATABASE_URL=postgresql+psycopg2://user:password@db:5432/postgres
+      - RQ_REDIS_URL=redis://redis:6379/0
+      - FOLDY_STORAGE_TYPE=Local
+      - FOLDY_LOCAL_STORAGE_DIR=/tmp/test_storage
+    volumes:
+      - ./backend/src:/src
+    entrypoint:
+      - "ptw"
+      - "--poll"
+      - "/src"
+      - "/src/app/tests/test_evolve_jobs.py"
+
+  esm-worker-tests:
     build:
       context: .
       dockerfile: worker/Dockerfile.esm
@@ -51,6 +75,7 @@ services:
       - "/src/app/tests/test_esm_client.py"
       - "/src/app/tests/test_esm_finetuning.py"
       - "/src/app/tests/test_esm_jobs.py"
+      - "/src/folde/tests"
   frontend-tests:
     build:
       context: frontend/
