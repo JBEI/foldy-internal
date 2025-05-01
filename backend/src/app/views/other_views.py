@@ -130,8 +130,10 @@ evolution_fields = ns.model(
         "fold_id": fields.Integer(required=True),
         "mode": fields.String(required=True),
         "embedding_files": fields.String(),
+        "naturalness_files": fields.String(),
         "finetuning_model_checkpoint": fields.String(),
         "invokation_id": fields.Integer(),
+        "few_shot_params": fields.String(),
     },
 )
 
@@ -481,7 +483,7 @@ class DockCreateResource(Resource):
 
         new_invokation_id = get_job_type_replacement(fold, f"dock_{ligand_name}")
 
-        new_dock = Dock(
+        new_dock: Dock = Dock(
             ligand_name=ligand_name,
             ligand_smiles=ligand_smiles,
             tool=tool,

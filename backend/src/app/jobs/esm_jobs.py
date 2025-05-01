@@ -292,7 +292,7 @@ def finetune_esm_model(evolve_id: int):
 
         elif all([v in raw_activity_df.columns for v in ["seq_id", "activity"]]):
             loss = "entropy"
-            activity_df = process_and_validate_evolve_input_files(wt_aa_seq, raw_activity_df)
+            activity_df, _ = process_and_validate_evolve_input_files(wt_aa_seq, raw_activity_df)
             # Convert activity_df, which has seq_id and activity, into train and valid dfs with an 80/20 split and columns sequence and label.
             activity_df["sequence"] = activity_df["seq_id"].apply(
                 lambda seq_id: seq_id_to_seq(wt_aa_seq, seq_id)

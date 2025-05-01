@@ -35,8 +35,10 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ['react', 'react-dom', 'antd', 'd3', 'pdbe-molstar', 'plotly.js'],
-  }
+    include: ['react', 'react-dom', 'antd', 'd3', 'plotly.js'],
+    exclude:['pdbe-molstar']
+  },
+
   // If CRA served your app from a sub-path, you might need base: '/sub-path/'
   // base: '/my-app/',
 })

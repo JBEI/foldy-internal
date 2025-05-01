@@ -1,7 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import 'pdbe-molstar/build/pdbe-molstar-plugin';
 // import { PDBeMolstarPlugin } from 'pdbe-molstar/build/pdbe-molstar-plugin.js';
+import 'pdbe-molstar/build/pdbe-molstar-plugin.js';
 import 'pdbe-molstar/build/pdbe-molstar.css';
+// import 'pdbe-molstar-plugin';   // JavaScript bundle
+// import 'pdbe-molstar.css';         // Viewer styling
 import { FoldyMascot } from '../../util/foldyMascot';
 // If you prefer light theme, use this instead:
 
@@ -47,6 +49,8 @@ const StructurePane: React.FC<StructurePaneProps> = ({ pdbString, pdbFailedToLoa
         const viewer = new window.PDBeMolstarPlugin();
         pluginRef.current = viewer;
 
+        // API for PDBe-Molstar:
+        // https://github.com/molstar/pdbe-molstar/wiki/1.-PDBe-Molstar-as-JS-plugin 
         const options = {
             customData: {
                 url: URL.createObjectURL(new Blob([pdbString], { type: 'text/plain' })),

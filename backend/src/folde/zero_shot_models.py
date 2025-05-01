@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type, cast
 
 import numpy as np
 import pandas as pd
-from folde.util import internal_sample_n_indices
+from folde.util import get_consensus_scores, internal_sample_n_indices
 from numpy.typing import NDArray
 from pandas import DataFrame, Series
 
@@ -49,7 +49,7 @@ class ZeroShotModel(ABC):
     @abstractmethod
     def predict(
         self, naturalness_series: pd.Series, embedding_series: Optional[pd.Series] = None
-    ) -> pd.Series:
+    ) -> List[pd.Series]:
         """Make predictions for protein variants.
 
         Args:
@@ -66,7 +66,7 @@ class ZeroShotModel(ABC):
         n: int,
         naturalness_series: pd.Series,
         embedding_series: Optional[pd.Series] = None,
-    ) -> Tuple[List[str], pd.Series]:
+    ) -> Tuple[List[str], List[pd.Series]]:
         """Get the top N variants predicted by the model.
 
         This method predicts scores for all variants and returns the
@@ -83,13 +83,15 @@ class ZeroShotModel(ABC):
               * Series of predictions for all input variants with seq_id as index.
         """
         # Get predictions
-        predictions = self.predict(naturalness_series, embedding_series)
+        ensemble_of_predictions = self.predict(naturalness_series, embedding_series)
+
+        consensus_scores = get_consensus_scores(ensemble_of_predictions, decision_mode="median")
 
         # Create a DataFrame with sequence IDs and predictions
         # results_df = pd.DataFrame({"seq_id": naturalness_series.index, "prediction": predictions})
 
         chosen_indices = internal_sample_n_indices(
-            predictions,
+            consensus_scores.to_numpy(),
             n,
             temperature=self.temperature,
             epsilon=self.epsilon,
@@ -97,7 +99,7 @@ class ZeroShotModel(ABC):
 
         return (
             naturalness_series.index[chosen_indices].tolist(),
-            predictions,
+            ensemble_of_predictions,
         )
 
     def get_debug_info(self) -> Dict[str, Any]:
@@ -125,7 +127,7 @@ class RandomZeroShotModel(ZeroShotModel):
 
     def predict(
         self, naturalness_series: pd.Series, embedding_series: Optional[pd.Series] = None
-    ) -> pd.Series:
+    ) -> List[pd.Series]:
         """Predict using naturalness scores.
 
         Args:
@@ -135,9 +137,9 @@ class RandomZeroShotModel(ZeroShotModel):
         Returns:
             Array of prediction scores based on naturalness
         """
-        return pd.Series(
-            np.random.rand(naturalness_series.shape[0]), index=naturalness_series.index
-        )
+        return [
+            pd.Series(np.random.rand(naturalness_series.shape[0]), index=naturalness_series.index)
+        ]
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information about the model.
@@ -168,7 +170,7 @@ class NaturalnessZeroShotModel(ZeroShotModel):
 
     def predict(
         self, naturalness_series: pd.Series, embedding_series: Optional[pd.Series] = None
-    ) -> pd.Series:
+    ) -> List[pd.Series]:
         """Predict using naturalness scores.
 
         Args:
@@ -178,7 +180,7 @@ class NaturalnessZeroShotModel(ZeroShotModel):
         Returns:
             Array of prediction scores based on naturalness
         """
-        return naturalness_series
+        return [naturalness_series]
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information about the model.

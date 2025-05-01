@@ -12,8 +12,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
+from folde.util import get_consensus_scores
 from folde.data import get_proteingym_dataset
-from folde.few_shot_models import get_few_shot_model
+from folde.few_shot_models import get_consensus_scores, get_few_shot_model
 from folde.types import (
     CampaignResult,
     FolDEModelConfig,
@@ -26,7 +27,7 @@ from folde.types import (
 from folde.zero_shot_models import get_zero_shot_model
 from pydantic import BaseModel, Field
 from scipy.stats import spearmanr
-from sklearn.metrics import average_precision_score, mean_squared_error, roc_auc_score
+from sklearn.metrics import average_precision_score, mean_squared_error, recall_score, roc_auc_score
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +67,11 @@ class CampaignWorldState:
     ):
         assert golden_activity_series.index.equals(naturalness_series.index)
         assert golden_activity_series.index.equals(embedding_series.index)
-        self.golden_activity_series = golden_activity_series.copy()
-        self.naturalness_series = naturalness_series.copy()
-        self.embedding_series = embedding_series.copy()
+        # Removing these copies shaves ~25% time off the faster runs, and more when
+        # my laptop is memory constrained...
+        self.golden_activity_series = golden_activity_series  # .copy()
+        self.naturalness_series = naturalness_series  # .copy()
+        self.embedding_series = embedding_series  # .copy()
         self.measured_seq_ids: List[str] = []
 
     def measure_variant_activities(self, seq_ids: List[str]):
@@ -103,11 +106,13 @@ class CampaignWorldState:
 
 
 def _run_single_simulation(
-    golden_activity_series: pd.Series,
-    naturalness_series: pd.Series,
-    embedding_series: pd.Series,
+    available_seq_ids: List[str],
+    entire_activity_series: pd.Series,
+    entire_naturalness_series: pd.Series,
+    entire_embedding_series: pd.Series,
     round_size: int,
     config: FolDEModelConfig,
+    random_seed: int,
     max_rounds: int = 10,
 ) -> SimulationResult:
     """Run a single campaign simulation.
@@ -125,17 +130,28 @@ def _run_single_simulation(
     """
     # Initialize results tracking
     results = SimulationResult(
-        config=config,
         rounds=0,
-        variant_pool_size=len(golden_activity_series),
+        variant_pool_size=len(available_seq_ids),
         mutant_metrics=[],
         round_metrics=[],
     )
 
-    assert naturalness_series.index.equals(golden_activity_series.index)
-    assert naturalness_series.index.equals(embedding_series.index)
+    assert entire_naturalness_series.index.equals(entire_activity_series.index)
+    assert entire_naturalness_series.index.equals(entire_embedding_series.index)
 
-    world_state = CampaignWorldState(golden_activity_series, naturalness_series, embedding_series)
+    whole_world_activity_series = entire_activity_series.loc[available_seq_ids]
+    whole_world_naturalness_series = entire_naturalness_series.loc[available_seq_ids]
+    whole_world_embedding_series = entire_embedding_series.loc[available_seq_ids]
+    world_state = CampaignWorldState(
+        whole_world_activity_series,
+        whole_world_naturalness_series,
+        whole_world_embedding_series,
+    )
+
+    held_out_series = ~entire_activity_series.index.isin(available_seq_ids)
+    held_out_activity_series = entire_activity_series.loc[held_out_series]
+    held_out_naturalness_series = entire_naturalness_series.loc[held_out_series]
+    held_out_embedding_series = entire_embedding_series.loc[held_out_series]
 
     # Run the simulation for the specified number of rounds
     for round_num in range(1, max_rounds + 1):
@@ -147,7 +163,8 @@ def _run_single_simulation(
 
         # We're getting a topN to synthesize, and a predicted activity for every variant.
         top_seq_ids = None
-        predicted_activity_df = None
+        predicted_activity_ensemble: List[pd.Series] = []
+        held_out_prediction_ensemble: List[pd.Series] = []
 
         # First round: always use zero-shot model
         if round_num == 1:
@@ -156,10 +173,15 @@ def _run_single_simulation(
                 config.zero_shot_model_name, **config.zero_shot_model_params
             )
             # Get top variants using zero-shot model's get_top_n method
-            top_seq_ids, predicted_activity_series = zero_shot_model.get_top_n(
+            top_seq_ids, predicted_activity_ensemble = zero_shot_model.get_top_n(
                 round_size,
                 world_state.get_unmeasured_naturalness_series(),
                 world_state.get_unmeasured_embeddings_series(),
+            )
+
+            held_out_prediction_ensemble = zero_shot_model.predict(
+                held_out_naturalness_series,
+                held_out_embedding_series,
             )
 
         # Subsequent rounds: use few-shot model if specified
@@ -167,27 +189,33 @@ def _run_single_simulation(
 
             # Get few-shot model
             few_shot_model = get_few_shot_model(
-                config.few_shot_model_name, **config.few_shot_model_params
+                config.few_shot_model_name,
+                random_state=random_seed,
+                **config.few_shot_model_params,
             )
 
             # Convert list of embeddings to numpy array
-            train_naturalness_series = world_state.get_measured_naturalness_series()
-            train_embedding_series = world_state.get_measured_embeddings_series()
             train_activity_series = world_state.get_measured_activity_series()
 
             few_shot_model.fit(
-                train_naturalness_series,
-                train_embedding_series,
+                whole_world_naturalness_series,
+                whole_world_embedding_series,
                 train_activity_series,
             )
 
             # Use the get_top_n method from FewShotModel
-            top_seq_ids, predicted_activity_series = few_shot_model.get_top_n(
+            top_seq_ids, predicted_activity_ensemble = few_shot_model.get_top_n(
                 round_size,
                 world_state.get_unmeasured_naturalness_series(),
                 world_state.get_unmeasured_embeddings_series(),
             )
 
+            held_out_prediction_ensemble = few_shot_model.predict(
+                held_out_naturalness_series,
+                held_out_embedding_series,
+            )
+
+        # Update world state.
         assert type(top_seq_ids) == list, f"top_seq_ids must be a list, got {type(top_seq_ids)}"
         assert (
             len(top_seq_ids) == round_size
@@ -197,7 +225,11 @@ def _run_single_simulation(
         )
         world_state.measure_variant_activities(top_seq_ids)
 
-        all_percentiles = golden_activity_series.rank(pct=True)
+        # Metric calculations.
+        consensus_predicted_activity = get_consensus_scores(
+            predicted_activity_ensemble, decision_mode="mean"
+        )
+        all_percentiles = whole_world_activity_series.rank(pct=True)
 
         mutant_metrics_list = []
         for top_seq_id in top_seq_ids:
@@ -212,7 +244,7 @@ def _run_single_simulation(
                     seq_id=top_seq_id,
                     round_found=round_num,
                     activity=golden_activity,
-                    predicted_activity=predicted_activity_series.loc[top_seq_id],
+                    predicted_activity=consensus_predicted_activity.loc[top_seq_id],
                     percentile=percentile,
                     relevant_mutants=[],  # TODO(jacob): Compute relevant mutants
                 )
@@ -221,13 +253,57 @@ def _run_single_simulation(
         # Compute metrics for this round's predictions
         # TOOD(jacob): Compute metrics for every round, eg validation or test correlation.
         whole_dataset_spearman = spearmanr(
-            golden_activity_series.loc[predicted_activity_series.index].values,
-            predicted_activity_series.values,
+            entire_activity_series.loc[consensus_predicted_activity.index].values,
+            consensus_predicted_activity.values,
         )[0]
+
+        # Compute metrics over held-out mutants.
+        consensus_held_out_predictions = get_consensus_scores(
+            held_out_prediction_ensemble, decision_mode="mean"
+        )
+        assert held_out_activity_series.index.equals(consensus_held_out_predictions.index)
+        held_out_activity_spearman = spearmanr(
+            held_out_activity_series.values,
+            consensus_held_out_predictions.values,
+        )[0]
+
+        def get_held_out_stats_for_percentile(percentile):
+            """Returns some stats on the held out predictions for a percentile, zero to 100 (eg 1.0 for top 1 percent)."""
+
+            def top_k_mask(series: pd.Series) -> pd.Series:
+                k = max(1, int(np.ceil(len(series) * percentile / 100)))
+                top_idx = series.nlargest(k).index  # strict ranking
+                out = pd.Series(False, index=series.index)
+                out.loc[top_idx] = True
+                return out
+
+            held_out_stat_binary = top_k_mask(held_out_activity_series)
+            predicted_stat_binary = top_k_mask(consensus_held_out_predictions)
+            assert held_out_stat_binary.sum() == predicted_stat_binary.sum()
+
+            held_out_stat_recall = recall_score(
+                held_out_stat_binary,
+                predicted_stat_binary,
+            )
+            held_out_stat_auc = roc_auc_score(
+                held_out_stat_binary,
+                consensus_held_out_predictions,
+            )
+            return held_out_stat_recall, held_out_stat_auc
+
+        held_out_1pct_recall, held_out_1pct_auc = get_held_out_stats_for_percentile(1)
+        held_out_10pct_recall, held_out_10pct_auc = get_held_out_stats_for_percentile(10)
+
         round_metrics = RoundMetrics(
             round_num=round_num,
-            model_spearman=whole_dataset_spearman,
-            misc={},
+            model_spearman=float(whole_dataset_spearman),  # type: ignore
+            misc={
+                "held_out_activity_spearman": float(held_out_activity_spearman),  # type: ignore
+                "held_out_1pct_recall": float(held_out_1pct_recall),  # type: ignore
+                "held_out_1pct_auc": float(held_out_1pct_auc),  # type: ignore
+                "held_out_10pct_recall": float(held_out_10pct_recall),  # type: ignore
+                "held_out_10pct_auc": float(held_out_10pct_auc),  # type: ignore
+            },
         )
 
         results.rounds = round_num
@@ -240,20 +316,25 @@ def _run_single_simulation(
 # Run multiple simulations
 def run_single_sim_parallel(
     sim_idx,
-    activity_series_subset,
-    naturalness_series_subset,
-    embedding_series_subset,
-    random_seed,
+    available_seq_ids: List[str],
+    activity_series: pd.Series,
+    naturalness_series: pd.Series,
+    embedding_series: pd.Series,
+    sim_random_seed,
     **kwargs,
 ):
-    logger.info(f"Running simulation {sim_idx+1}")
-    random.seed(random_seed + sim_idx)
-    np.random.seed(random_seed + sim_idx)
+    logger.info(
+        f"Running simulation {sim_idx+1} ({len(available_seq_ids)} / {len(activity_series)} mutants in sim)"
+    )
+    random.seed(sim_random_seed)
+    np.random.seed(sim_random_seed)
 
     sim_result = _run_single_simulation(
-        activity_series_subset,
-        naturalness_series_subset,
-        embedding_series_subset,
+        available_seq_ids,
+        activity_series,
+        naturalness_series,
+        embedding_series,
+        random_seed=sim_random_seed,
         **kwargs,
     )
     return sim_result
@@ -282,6 +363,10 @@ def simulate_campaign(
     Returns:
         Dictionary containing simulation results for each configuration
     """
+
+    assert len(set([config.name for config in config_list])) == len(
+        config_list
+    ), f"Some configs have duplicate names."
 
     # Initialize results
     campaign_result = CampaignResult(
@@ -321,7 +406,13 @@ def simulate_campaign(
                 print(traceback.format_exc(), flush=True)
                 raise e
         naturalness_df, embedding_df, activity_df = df_cache[cache_key]
-        naturalness_series = naturalness_df.wt_marginal
+        naturalness_series = naturalness_df[
+            (
+                "wt_marginal"
+                if model_config.few_shot_naturalness_column is None
+                else model_config.few_shot_naturalness_column
+            )
+        ]
         embedding_series = embedding_df[
             "embedding" if model_config.embedding_column is None else model_config.embedding_column
         ]
@@ -352,10 +443,11 @@ def simulate_campaign(
                     executor.submit(
                         run_single_sim_parallel,
                         sim_idx,
-                        activity_series.loc[bootstrapped_seq_ids],
-                        naturalness_series.loc[bootstrapped_seq_ids],
-                        embedding_series.loc[bootstrapped_seq_ids],
-                        random_seed=random_seed + sim_idx,
+                        bootstrapped_seq_ids.tolist(),  # type: ignore
+                        activity_series,
+                        naturalness_series,
+                        embedding_series,
+                        sim_random_seed=random_seed + sim_idx,
                         round_size=round_size,
                         config=model_config,
                         max_rounds=max_rounds,

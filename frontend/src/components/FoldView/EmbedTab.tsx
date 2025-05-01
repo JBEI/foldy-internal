@@ -57,13 +57,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings 
             await startEmbeddings(foldId, batchName, dmsStartingSeqIdsArray, extraIDsArray, extraLayersArray, model);
             notify.success('Started embedding run.');
         } catch (error) {
-            console.error('Error starting embedding run:', error);
-            UIkit.notification({
-                message: 'Failed to start embedding run.',
-                status: 'danger',
-                pos: 'top-right',
-                timeout: 3000
-            });
+            notify.error(`Failed to start embedding run: ${error}`);
         }
     };
 
@@ -84,7 +78,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings 
     };
 
     const rerunEmbedding = async (embedding: Embedding) => {
-        UIkit.notification({ message: `Repopulating "New Embedding Run" with parameters from ${embedding.name}.`, timeout: 2000 });
+        notify.info(`Repopulating "New Embedding Run" with parameters from ${embedding.name}.`);
         console.log(embedding);
         setBatchName(embedding.name);
         setDmsStartingSeqIds(embedding.dms_starting_seq_ids?.split(',').join('\n') || '');

@@ -12,8 +12,10 @@ export async function evolve(
     foldId: number,
     activityFile: File,
     mode: string,
-    embeddingPaths?: string[],
-    finetuningModelCheckpoint?: string
+    embeddingFiles?: string[],
+    naturalnessFiles?: string[],
+    finetuningModelCheckpoint?: string,
+    fewShotParams?: string,
 ): Promise<Evolution> {
     const formData = new FormData();
     formData.append('name', evolutionName);
@@ -21,11 +23,17 @@ export async function evolve(
     formData.append('activity_file', activityFile);
 
     formData.append('mode', mode);
-    if (embeddingPaths) {
-        formData.append('embedding_paths', JSON.stringify(embeddingPaths));
+    if (embeddingFiles) {
+        formData.append('embedding_files', JSON.stringify(embeddingFiles));
+    }
+    if (naturalnessFiles) {
+        formData.append('naturalness_files', JSON.stringify(naturalnessFiles));
     }
     if (finetuningModelCheckpoint) {
         formData.append('finetuning_model_checkpoint', finetuningModelCheckpoint);
+    }
+    if (fewShotParams) {
+        formData.append('few_shot_params', fewShotParams);
     }
 
     const response = await axiosInstance.post<Evolution>('/api/evolve', formData, {

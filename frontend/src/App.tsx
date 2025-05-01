@@ -30,12 +30,11 @@ import {
 } from "./services/authentication.service";
 import TagView from "./TagView";
 import { FoldyMascot } from "./util/foldyMascot";
+import { notify } from "./services/NotificationService";
 
 const AvatarFoldView = lazy(() => import("./components/FoldView/FoldView"));
 
-function CheckForErrorQueryString(props: {
-    setErrorText: (a: string | null) => void;
-}) {
+function CheckForErrorQueryString() {
     const location = useLocation();
     const navigate = useNavigate();
     let params = new URLSearchParams(location.search);
@@ -45,7 +44,7 @@ function CheckForErrorQueryString(props: {
         return <div></div>;
     }
 
-    props.setErrorText(queryParamErrorText);
+    notify.error(queryParamErrorText);
 
     params.delete("error_message");
     navigate({
@@ -85,10 +84,6 @@ function RoutedApp({ token, setToken }: {
                 });
         }
     }
-
-    const setErrorText = (error_text: string | null): void => {
-        UIkit.notification(error_text || "Danger!", { status: "danger" });
-    };
 
     const renderLoader = () => {
         return (
@@ -231,9 +226,7 @@ function RoutedApp({ token, setToken }: {
             <div className="uk-visible@m">{desktop_navbar}</div>
             <div className="uk-hidden@m">{mobile_navbar}</div>
 
-            <CheckForErrorQueryString
-                setErrorText={setErrorText}
-            ></CheckForErrorQueryString>
+            <CheckForErrorQueryString />
             <div id="off-canvas-navbar" uk-offcanvas={1}>
                 <div className="uk-offcanvas-bar uk-flex uk-flex-column">
                     <button

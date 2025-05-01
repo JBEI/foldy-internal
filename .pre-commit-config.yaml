@@ -8,24 +8,12 @@ repos:
       - id: check-added-large-files
         args: ['--maxkb=102400']  # 100MB in kilobytes
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.15.0
+
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.400
     hooks:
-      - id: mypy
+      - id: pyright
         files: ^backend/src/
-        additional_dependencies: [
-          types-PyYAML,
-          types-Flask-Cors,
-          types-Markdown,
-          types-Authlib,
-          types-docker,
-          types-tqdm,
-          scipy-stubs,
-          pandas-stubs,
-          types-requests,
-          types-setuptools,
-        ]
-        args: ["--config-file=backend/mypy.ini"]
 
   - repo: https://github.com/pycqa/isort
     rev: 6.0.1

@@ -11,6 +11,7 @@ class FolDEModelConfig(BaseModel):
     zero_shot_model_name: str
     zero_shot_model_params: Dict[str, Any]
     few_shot_model_name: str
+    few_shot_naturalness_column: Optional[str] = None
     few_shot_model_params: Dict[str, Any]
 
 
