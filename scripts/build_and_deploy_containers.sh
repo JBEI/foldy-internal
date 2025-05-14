@@ -48,7 +48,8 @@ WORKER_BOLTZ_TAG=$GOOGLE_CLOUD_REGION-docker.pkg.dev/$GOOGLE_CLOUD_PROJECT_ID/$G
 # # docker tag FOLDY_ALPHAFOLD_TAG_OLD FOLDY_ALPHAFOLD_TAG
 
 echo "Building backend..."
-DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t $BACKEND_TAG backend
+DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t $BACKEND_TAG -f backend/Dockerfile \
+  .
 echo "Building worker..."
 DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t $WORKER_TAG -f worker/Dockerfile \
   .

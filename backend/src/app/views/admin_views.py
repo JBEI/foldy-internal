@@ -3,11 +3,6 @@
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
 
-from app.authorization import verify_has_edit_access
-from app.extensions import db, rq
-from app.jobs import other_jobs
-from app.models import Fold, Invokation
-from app.util import start_stage
 from flask import request
 from flask_jwt_extended import jwt_required
 from flask_migrate import stamp, upgrade
@@ -16,6 +11,13 @@ from rq.command import send_shutdown_command
 from rq.registry import FailedJobRegistry
 from sqlalchemy.sql.elements import and_
 from werkzeug.exceptions import BadRequest
+
+from app.authorization import verify_has_edit_access
+from app.extensions import db
+from app.helpers.rq_helpers import get_queue, get_redis_connection
+from app.jobs import other_jobs
+from app.models import Fold, Invokation
+from app.util import start_stage
 
 ns = Namespace("admin_views", decorators=[jwt_required(fresh=True), verify_has_edit_access])
 
@@ -81,7 +83,7 @@ class RemoveFailedJobsResource(Resource):
         """
         data = request.get_json()
         queue_name = data["queue"]
-        q = rq.get_queue(queue_name)
+        q = get_queue(queue_name)
         registry = FailedJobRegistry(queue=q)
 
         count = 0
@@ -110,7 +112,7 @@ class KillWorkerResource(Resource):
         data = request.get_json()
         worker_id = data["worker_id"]
         logging.info(f"Sending shutdown command to worker {worker_id}")
-        send_shutdown_command(rq.connection, worker_id)
+        send_shutdown_command(get_redis_connection(), worker_id)
 
 
 @ns.route("/set_all_unset_model_presets")
@@ -239,7 +241,7 @@ class SendTestEmailResource(Resource):
         Returns:
             True if email job was queued successfully
         """
-        q = rq.get_queue("emailparrot")
+        q = get_queue("emailparrot")
         job = q.enqueue(
             other_jobs.send_email,
             1,

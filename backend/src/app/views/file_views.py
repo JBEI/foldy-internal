@@ -12,10 +12,6 @@ from typing import (
     Union,
 )
 
-from app.authorization import user_jwt_grants_edit_access, verify_has_edit_access
-from app.extensions import db, rq
-from app.helpers.fold_storage_manager import FoldStorageManager
-from app.models import Dock, Fold, Invokation
 from flask import (
     Response,
     current_app,
@@ -29,6 +25,11 @@ from flask_jwt_extended.utils import get_jwt, get_jwt_identity
 from flask_restx import Namespace, Resource, fields, reqparse
 from sqlalchemy.sql.elements import and_
 from werkzeug.exceptions import BadRequest
+
+from app.authorization import user_jwt_grants_edit_access, verify_has_edit_access
+from app.extensions import db
+from app.helpers.fold_storage_manager import FoldStorageManager
+from app.models import Dock, Fold, Invokation
 
 ns = Namespace("file_views", decorators=[jwt_required(fresh=True)])
 

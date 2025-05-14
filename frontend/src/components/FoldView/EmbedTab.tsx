@@ -2,7 +2,7 @@ import React, { useState, ChangeEvent } from 'react';
 import { startEmbeddings } from "../../api/embedApi";
 import UIkit from 'uikit';
 import { Embedding, Invokation } from '../../types/types';
-import { FaDownload, FaRedo } from 'react-icons/fa';
+import { FaDownload, FaFileCode, FaRedo } from 'react-icons/fa';
 import { downloadFileStraightToFilesystem, getFile } from '../../api/fileApi';
 import { notify } from '../../services/NotificationService';
 import { ESMModelPicker } from './ESMModelPicker';
@@ -12,9 +12,10 @@ interface EmbedTabProps {
     foldName: string | null;
     jobs: Invokation[] | null;
     embeddings: Embedding[] | null;
+    openUpLogsForJob: (jobId: number | undefined) => void;
 }
 
-const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings }) => {
+const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings, openUpLogsForJob }) => {
     const [batchName, setBatchName] = useState<string | null>(null);
     const [dmsStartingSeqIds, setDmsStartingSeqIds] = useState<string>('WT');
     const [extraSequenceIDs, setExtraSequenceIDs] = useState<string>('');
@@ -122,7 +123,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings 
             </section>
 
             {/* Batch Status Section */}
-            <section style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+            <section style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflowX: 'scroll' }}>
                 <h4>Ongoing Batches</h4>
                 <div style={{ overflowX: 'auto' }}>
                     <table className="uk-table uk-table-striped">
@@ -139,6 +140,11 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings 
                                     <td>{embedding.name}</td>
                                     <td>{getEmbeddingStatus(embedding)}</td>
                                     <td>
+
+                                        <FaFileCode
+                                            uk-tooltip="View logs"
+                                            onClick={() => openUpLogsForJob(embedding.invokation_id || undefined)}
+                                        />
                                         <FaDownload
                                             uk-tooltip="Download embeddings CSV."
                                             onClick={() => downloadEmbedding(embedding)} />

@@ -2,7 +2,7 @@ import React, { useState, ChangeEvent, useMemo } from 'react';
 import UIkit from 'uikit';
 import { FileInfo, Logit, Invokation } from 'src/types/types';
 import { evolve } from '../../api/evolveApi';
-import { FaDownload, FaEye, FaRedo } from 'react-icons/fa';
+import { FaDownload, FaEye, FaFileCode, FaRedo } from 'react-icons/fa';
 import fileDownload from 'js-file-download';
 import { removeLeadingSlash } from '../../api/commonApi';
 import { downloadFileStraightToFilesystem, getFile } from '../../api/fileApi';
@@ -33,6 +33,7 @@ interface NaturalnessTabProps {
     jobs: Invokation[] | null;
     logits: Logit[] | null;
     setSelectedSubsequence: (selection: Selection | null) => void;
+    openUpLogsForJob: (jobId: number | undefined) => void;
 }
 
 
@@ -225,14 +226,6 @@ const LogitTable: React.FC<LogitTableProps> = ({
 
     if (!tableData) return null;
 
-    const handleSort = (sortCol: string) => {
-        if (sortColumn === sortCol) {
-            setSortDirection(sortDirection === 'ASC' ? 'DESC' : 'ASC');
-        } else {
-            setSortColumn(sortCol);
-            setSortDirection('ASC');
-        }
-    };
 
     const columns = [
         {
@@ -268,7 +261,7 @@ const LogitTable: React.FC<LogitTableProps> = ({
     );
 };
 
-const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlConfig, jobs, logits, setSelectedSubsequence }) => {
+const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlConfig, jobs, logits, setSelectedSubsequence, openUpLogsForJob }) => {
     const [runName, setRunName] = useState<string>('');
     const [logitModel, setLogitModel] = useState<string>('esmc_600m');
     const [useStructure, setUseStructure] = useState<boolean>(false);
@@ -482,7 +475,7 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
 
         setSelectedSubsequence({
             data: selection,
-            // nonSelectedColor: "white",
+            nonSelectedColor: "white",
         });
     }
 
@@ -522,6 +515,10 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
                                 <td>{logit.name}</td>
                                 <td>{getLogitStatus(logit)}</td>
                                 <td>
+                                    <FaFileCode
+                                        uk-tooltip="View logs"
+                                        onClick={() => openUpLogsForJob(logit.invokation_id || undefined)}
+                                    />
                                     {
                                         getLogitStatus(logit) == 'finished' ?
                                             <>

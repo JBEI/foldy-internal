@@ -132,6 +132,7 @@ spec:
         serviceAccountName: foldy-ksa
 
         restartPolicy: Never
+        terminationGracePeriodSeconds: 60   # allow 60 s for clean shutdown
 
         volumes:
           - name: foldydbs
@@ -160,7 +161,7 @@ spec:
         - name: master
           image: {{ .Values.GoogleCloudRegion }}-docker.pkg.dev/{{ .Values.GoogleProjectId }}/{{ .Values.ArtifactRepo }}/{{ required "image name is required" .ImageName }}:{{  .Values.ImageVersion }}
           command: ["/opt/conda/envs/worker/bin/python"]
-          args: ["-m", "flask", "rq", "worker", {{ required "RqQueueName is required." .RqQueueName | quote }}, "--burst", "--max-jobs", "1"]
+          args: ["/backend/src/rq_worker_main.py", {{ required "RqQueueName is required." .RqQueueName | quote }}, "--burst", "--max-jobs", "1"]
           env:
           - name: FLASK_APP
             value: rq_worker_main.py

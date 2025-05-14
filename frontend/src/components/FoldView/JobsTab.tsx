@@ -47,9 +47,9 @@ const JobsTab: React.FC<JobsTabProps> = ({ jobs }) => {
                             <tr>
                                 <th>Type</th>
                                 <th className="uk-text-nowrap">State</th>
+                                <th className="uk-text-nowrap">Logs</th>
                                 <th className="uk-text-nowrap">Start time</th>
                                 <th className="uk-text-nowrap">Runtime</th>
-                                <th className="uk-text-nowrap">Logs</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -60,6 +60,9 @@ const JobsTab: React.FC<JobsTabProps> = ({ jobs }) => {
                                     </td>
                                     <td className="uk-text-nowrap" uk-tooltip={job.state}>
                                         {job.state}
+                                    </td>
+                                    <td className="uk-text-nowrap">
+                                        <a href={`#logs_${job.id?.toString()}`}>View</a>
                                     </td>
                                     <td
                                         className="uk-text-nowrap"
@@ -72,9 +75,6 @@ const JobsTab: React.FC<JobsTabProps> = ({ jobs }) => {
                                         uk-tooltip={formatRunTime(job.timedelta_sec)}
                                     >
                                         {formatRunTime(job.timedelta_sec)}
-                                    </td>
-                                    <td className="uk-text-nowrap">
-                                        <a href={`#logs_${job.id?.toString()}`}>View</a>
                                     </td>
                                 </tr>
                             ))}

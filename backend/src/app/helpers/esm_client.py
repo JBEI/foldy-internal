@@ -18,6 +18,44 @@ if TYPE_CHECKING:
     from esm.sdk.api import ESMProtein
 
 
+def recursive_cleanup(obj):
+    """Recursively detach and delete tensors in a complex nested object."""
+    import torch
+
+    if isinstance(obj, torch.Tensor):
+        # Detach and move to CPU before deletion
+        if obj.is_cuda:
+            obj = obj.detach().cpu()
+        return None  # Return None to indicate this should be deleted
+
+    elif hasattr(obj, '__dict__'):
+        # For objects with attributes
+        for attr_name, attr_value in list(obj.__dict__.items()):
+            result = recursive_cleanup(attr_value)
+            if result is None:
+                delattr(obj, attr_name)
+            else:
+                setattr(obj, attr_name, result)
+
+    elif isinstance(obj, dict):
+        # For dictionaries
+        for key in list(obj.keys()):
+            result = recursive_cleanup(obj[key])
+            if result is None:
+                del obj[key]
+            else:
+                obj[key] = result
+
+    elif isinstance(obj, (list, tuple)):
+        # For lists/tuples
+        new_obj = type(obj)(
+            recursive_cleanup(item) for item in obj if recursive_cleanup(item) is not None
+        )
+        return new_obj if new_obj else None
+
+    return obj  # Return object with cleaned up components
+
+
 class FoldyESMClient(ABC):
     """
     Interface for ESM model clients that provide embedding and logit functionality.
@@ -218,18 +256,24 @@ class FoldyESMCClient(FoldyESMClient):
                         return_hidden_states=True if len(extra_layers) > 0 else False,
                     ),
                 )
-                if extra_layers:
-                    hidden_states = logits_output.hidden_states
-                    for extra_layer_idx in extra_layers:
-                        layer_embedding = hidden_states[extra_layer_idx].mean(dim=-2).squeeze()
-                        embeddings.append(layer_embedding.cpu().tolist())
-                    del hidden_states
+            if extra_layers:
+                hidden_states = logits_output.hidden_states
+                for extra_layer_idx in extra_layers:
+                    layer_embedding = hidden_states[extra_layer_idx].mean(dim=-2).squeeze()
+                    embeddings.append(layer_embedding.cpu().tolist())
+                del hidden_states
 
-                final_embedding = logits_output.embeddings.detach().mean(dim=1).squeeze(0).cpu()
-                embeddings.append(final_embedding.tolist())
+            final_embedding = logits_output.embeddings.detach().cpu().mean(dim=1).squeeze(0)
+            embeddings.append(final_embedding.tolist())
 
         finally:
-            # Expanded cleanup
+            # First recursively clean complex objects
+            if 'logits_output' in locals() and logits_output is not None:
+                recursive_cleanup(logits_output)
+
+            if 'protein_tensor' in locals() and protein_tensor is not None:
+                recursive_cleanup(protein_tensor)
+         # Expanded cleanup
             for local_var in [
                 "logits_output",
                 "protein_tensor",

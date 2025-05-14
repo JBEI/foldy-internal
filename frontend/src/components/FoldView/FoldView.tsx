@@ -101,6 +101,25 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
         }
     };
 
+    openUpLogsForJob = (jobId?: number) => {
+        const tabElement = document.getElementById('tab');
+        if (tabElement) {
+            // 1 is the index of the Logs tab
+            UIkit.tab(tabElement).show(1);
+
+            // If a jobId is provided, we can add logic to scroll to that specific job
+            if (jobId && this.state.jobs) {
+                // Add a small delay to ensure the tab has switched
+                setTimeout(() => {
+                    const jobElement = document.getElementById(`logs_${jobId.toString()}`);
+                    if (jobElement) {
+                        jobElement.scrollIntoView({ behavior: 'smooth' });
+                    }
+                }, 100);
+            }
+        }
+    }
+
     refreshFoldDataFromBackend = () => {
         getFold(this.props.foldId).then((new_fold_data) => {
             console.log(`Got new fold with tags ${new_fold_data.tags}`);
@@ -423,6 +442,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         jobs={this.state.jobs}
                         logits={this.state.foldData?.logits || null}
                         setSelectedSubsequence={this.setSelectedSubsequence}
+                        openUpLogsForJob={this.openUpLogsForJob}
                     />
                 </li>
 
@@ -432,15 +452,19 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         foldName={this.state.foldData?.name || null}
                         jobs={this.state.jobs}
                         embeddings={this.state.foldData?.embeddings || null}
+                        openUpLogsForJob={this.openUpLogsForJob}
                     />
                 </li>
 
                 <li key="Evolveli">
                     <EvolveTab
                         foldId={this.props.foldId}
+                        yamlConfig={this.state.foldData?.yaml_config || null}
                         jobs={this.state.jobs}
                         files={this.state.files}
                         evolutions={this.state.foldData?.evolutions || null}
+                        openUpLogsForJob={this.openUpLogsForJob}
+                        setSelectedSubsequence={this.setSelectedSubsequence}
                     />
                 </li>
 
@@ -622,10 +646,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
         ["Rewrite fasta files", "write_fastas"],
         ["Rerun Sequence Annotation", "annotate"],
         ["Refold", "both"],
-        ["AlphaFold2: Rerun MSA computation", "features"],
-        ["AlphaFold2: Rerun Structure Prediction", "models"],
-        ["AlphaFold2: Rerun Decompress Pickles job", "decompress_pkls"],
-        ["Send notification email", "email"],
     ];
 
     deleteLigandPose = (ligandId: number, ligandName: string) => {

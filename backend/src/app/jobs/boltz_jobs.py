@@ -15,6 +15,10 @@ from tempfile import TemporaryDirectory
 import joblib
 import numpy as np
 import pandas as pd
+from Bio.PDB import PDBIO, MMCIFParser
+from sklearn.ensemble import RandomForestRegressor
+from werkzeug.exceptions import BadRequest
+
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.jobs_util import (
@@ -27,9 +31,6 @@ from app.helpers.sequence_util import (
     get_loci_set,
 )
 from app.models import Evolution, Fold, Invokation
-from Bio.PDB import PDBIO, MMCIFParser
-from sklearn.ensemble import RandomForestRegressor
-from werkzeug.exceptions import BadRequest
 
 
 def cif_to_pdb(cif_file: str, structure_id: str):
@@ -132,7 +133,7 @@ def run_boltz(fold_id, invokation_id):
             gpu_available = get_torch_cuda_is_available_and_add_logs(logging.info)
             accelerator = "gpu" if gpu_available else "cpu"
             boltz_command = [
-                "/opt/conda/envs/worker/bin/boltz",
+                "/opt/conda/envs/boltzenv/bin/boltz",
                 "predict",
                 str(yaml_file_path),
                 "--out_dir",

@@ -162,7 +162,6 @@ function AuthenticatedDashboardView(props: {
                     key="loadedDiv"
                     style={{ opacity: searchIsStale ? "60%" : "100%" }}
                 >
-                    {folds.length === 0 ? "No folds found for search. " : ""}
                     <div className="uk-flex uk-flex-center uk-flex-middle uk-margin-top">
                         <div
                             className="uk-button uk-button-default"

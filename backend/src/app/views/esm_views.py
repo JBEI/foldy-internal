@@ -3,27 +3,29 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
-from app.authorization import user_jwt_grants_edit_access, verify_has_edit_access
-from app.extensions import db, rq
-from app.helpers.fold_storage_manager import FoldStorageManager
-from app.jobs import esm_jobs, other_jobs
-from app.models import Dock, Embedding, Fold, Invokation, Logit
-from app.util import get_job_type_replacement, make_new_folds
-from app.views.other_views import embedding_fields, logit_fields
 from flask import (
-    Response,
-    current_app,
-    make_response,
     request,
-    send_file,
-    stream_with_context,
 )
 from flask_jwt_extended import jwt_required
 from flask_jwt_extended.utils import get_jwt, get_jwt_identity
 from flask_restx import Namespace, Resource, fields, reqparse
-from rq.job import Job
+from rq import Callback
 from sqlalchemy.sql.elements import and_
 from werkzeug.exceptions import BadRequest
+
+from app.authorization import user_jwt_grants_edit_access, verify_has_edit_access
+from app.extensions import db
+from app.helpers.fold_storage_manager import FoldStorageManager
+from app.helpers.rq_helpers import (
+    add_meta_to_job,
+    get_queue,
+    send_failure_email,
+    send_success_email,
+)
+from app.jobs import esm_jobs, other_jobs
+from app.models import Dock, Embedding, Fold, Invokation, Logit
+from app.util import get_job_type_replacement, make_new_folds
+from app.views.other_views import embedding_fields, logit_fields
 
 ns = Namespace("esm_views", decorators=[jwt_required(fresh=True)])
 
@@ -102,13 +104,16 @@ class CalculateEmbeddingsResource(Resource):
             invokation_id=new_invokation_id,
         )
 
-        esm_q = rq.get_queue("esm")
+        esm_q = get_queue("esm")
         enqueued_job = esm_q.enqueue(
             esm_jobs.get_esm_embeddings,
             embed_record.id,
             job_timeout="12h",
             result_ttl=48 * 60 * 60,  # 2 days
+            on_success=Callback(send_success_email, timeout='5s'),
+            on_failure=Callback(send_failure_email, timeout='5s'),
         )
+        add_meta_to_job(enqueued_job, fold, "embed", embed_record.id)
 
         logging.info(
             f"Queued embedding job {enqueued_job.id} for fold {fold_id}, model {embedding_model}"
@@ -166,13 +171,16 @@ class StartLogitsResource(Resource):
             invokation_id=new_invokation_id,
         )
 
-        esm_q = rq.get_queue("esm")
+        esm_q = get_queue("esm")
         enqueued_job = esm_q.enqueue(
             esm_jobs.get_esm_logits,
             logit_record.id,
             job_timeout="12h",
             result_ttl=48 * 60 * 60,  # 2 days
+            on_success=Callback(send_success_email, timeout='5s'),
+            on_failure=Callback(send_failure_email, timeout='5s'),
         )
+        add_meta_to_job(enqueued_job, fold, "logits", logit_record.id)
 
         logging.info(
             f"Queued logit job {enqueued_job.id} for fold {fold_id}, model {logit_model}, "

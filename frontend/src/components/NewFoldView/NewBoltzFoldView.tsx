@@ -122,6 +122,41 @@ sequences:
                         style={{ marginBottom: "1rem" }}
                     />
                 )}
+
+                <div>
+                    <p>
+                        Foldy is built on Boltz-1x for protein structure prediction (<a href="https://github.com/jwohlwend/boltz">Github</a>, <a href="https://www.biorxiv.org/content/10.1101/2024.11.19.624167v4">Paper</a>). Boltz-1x is an open-source model for predicting protein structures and has exceptional accuracy for many problem types including:
+                    </p>
+                    <ul style={{ marginLeft: "2rem", marginBottom: "1rem" }}>
+                        <li>Protein multimers</li>
+                        <li>Small molecule docking</li>
+                        <li>DNA/RNA docking</li>
+                        <li>Post translational modifications</li>
+                    </ul>
+                    <p>To predict a structure, supply:</p>
+                    <ul style={{ marginLeft: "2rem", marginBottom: "1rem" }}>
+                        <li>Fold Name: your fold name should be unique, and we recommend choosing something less than 80 characters and only using [0-9a-zA-Z_\- ]</li>
+                        <li>YAML version: There is only one version number, just leave as 1</li>
+                        <li>Chain IDs: Each molecule (protein, ligand, DNA, RNA) requires a chain ID, and a common convention is single upper case characters. If you want two copies of a molecule you can provide multiple chain names.</li>
+                    </ul>
+                    <p>If you use Boltz-1 or Boltz-1x structures in your work, please cite the Boltz paper:</p>
+                    <pre style={{ marginBottom: "1rem" }}>{`@article{wohlwend2024boltz1,
+    author = {Wohlwend, Jeremy and Corso, Gabriele and Passaro, Saro and Getz, Noah and Reveiz, Mateo and Leidal, Ken and Swiderski, Wojtek and Atkinson, Liam and Portnoi, Tally and Chinn, Itamar and Silterra, Jacob and Jaakkola, Tommi and Barzilay, Regina},
+    title = {Boltz-1: Democratizing Biomolecular Interaction Modeling},
+    year = {2024},
+    doi = {10.1101/2024.11.19.624167},
+    journal = {bioRxiv}
+}`}
+                    </pre>
+                    <p>If you use Foldy to run Boltz with automatic Multiple Sequence Alignment (MSA) generation, please also cite:</p>
+                    <pre style={{ marginBottom: "1rem" }}>{`@article{mirdita2022colabfold,
+    title={ColabFold: making protein folding accessible to all},
+    author={Mirdita, Milot and Sch{\"u}tze, Konstantin and Moriwaki, Yoshitaka and Heo, Lim and Ovchinnikov, Sergey and Steinegger, Martin},
+    journal={Nature methods},
+    year={2022},
+}`}
+                    </pre>
+                </div>
             </div>
 
             {/* Scrollable Content */}

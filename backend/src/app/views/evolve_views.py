@@ -5,9 +5,24 @@ from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
 import pandas as pd
+from flask import request
+from flask_jwt_extended import jwt_required
+from flask_restx import Namespace, Resource, fields
+from rq import Callback
+from rq.job import Job
+from sklearn.ensemble import RandomForestRegressor
+from werkzeug.datastructures import FileStorage
+from werkzeug.exceptions import BadRequest
+
 from app.authorization import verify_has_edit_access
-from app.extensions import db, rq
+from app.extensions import db
 from app.helpers.fold_storage_manager import FoldStorageManager
+from app.helpers.rq_helpers import (
+    add_meta_to_job,
+    get_queue,
+    send_failure_email,
+    send_success_email,
+)
 from app.helpers.sequence_util import (
     maybe_get_seq_id_error_message,
 )
@@ -15,14 +30,6 @@ from app.jobs import esm_jobs, evolve_jobs
 from app.models import Evolution, Fold
 from app.util import get_job_type_replacement
 from app.views.other_views import evolution_fields
-from flask import request
-from flask_jwt_extended import jwt_required
-from flask_restx import Namespace, Resource, fields
-from rq.job import Job
-from sklearn.ensemble import RandomForestRegressor
-from werkzeug.datastructures import FileStorage
-from werkzeug.exceptions import BadRequest
-
 from folde.few_shot_models import is_valid_few_shot_model_name
 
 ns = Namespace("evolve_views", decorators=[jwt_required(fresh=True)])
@@ -145,21 +152,29 @@ class EvolveResource(Resource):
         enqueued_job: Job
 
         if mode == "finetuning":
-            enqueued_job = rq.get_queue("esm").enqueue(
+            enqueued_job = get_queue("esm").enqueue(
                 esm_jobs.finetune_esm_model,
                 evolve_record.id,
                 job_timeout="12h",
                 result_ttl=48 * 60 * 60,  # 2 days
+                on_success=Callback(send_success_email, timeout='5s'),
+                on_failure=Callback(send_failure_email, timeout='5s'),
             )
+            add_meta_to_job(enqueued_job, fold, "evolve", evolve_record.id)
+
             logging.info(
                 f"Queued finetuning job {enqueued_job.id} for evolution {evolve_record.id}"
             )
         else:
-            enqueued_job = rq.get_queue("cpu").enqueue(
+            enqueued_job = get_queue("cpu").enqueue(
                 evolve_jobs.run_evolvepro,
                 evolve_record.id,
                 job_timeout="6h",
+                on_success=Callback(send_success_email, timeout='5s'),
+                on_failure=Callback(send_failure_email, timeout='5s'),
             )
+            add_meta_to_job(enqueued_job, fold, "evolve", evolve_record.id)
+
             logging.info(f"Queued {mode} job {enqueued_job.id} for evolution {evolve_record.id}")
 
         return evolve_record

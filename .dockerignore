@@ -8,3 +8,4 @@
 .boltz/
 backend/src/notebooks/
 backend/src/folde/data/
+backend/src/integration_tests/

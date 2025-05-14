@@ -1,11 +1,14 @@
 import logging
 import os
+import signal
 import time
 import traceback
-from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Union, cast
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable
 
+import pytz
+
+from app.helpers.resource_watch_logging import start_resource_monitor
 from app.models import Invokation
 
 PSQL_CHAR_LIMIT: int = 100 * 1000 * 1000
@@ -101,11 +104,22 @@ class LoggingRecorder(logging.Handler):
         """
         super().__init__(level)
         self.invokation = invokation
-        self.logs: List[str] = []
+        self.logs: list[str] = []
         self.starttime: float = time.time()
         self.final_state: str = "failed"  # Default state, will be set to "finished" on success
         self._previous_level: int = logging.INFO
-        self._previous_handlers: List[logging.Handler] = []
+        self._previous_handlers: list[logging.Handler] = []
+        self._sigterm_stack: list[str] = []
+        self._stop_evt = None
+        # ---------- install graceful-term handler ----------
+        self._old_sigterm = signal.getsignal(signal.SIGTERM)
+
+        def _graceful_term(signum, frame):
+            # Capture *current* stack so we know where we were killed
+            self._sigterm_stack = traceback.format_stack(frame, limit=10)
+            raise SystemExit("terminated by SIGTERM")
+
+        signal.signal(signal.SIGTERM, _graceful_term)
 
         try:
             self.invokation.update(
@@ -126,7 +140,8 @@ class LoggingRecorder(logging.Handler):
         msg = self.format(record)
 
         # Add timestamp and severity
-        timestamp = datetime.now(UTC).isoformat(sep=" ", timespec="milliseconds")
+        pt_tz = pytz.timezone('America/Los_Angeles')
+        timestamp = datetime.now(pt_tz).isoformat(sep=" ", timespec="milliseconds")
         severity = record.levelname
         formatted_msg = f"{timestamp} [{severity}] - {msg}"
 
@@ -143,7 +158,7 @@ class LoggingRecorder(logging.Handler):
 
         Returns:
             The LoggingRecorder instance
-        """
+            """
         # Get the root logger
         logger = logging.getLogger()
 
@@ -151,15 +166,16 @@ class LoggingRecorder(logging.Handler):
         self._previous_level = logger.level
         self._previous_handlers = logger.handlers[:]
 
-        # Remove existing handlers and set new level
-        logger.handlers = []
-        logger.setLevel(self.level)
+        # Don't remove existing handlers, just add ours and maybe adjust level
+        logger.setLevel(min(self.level, logger.level))  # Use the more verbose level
 
-        # Add ourselves as a handler
+        self._stop_evt = start_resource_monitor()
+
+        # Add ourselves as a handler alongside existing ones
         logger.addHandler(self)
         return self
 
-    def __exit__(self, exc_type: Optional[type], exc_val: Optional[Exception], exc_tb: Any) -> None:
+    def __exit__(self, exc_type: type | None, exc_val: Exception | None, exc_tb: Any) -> None:
         """
         Restore previous logging state when exiting the context.
 
@@ -169,13 +185,29 @@ class LoggingRecorder(logging.Handler):
             exc_tb: The traceback information, if an exception was raised
             False to propagate exceptions
         """
+        # Restore previous SIGTERM handler first
+        signal.signal(signal.SIGTERM, self._old_sigterm)
+
         logger = logging.getLogger()
 
         try:
+            if self._stop_evt:
+                self._stop_evt.set()
+
             if exc_type is not None:
-                # Capture the full traceback
-                full_traceback = traceback.format_exc()
-                logging.error(f"Job failed with exception:\n\n{exc_val}\n{full_traceback}")
+                if exc_type is SystemExit and str(exc_val) != "0":
+                    # Treat non-zero SystemExit (SIGTERM path) as failure
+                    self.final_state = "failed"
+                    # Attach captured stack (if any)
+                    if getattr(self, "_sigterm_stack", None):
+                        self.logs.append(
+                            "----- stack @ SIGTERM -----\n" +
+                            "".join(self._sigterm_stack)
+                        )
+                else:
+                    self.final_state = "failed"
+                    full_tb = "".join(traceback.format_exception(exc_type, exc_val, exc_tb))
+                    self.logs.append("----- exception traceback -----\n" + full_tb)
             else:
                 self.final_state = "finished"
         finally:
@@ -201,4 +233,4 @@ class LoggingRecorder(logging.Handler):
                     f"Job finished in state {self.final_state} with logs:\n\n{logs_tail}",
                     flush=True,
                 )
-                assert False, _psql_tail("\n".join(self.logs))
+        return None

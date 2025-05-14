@@ -45,28 +45,33 @@ rm /tmp/miniconda.sh
 #    But if you do want it available for interactive shells in the container, keep it.
 /opt/conda/bin/conda init bash
 
-# 5) Create a new environment and install your packages in one or two steps.
-#    Using a single conda command can be faster and keeps the environment fully solvable at once.
-#    Also, consider the 'mamba' package (from conda-forge) for faster solves.
-#
-#    -n worker means environment name is “worker”.
-#    -c pytorch -c nvidia -c conda-forge includes those channels.
-#    You can pin Python version here as well.
-#
+# 5) Install all GPU dependencies.
 /opt/conda/bin/conda create -y -n worker \
-    python=3.12 \
-    cudatoolkit=11.8 \
-    pytorch-cuda=12.1 \
-    pytorch \
-    torchvision \
-    torchaudio \
-    -c pytorch -c nvidia -c conda-forge
+  python=3.12                             \
+  pytorch=2.2.*                           \
+  torchvision=0.17.*                      \
+  torchaudio=2.2.*                        \
+  pytorch-cuda=12.1                       \
+  gpytorch=1.14                           \
+  botorch=0.14.*                          \
+  linear_operator=0.6                     \
+  pyro-ppl>=1.8.4                         \
+  -c pytorch -c nvidia -c gpytorch -c conda-forge
 
+# /opt/conda/bin/conda create -y -n worker \
+#     python=3.12 \
+#     cudatoolkit=11.8 \
+#     pytorch-cuda=12.1 \
+#     pytorch \
+#     torchvision \
+#     torchaudio \
+#     -c pytorch -c nvidia -c conda-forge
 # 6) Clean up conda cache
-/opt/conda/bin/conda clean -a -y
+/opt/conda/bin/conda clean -afq
 
 # 7) Install pip packages for your worker environment
-/opt/conda/envs/worker/bin/pip install --no-cache-dir -r /backend/requirements.txt
+/opt/conda/envs/worker/bin/pip install pip-tools
+/opt/conda/envs/worker/bin/pip install --no-cache-dir --no-deps -r /backend/requirements.txt
 
 # Clean conda & pip
 /opt/conda/bin/conda clean -a -y

@@ -3,6 +3,7 @@ import json
 import logging
 import time
 import traceback
+from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -10,6 +11,9 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from werkzeug.exceptions import BadRequest
+
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.jobs_util import (
@@ -22,9 +26,7 @@ from app.helpers.sequence_util import (
     process_and_validate_evolve_input_files,
 )
 from app.models import Evolution, Fold, Invokation
-from sklearn.ensemble import RandomForestRegressor
-from werkzeug.exceptions import BadRequest
-from folde.few_shot_models import is_valid_few_shot_model_name, get_few_shot_model
+from folde.few_shot_models import get_few_shot_model, is_valid_few_shot_model_name
 
 
 def run_evolvepro(evolve_id: int):
@@ -65,7 +67,7 @@ def run_evolvepro(evolve_id: int):
         # 2. Read and merge all embedding CSVs
         if not evolve.embedding_files or not evolve.naturalness_files:
             raise ValueError(f"These days, evolve jobs must specify both embedding files (found {evolve.embedding_files}) and naturalness files (found {evolve.naturalness_files})")
-        
+
         if not evolve.few_shot_params:
             raise ValueError(f"These days, few shot params are required, got {evolve.few_shot_params}")
 
@@ -92,7 +94,7 @@ def run_evolvepro(evolve_id: int):
                 # Combine chunks for this path
                 if path_dfs:
                     embedding_dfs.append(pd.concat(path_dfs, ignore_index=True))
-        
+
         for path in naturalness_files:
             csv_blob = fsm.storage_manager.get_blob(evolve.fold_id, path)
             with csv_blob.open("r") as csv_f:
@@ -156,6 +158,19 @@ def run_evolvepro(evolve_id: int):
             {f"model_{ii}": predicted_activity_ensemble[ii] for ii in range(len(predicted_activity_ensemble))},
             index=predicted_activity_ensemble[0].index,
         )
+        try:
+            loci_to_measured_mutants = defaultdict(list)
+            for measured_seq_id in activity_df.index:
+                loci = get_loci_set(measured_seq_id)
+                for locus in loci:
+                    loci_to_measured_mutants[locus].append(measured_seq_id)
+            def get_relevant_measured_mutants(seq_id) -> str:
+                return ", ".join(sorted(sum([loci_to_measured_mutants.get(locus, []) for locus in get_loci_set(seq_id)], [])))
+            predicted_activity_df['relevant_measured_mutants'] = predicted_activity_df.index.map(
+                get_relevant_measured_mutants
+            )
+        except Exception as e:
+            logging.error(f"Error computing relevant measured mutants: {e}")
         fsm.storage_manager.write_file(
             evolve.fold_id,
             str(evolve_directory / "predicted_activity.csv"),
