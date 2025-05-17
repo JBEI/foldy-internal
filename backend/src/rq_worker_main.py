@@ -7,8 +7,8 @@ import sys
 
 import redis
 from rq import Worker
-from rq.worker import Worker, signal_name
 from rq.utils import now
+from rq.worker import Worker, signal_name
 
 from app.factory import create_app
 from app.helpers.rq_helpers import get_redis_connection

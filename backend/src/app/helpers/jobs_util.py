@@ -8,7 +8,6 @@ from typing import Any, Callable
 
 import pytz
 
-from app.helpers.resource_watch_logging import start_resource_monitor
 from app.models import Invokation
 
 PSQL_CHAR_LIMIT: int = 100 * 1000 * 1000
@@ -70,7 +69,7 @@ def get_torch_cuda_is_available_and_add_logs(add_log: Callable[[str], Any]) -> b
 
     add_log("=== GPU Diagnostics ===")
     add_log(f"PyTorch version: {torch.__version__}")
-    add_log(f"CUDA is{'not' if not torch.cuda.is_available() else ''} available")
+    add_log(f"CUDA is{' not' if not torch.cuda.is_available() else ''} available")
 
     # Check if PyTorch was built with CUDA
     add_log(f"PyTorch CUDA built: {torch.version.cuda is not None}")
@@ -110,7 +109,6 @@ class LoggingRecorder(logging.Handler):
         self._previous_level: int = logging.INFO
         self._previous_handlers: list[logging.Handler] = []
         self._sigterm_stack: list[str] = []
-        self._stop_evt = None
         # ---------- install graceful-term handler ----------
         self._old_sigterm = signal.getsignal(signal.SIGTERM)
 
@@ -169,10 +167,11 @@ class LoggingRecorder(logging.Handler):
         # Don't remove existing handlers, just add ours and maybe adjust level
         logger.setLevel(min(self.level, logger.level))  # Use the more verbose level
 
-        self._stop_evt = start_resource_monitor()
-
         # Add ourselves as a handler alongside existing ones
         logger.addHandler(self)
+
+        log_node_info(logger)
+
         return self
 
     def __exit__(self, exc_type: type | None, exc_val: Exception | None, exc_tb: Any) -> None:
@@ -191,9 +190,6 @@ class LoggingRecorder(logging.Handler):
         logger = logging.getLogger()
 
         try:
-            if self._stop_evt:
-                self._stop_evt.set()
-
             if exc_type is not None:
                 if exc_type is SystemExit and str(exc_val) != "0":
                     # Treat non-zero SystemExit (SIGTERM path) as failure
@@ -204,6 +200,7 @@ class LoggingRecorder(logging.Handler):
                             "----- stack @ SIGTERM -----\n" +
                             "".join(self._sigterm_stack)
                         )
+                    logger.info("""Check for preemption with 'gcloud compute operations list --filter="compute.instances.preempted"'""")
                 else:
                     self.final_state = "failed"
                     full_tb = "".join(traceback.format_exception(exc_type, exc_val, exc_tb))
@@ -211,6 +208,8 @@ class LoggingRecorder(logging.Handler):
             else:
                 self.final_state = "finished"
         finally:
+            log_node_info(logger)
+
             # Log the final state
             self.logs.append(f"Invokation ending with final state {self.final_state}")
 
@@ -234,3 +233,13 @@ class LoggingRecorder(logging.Handler):
                     flush=True,
                 )
         return None
+
+
+def log_node_info(logger: logging.Logger) -> None:
+    """
+    Log node information.
+    """
+    logger.info(f"Node name: {os.environ.get('NODE_NAME', 'unknown')}")
+    logger.info(f"Node IP: {os.environ.get('NODE_IP', 'unknown')}")
+    logger.info(f"Pod name: {os.environ.get('POD_NAME', 'unknown')}")
+    logger.info(f"Pod namespace: {os.environ.get('POD_NAMESPACE', 'unknown')}")

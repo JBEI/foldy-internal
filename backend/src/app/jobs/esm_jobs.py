@@ -20,6 +20,7 @@ from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.esm_client import FoldyESMClient
 from app.helpers.esm_util import get_naturalness
 from app.helpers.fold_storage_manager import FoldStorageManager
+from app.helpers.gpu_util import clean_up_torch_memory, log_memory_usage
 from app.helpers.jobs_util import (
     LoggingRecorder,
     _live_update_tail,
@@ -136,6 +137,9 @@ def get_esm_embeddings(
             embedding_dicts.append(get_embedding_dict(seq_id, seq_id_to_seq(wt_aa_seq, seq_id)))
             if ii % 100 == 0:
                 logging.info(f"Finished embedding {ii}/{len(dms_seq_ids)}")
+            if ii % 2000 == 0:
+                log_memory_usage()
+                clean_up_torch_memory()
 
         embedding_df = pd.DataFrame(embedding_dicts)
 

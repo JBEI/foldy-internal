@@ -7,12 +7,15 @@ and evaluating different model configurations.
 
 import logging
 import random
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from folde.util import get_consensus_scores
+from pydantic import BaseModel, Field
+from scipy.stats import spearmanr
+from sklearn.metrics import average_precision_score, mean_squared_error, recall_score, roc_auc_score
+
 from folde.data import get_proteingym_dataset
 from folde.few_shot_models import get_consensus_scores, get_few_shot_model
 from folde.types import (
@@ -24,10 +27,8 @@ from folde.types import (
     SimulationResult,
     SingleConfigCampaignResult,
 )
+from folde.util import get_consensus_scores
 from folde.zero_shot_models import get_zero_shot_model
-from pydantic import BaseModel, Field
-from scipy.stats import spearmanr
-from sklearn.metrics import average_precision_score, mean_squared_error, recall_score, roc_auc_score
 
 logger = logging.getLogger(__name__)
 
@@ -431,6 +432,7 @@ def simulate_campaign(
 
         single_model_campaign_results = None
         with ProcessPoolExecutor() as executor:
+        # with ThreadPoolExecutor() as executor:
             futures = []
             for sim_idx in range(number_of_simulations):
                 rng = np.random.RandomState(random_seed + sim_idx)

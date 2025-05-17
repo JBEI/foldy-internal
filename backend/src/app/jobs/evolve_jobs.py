@@ -160,7 +160,7 @@ def run_evolvepro(evolve_id: int):
         )
         try:
             loci_to_measured_mutants = defaultdict(list)
-            for measured_seq_id in activity_df.index:
+            for measured_seq_id in activity_df.index.unique():
                 loci = get_loci_set(measured_seq_id)
                 for locus in loci:
                     loci_to_measured_mutants[locus].append(measured_seq_id)

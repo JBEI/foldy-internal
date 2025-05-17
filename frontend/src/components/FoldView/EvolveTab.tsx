@@ -17,6 +17,7 @@ import { Selection } from './StructurePane';
 type RowData = {
     seqId: string;
     footprint: string;
+    relevantMeasuredMutants: string;
     predictionMean: number;
     predictionStddev: number;
     score: number;
@@ -69,6 +70,7 @@ const parseCsvDataIntoRowData = (predictedMutantCsvDataString: string, beta: num
 
         return {
             seqId: row['seq_id'],
+            relevantMeasuredMutants: row['relevant_measured_mutants'],
             footprint: footprint,
             predictionMean: mean,
             predictionStddev: stddev,
@@ -164,6 +166,12 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
             sortable: true,
             resizable: true,
             sortDescendingFirst: true
+        },
+        {
+            key: 'relevantMeasuredMutants',
+            name: "Measured",
+            resizable: true,
+            maxWidth: 200,
         },
         {
             key: 'predictionMean',

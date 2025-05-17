@@ -145,9 +145,13 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
                                             uk-tooltip="View logs"
                                             onClick={() => openUpLogsForJob(embedding.invokation_id || undefined)}
                                         />
-                                        <FaDownload
-                                            uk-tooltip="Download embeddings CSV."
-                                            onClick={() => downloadEmbedding(embedding)} />
+                                        {
+                                            getEmbeddingStatus(embedding) == 'finished' ?
+                                                <FaDownload
+                                                    uk-tooltip="Download embeddings CSV."
+                                                    onClick={() => downloadEmbedding(embedding)} />
+                                                : null
+                                        }
                                         <FaRedo
                                             uk-tooltip="Rerun embedding."
                                             onClick={() => rerunEmbedding(embedding)} />

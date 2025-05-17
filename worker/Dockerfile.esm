@@ -32,6 +32,7 @@ RUN /opt/conda/envs/worker/bin/pip --no-cache-dir install \
 
 # TODO(jacob): Move this into setup.sh.
 RUN /opt/conda/bin/conda install -y -n worker -c conda-forge libgcc-ng libstdcxx-ng openpyxl
+RUN /opt/conda/envs/worker/bin/pip install nvidia-ml-py
 # RUN echo 'export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH' >> /etc/profile.d/conda.sh
 ENV LD_LIBRARY_PATH="/opt/conda/envs/worker/lib:${LD_LIBRARY_PATH}"
 

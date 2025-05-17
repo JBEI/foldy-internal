@@ -1,61 +1,54 @@
-import glob
 import io
-import json
 import logging
-import os
+import string
 import subprocess
-import tempfile
-import time
-import traceback
-from datetime import UTC, datetime, timedelta
-from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import joblib
-import numpy as np
-import pandas as pd
 from Bio.PDB import PDBIO, MMCIFParser
-from sklearn.ensemble import RandomForestRegressor
 from werkzeug.exceptions import BadRequest
 
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.jobs_util import (
     LoggingRecorder,
-    _live_update_tail,
-    _psql_tail,
     get_torch_cuda_is_available_and_add_logs,
 )
-from app.helpers.sequence_util import (
-    get_loci_set,
-)
-from app.models import Evolution, Fold, Invokation
+from app.models import Fold, Invokation
 
 
-def cif_to_pdb(cif_file: str, structure_id: str):
+def cif_to_pdb(cif_file: str, structure_id: str) -> str:
     """
-    Convert mmCIF file to PDB format using Biopython.
+    Convert mmCIF file to PDB format.
+    If any chain IDs are longer than one character, all chains are
+    renamed sequentially to single-letter IDs (A, B, C…).
 
     Parameters
     ----------
     cif_file : str
         Path to the input mmCIF file.
+    structure_id : str
+        Identifier to assign to the structure.
 
-    Returns:
-        PDB file contents as a string.
+    Returns
+    -------
+    str
+        PDB file contents.
     """
-    # Create a parser for mmCIF
-    parser = MMCIFParser()
-
-    # Read the structure from the mmCIF file
+    parser = MMCIFParser(QUIET=True)
     structure = parser.get_structure(structure_id, cif_file)
 
-    # Initialize PDBIO for writing PDB files
+    # Detect whether any chain needs shortening
+    needs_collapse = any(len(ch.id) != 1 for ch in structure.get_chains())
+
+    if needs_collapse:
+        id_pool = iter(string.ascii_uppercase)     # A, B, C, …
+        for chain in structure.get_chains():
+            chain.id = next(id_pool, chain.id[:1])  # fallback to first char if we run out
+
     pdb_io = PDBIO()
     pdb_io.set_structure(structure)
 
-    # Write out to PDB
     pdb_file_contents = io.StringIO()
     pdb_io.save(pdb_file_contents)
     pdb_file_contents.seek(0)
@@ -177,8 +170,18 @@ def run_boltz(fold_id, invokation_id):
             logging.info(f"Found {len(cif_files)} cif files: {cif_files}")
             if len(cif_files) > 0:
                 cif_file = cif_files[0]
-                logging.info(f"Copying {cif_file} to ranked_0.pdb")
+                logging.info(f"Copying {cif_file} to ranked_0.pdb/cif")
 
-                pdb_file_contents = cif_to_pdb(str(cif_file), "structure")
-                fsm.storage_manager.write_file(fold_id, "ranked_0.pdb", pdb_file_contents)
+                try:
+                    fsm.storage_manager.write_file(fold_id, 'ranked_0.cif', cif_file.read_text())
+                except Exception as e:
+                    logging.error(f"Error writing CIF to cif: {e}")
+                    raise e
+
+                try:
+                    pdb_file_contents = cif_to_pdb(str(cif_file), "structure")
+                    fsm.storage_manager.write_file(fold_id, "ranked_0.pdb", pdb_file_contents)
+                except Exception as e:
+                    logging.error(f"Error converting CIF to PDB: {e}")
+                    raise e
             logging.info(f"Finished!")

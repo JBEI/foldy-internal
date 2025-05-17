@@ -283,14 +283,6 @@ class FoldyESMCClient(FoldyESMClient):
                 if local_var in locals() and locals()[local_var] is not None:
                     del locals()[local_var]
 
-            # Force garbage collection
-            gc.collect()
-
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                torch.cuda.synchronize()  # Ensure GPU operations are complete
-                torch.cuda.ipc_collect()  # Critical for multi-process environments
-
         return embeddings
 
     def get_logits(

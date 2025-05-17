@@ -431,9 +431,7 @@ class PreferenceTrainer:
                     no_improve_epochs += val_frequency  # Increment by val_frequency instead of 1
 
                 if no_improve_epochs >= patience:
-                    if verbose:
-                        logger.info(f"Early stopping at epoch {epoch+1}")
-                    break
+                    logger.info(f"Early stopping at epoch {epoch+1}")
             else:
                 metrics["val_loss"].append(np.nan)
 
@@ -676,6 +674,7 @@ def create_preference_model(
         Tuple containing (model, trainer)
     """
     model = BradleyTerryMLP(embedding_dim=embedding_dim, hidden_dims=hidden_dims, dropout=dropout)
+    # model = torch.compile(model)
 
     trainer = PreferenceTrainer(
         model=model,
