@@ -12,6 +12,7 @@ from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.orm import deferred
 
 
+# pyright: ignore[reportCallIssue]
 class Invokation(PkModel):
     """A single invokation of a command and its results."""
 
@@ -29,9 +30,10 @@ class Invokation(PkModel):
     log = deferred(Column(db.Text, nullable=True))
 
     def __init__(self, fold_id: int, type: str, state: str) -> None:
-        super().__init__(fold_id=fold_id, type=type, state=state)
+        super().__init__(fold_id=fold_id, type=type, state=state)  # pyright: ignore
 
 
+# pyright: ignore[reportCallIssue]
 class User(PkModel):
     """A user of the app."""
 
@@ -59,6 +61,7 @@ class User(PkModel):
         return count
 
 
+# pyright: ignore[reportCallIssue]
 class Fold(PkModel):
     """A protein fold."""
 
@@ -138,6 +141,7 @@ class Fold(PkModel):
         return result
 
 
+# pyright: ignore[reportCallIssue]
 class Dock(PkModel):
     """A docking run."""
 
@@ -170,6 +174,7 @@ class Dock(PkModel):
     pose_confidences = Column(db.String, nullable=True)
 
 
+# pyright: ignore[reportCallIssue]
 class Logit(PkModel):
     """A logit run."""
 
@@ -190,6 +195,7 @@ class Logit(PkModel):
     )
 
 
+# pyright: ignore[reportCallIssue]
 class Embedding(PkModel):
     """An embedding run."""
 
@@ -204,6 +210,8 @@ class Embedding(PkModel):
     extra_seq_ids = Column(db.String)
     dms_starting_seq_ids = Column(db.String)
 
+    extra_layers = Column(db.String, nullable=True)
+
     # State tracking.
     invokation_id = Column(
         db.Integer,
@@ -211,6 +219,7 @@ class Embedding(PkModel):
     )
 
 
+# pyright: ignore[reportCallIssue]
 class Evolution(PkModel):
     """A single evolution of a fold."""
 
@@ -228,9 +237,12 @@ class Evolution(PkModel):
 
     # If mode == randomforest, then this is the fixed embeddings to use.
     embedding_files = Column(db.String, nullable=True)  # A list of embedding file paths.
+    naturalness_files = Column(db.String, nullable=True)  # A list of embedding file paths.
 
     # If mode == finetuning, then this is the model checkpoint to use.
     finetuning_model_checkpoint = Column(db.String, nullable=True)
+
+    few_shot_params = Column(db.String, nullable=True)
 
     # State tracking.
     invokation_id = Column(

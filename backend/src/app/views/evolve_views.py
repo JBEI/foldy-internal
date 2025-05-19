@@ -5,24 +5,32 @@ from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
 import pandas as pd
+from flask import request
+from flask_jwt_extended import jwt_required
+from flask_restx import Namespace, Resource, fields
+from rq import Callback
+from rq.job import Job
+from sklearn.ensemble import RandomForestRegressor
+from werkzeug.datastructures import FileStorage
+from werkzeug.exceptions import BadRequest
+
 from app.authorization import verify_has_edit_access
-from app.extensions import db, rq
+from app.extensions import db
 from app.helpers.fold_storage_manager import FoldStorageManager
+from app.helpers.rq_helpers import (
+    add_meta_to_job,
+    get_queue,
+    send_failure_email,
+    send_success_email,
+)
 from app.helpers.sequence_util import (
-    get_measured_and_unmeasured_mutant_seq_ids,
     maybe_get_seq_id_error_message,
 )
 from app.jobs import esm_jobs, evolve_jobs
 from app.models import Evolution, Fold
 from app.util import get_job_type_replacement
 from app.views.other_views import evolution_fields
-from flask import request
-from flask_jwt_extended import jwt_required
-from flask_restx import Namespace, Resource, fields
-from rq.job import Job
-from sklearn.ensemble import RandomForestRegressor
-from werkzeug.datastructures import FileStorage
-from werkzeug.exceptions import BadRequest
+from folde.few_shot_models import is_valid_few_shot_model_name
 
 ns = Namespace("evolve_views", decorators=[jwt_required(fresh=True)])
 
@@ -31,8 +39,10 @@ upload_parser.add_argument("name", type=str, location="form", required=True)
 upload_parser.add_argument("fold_id", type=str, location="form", required=True)
 upload_parser.add_argument("activity_file", type=FileStorage, location="files", required=True)
 upload_parser.add_argument("mode", type=str, location="form", required=True)
-upload_parser.add_argument("embedding_paths", type=str, location="form", required=False)
+upload_parser.add_argument("embedding_files", type=str, location="form", required=False)
+upload_parser.add_argument("naturalness_files", type=str, location="form", required=False)
 upload_parser.add_argument("finetuning_model_checkpoint", type=str, location="form", required=False)
+upload_parser.add_argument("few_shot_params", type=str, location="form", required=False)
 
 
 @ns.route("/evolve")
@@ -72,19 +82,28 @@ class EvolveResource(Resource):
         evolve_directory: Path = Path("evolve") / name
 
         mode: str = args["mode"]
-        embedding_paths: Optional[List[str]] = (
-            json.loads(args["embedding_paths"]) if args["embedding_paths"] else None
+        embedding_files: Optional[List[str]] = (
+            json.loads(args["embedding_files"]) if args["embedding_files"] else None
+        )
+        naturalness_files: Optional[List[str]] = (
+            json.loads(args["naturalness_files"]) if args["naturalness_files"] else None
         )
         finetuning_model_checkpoint: Optional[str] = (
             args["finetuning_model_checkpoint"] if args["finetuning_model_checkpoint"] else None
         )
+        few_shot_params = args.get("few_shot_params", None)
 
         if mode == "randomforest" or mode == "mlp":
-            if not embedding_paths:
-                raise BadRequest("embedding_paths are required for randomforest mode")
+            if not embedding_files:
+                raise BadRequest("embedding_files are required for randomforest mode")
         elif mode == "finetuning":
             if not finetuning_model_checkpoint:
                 raise BadRequest("finetuning_model_checkpoint is required for finetuning mode")
+        elif is_valid_few_shot_model_name(mode):
+            if not few_shot_params:
+                raise BadRequest("few_shot_params are required for few shot models")
+            if not embedding_files or not naturalness_files:
+                raise BadRequest("embedding_files and naturalness_files are required for few shot models")
         else:
             raise BadRequest(f"Invalid mode: {mode}")
 
@@ -122,29 +141,40 @@ class EvolveResource(Resource):
             name=name,
             fold_id=fold_id,
             mode=mode,
-            embedding_files=",".join(embedding_paths) if embedding_paths else None,
+            embedding_files=",".join(embedding_files) if embedding_files else None,
+            naturalness_files=",".join(naturalness_files) if naturalness_files else None,
             finetuning_model_checkpoint=finetuning_model_checkpoint,
             invokation_id=new_invokation_id,
+            few_shot_params=few_shot_params
         )
 
         # 4. Start the job based on mode
         enqueued_job: Job
 
         if mode == "finetuning":
-            enqueued_job = rq.get_queue("esm").enqueue(
+            enqueued_job = get_queue("esm").enqueue(
                 esm_jobs.finetune_esm_model,
                 evolve_record.id,
                 job_timeout="12h",
                 result_ttl=48 * 60 * 60,  # 2 days
+                on_success=Callback(send_success_email, timeout='5s'),
+                on_failure=Callback(send_failure_email, timeout='5s'),
             )
+            add_meta_to_job(enqueued_job, fold, "evolve", evolve_record.id)
+
             logging.info(
                 f"Queued finetuning job {enqueued_job.id} for evolution {evolve_record.id}"
             )
         else:
-            enqueued_job = rq.get_queue("cpu").enqueue(
+            enqueued_job = get_queue("cpu").enqueue(
                 evolve_jobs.run_evolvepro,
                 evolve_record.id,
+                job_timeout="6h",
+                on_success=Callback(send_success_email, timeout='5s'),
+                on_failure=Callback(send_failure_email, timeout='5s'),
             )
+            add_meta_to_job(enqueued_job, fold, "evolve", evolve_record.id)
+
             logging.info(f"Queued {mode} job {enqueued_job.id} for evolution {evolve_record.id}")
 
         return evolve_record

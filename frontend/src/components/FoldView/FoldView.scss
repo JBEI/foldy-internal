@@ -11,4 +11,8 @@
 .table-container {
     overflow-x: auto; /* Add horizontal scrolling */
     max-width: 100%; /* Ensure it doesn't exceed the container */
-  }
+}
+
+.react-grid-HeaderRow {
+    overflow-y: hidden;
+}

@@ -1,75 +1,70 @@
-import glob
 import io
-import json
-import os
+import logging
+import string
 import subprocess
-import tempfile
-import time
-import traceback
-from datetime import UTC, datetime, timedelta
-from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import joblib
-import numpy as np
-import pandas as pd
+from Bio.PDB import PDBIO, MMCIFParser
+from werkzeug.exceptions import BadRequest
+
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.jobs_util import (
-    _live_update_tail,
-    _psql_tail,
+    LoggingRecorder,
     get_torch_cuda_is_available_and_add_logs,
-    try_run_job_with_logging,
 )
-from app.helpers.sequence_util import (
-    get_loci_set,
-    get_measured_and_unmeasured_mutant_seq_ids,
-    process_and_validate_evolve_input_files,
-)
-from app.models import Evolution, Fold, Invokation
-from Bio.PDB import PDBIO, MMCIFParser
-from sklearn.ensemble import RandomForestRegressor
-from werkzeug.exceptions import BadRequest
+from app.models import Fold, Invokation
 
 
-def cif_to_pdb(cif_file: str, structure_id: str):
+def cif_to_pdb(cif_file: str, structure_id: str) -> str:
     """
-    Convert mmCIF file to PDB format using Biopython.
+    Convert mmCIF file to PDB format.
+    If any chain IDs are longer than one character, all chains are
+    renamed sequentially to single-letter IDs (A, B, C…).
 
     Parameters
     ----------
     cif_file : str
         Path to the input mmCIF file.
+    structure_id : str
+        Identifier to assign to the structure.
 
-    Returns:
-        PDB file contents as a string.
+    Returns
+    -------
+    str
+        PDB file contents.
     """
-    # Create a parser for mmCIF
-    parser = MMCIFParser()
-
-    # Read the structure from the mmCIF file
+    parser = MMCIFParser(QUIET=True)
     structure = parser.get_structure(structure_id, cif_file)
 
-    # Initialize PDBIO for writing PDB files
+    # Detect whether any chain needs shortening
+    needs_collapse = any(len(ch.id) != 1 for ch in structure.get_chains())
+
+    if needs_collapse:
+        id_pool = iter(string.ascii_uppercase)     # A, B, C, …
+        for chain in structure.get_chains():
+            chain.id = next(id_pool, chain.id[:1])  # fallback to first char if we run out
+
     pdb_io = PDBIO()
     pdb_io.set_structure(structure)
 
-    # Write out to PDB
     pdb_file_contents = io.StringIO()
     pdb_io.save(pdb_file_contents)
     pdb_file_contents.seek(0)
     return pdb_file_contents.read()
 
 
-def try_check_smiles_string_validity(smiles_string, add_log):
+def try_check_smiles_string_validity(smiles_string):
     """Try to check if a smiles string is valid."""
     try:
+        from rdkit import Chem
+
         mol = Chem.MolFromSmiles(smiles_string)
         if mol is None:
-            add_log(f"Invalid SMILES: {smiles_string}")
+            logging.error(f"Invalid SMILES: {smiles_string}")
     except Exception as e:
-        add_log(f"Error checking SMILES: {smiles_string} {e}")
+        logging.error(f"Error checking SMILES: {smiles_string} {e}")
 
 
 def run_boltz(fold_id, invokation_id):
@@ -81,8 +76,8 @@ def run_boltz(fold_id, invokation_id):
     if not invokation:
         raise BadRequest(f"Invokation {invokation_id} not found")
 
-    def run_boltz_with_logger(add_log):
-        add_log(
+    with LoggingRecorder(invokation):
+        logging.info(
             "Starting Boltz execution...",
         )
 
@@ -90,7 +85,7 @@ def run_boltz(fold_id, invokation_id):
 
         for ligand in boltz_yaml_helper.get_ligands():
             if "smiles" in ligand:
-                try_check_smiles_string_validity(ligand["smiles"], add_log)
+                try_check_smiles_string_validity(ligand["smiles"])
 
         # Create a foldstoragemanager.
         padded_fold_id = "%06d" % fold_id
@@ -98,7 +93,7 @@ def run_boltz(fold_id, invokation_id):
 
         # Make a temporary directory for running Boltz.
         with TemporaryDirectory() as temp_dir:
-            add_log(f"Got temp directory at {temp_dir}")
+            logging.info(f"Got temp directory at {temp_dir}")
 
             # Download the fasta file to the temporary directory.
             fsm = FoldStorageManager()
@@ -112,7 +107,7 @@ def run_boltz(fold_id, invokation_id):
             yaml_file_path = Path(temp_dir) / "input.yml"
             yaml_file_path.write_text(yaml_file_str)
             fsm.storage_manager.write_file(fold_id, "boltz_input.yaml", yaml_file_str)
-            add_log(f"YAML file contents: {yaml_file_str}")
+            logging.info(f"YAML file contents: {yaml_file_str}")
 
             diffusion_samples = fold.diffusion_samples or 1
 
@@ -128,10 +123,10 @@ def run_boltz(fold_id, invokation_id):
             # https://github.com/pytorch/pytorch/issues/5040#issuecomment-439590544
             #
             # Boltz API: https://github.com/jwohlwend/boltz/blob/main/docs/prediction.md
-            gpu_available = get_torch_cuda_is_available_and_add_logs(add_log)
+            gpu_available = get_torch_cuda_is_available_and_add_logs(logging.info)
             accelerator = "gpu" if gpu_available else "cpu"
             boltz_command = [
-                "/opt/conda/envs/worker/bin/boltz",
+                "/opt/conda/envs/boltzenv/bin/boltz",
                 "predict",
                 str(yaml_file_path),
                 "--out_dir",
@@ -148,10 +143,7 @@ def run_boltz(fold_id, invokation_id):
                 "--write_full_pae",
                 "--write_full_pde",
             ]
-            add_log(
-                f"Running boltz with command: {boltz_command}",
-                command=" ".join(boltz_command),
-            )
+            logging.info(f"Running boltz with command: {boltz_command}")
 
             process = subprocess.Popen(
                 boltz_command,
@@ -161,7 +153,7 @@ def run_boltz(fold_id, invokation_id):
             )
 
             for line in iter(process.stdout.readline, ""):
-                add_log(line.strip())
+                logging.info(line.strip())
 
             process.stdout.close()
             process.wait()
@@ -169,19 +161,27 @@ def run_boltz(fold_id, invokation_id):
             if process.returncode != 0:
                 raise subprocess.CalledProcessError(process.returncode, process.args)
 
-            add_log(f'Uploading files {list(Path(temp_dir).glob("*"))}')
+            logging.info(f'Uploading files {list(Path(temp_dir).glob("*"))}')
             fsm.storage_manager.upload_folder(fold_id, temp_dir, "boltz")
-            add_log(f"Now converting mmCIF to PDB")
+            logging.info(f"Now converting mmCIF to PDB")
 
             # Use glob to find all files matching the pattern
             cif_files = list(Path(temp_dir).glob("boltz_results*/predictions/*/*_model_0.cif"))
-            add_log(f"Found {len(cif_files)} cif files: {cif_files}")
+            logging.info(f"Found {len(cif_files)} cif files: {cif_files}")
             if len(cif_files) > 0:
                 cif_file = cif_files[0]
-                add_log(f"Copying {cif_file} to ranked_0.pdb")
+                logging.info(f"Copying {cif_file} to ranked_0.pdb/cif")
 
-                pdb_file_contents = cif_to_pdb(str(cif_file), "structure")
-                fsm.storage_manager.write_file(fold_id, "ranked_0.pdb", pdb_file_contents)
-            add_log(f"Finished!")
+                try:
+                    fsm.storage_manager.write_file(fold_id, 'ranked_0.cif', cif_file.read_text())
+                except Exception as e:
+                    logging.error(f"Error writing CIF to cif: {e}")
+                    raise e
 
-    try_run_job_with_logging(run_boltz_with_logger, invokation)
+                try:
+                    pdb_file_contents = cif_to_pdb(str(cif_file), "structure")
+                    fsm.storage_manager.write_file(fold_id, "ranked_0.pdb", pdb_file_contents)
+                except Exception as e:
+                    logging.error(f"Error converting CIF to PDB: {e}")
+                    raise e
+            logging.info(f"Finished!")

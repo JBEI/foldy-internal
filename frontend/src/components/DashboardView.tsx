@@ -162,19 +162,18 @@ function AuthenticatedDashboardView(props: {
                     key="loadedDiv"
                     style={{ opacity: searchIsStale ? "60%" : "100%" }}
                 >
-                    {makeFoldTable(folds)}
-                    {folds.length === 0 ? (
-                        <div className="uk-flex uk-flex-center uk-flex-middle uk-margin-top">
-                            <div
-                                className="uk-button uk-button-default"
-                                onClick={() => {
-                                    searchForNewTerm("");
-                                }}
-                            >
-                                No folds found. View all folds?
-                            </div>
+                    <div className="uk-flex uk-flex-center uk-flex-middle uk-margin-top">
+                        <div
+                            className="uk-button uk-button-default"
+                            onClick={() => {
+                                searchForNewTerm(" ");
+                            }}
+                        >
+                            View all folds
                         </div>
-                    ) : null}
+                    </div>
+                    {makeFoldTable(folds)}
+
                     <ul className="uk-pagination">
                         {pageNum > 1 ? (
                             <li>

@@ -9,6 +9,22 @@ from pandas import DataFrame
 from scipy.special import softmax
 
 
+def get_consensus_scores(pred_list: List[pd.Series], decision_mode: str) -> pd.Series:
+    """Get the prediction of an ensemble using deicision mode (often max or median)."""
+    pred_arr = np.stack([preds.to_numpy() for preds in pred_list])
+    if decision_mode == "max":
+        consensus_score_arr = np.max(pred_arr, axis=0)
+    elif decision_mode == "ucb":
+        consensus_score_arr = np.mean(pred_arr, axis=0) + np.std(pred_arr, axis=0)
+    elif decision_mode == "median":
+        consensus_score_arr = np.median(pred_arr, axis=0)
+    elif decision_mode == "mean":
+        consensus_score_arr = np.mean(pred_arr, axis=0)
+    else:
+        raise ValueError(f"Invalid decision mode {decision_mode}")
+    return pd.Series(consensus_score_arr, index=pred_list[0].index).astype(float)  # type: ignore
+
+
 def internal_sample_n_indices(
     scores: Union[List[float], NDArray[np.float64]],
     n: int,
@@ -29,7 +45,7 @@ def internal_sample_n_indices(
     if epsilon > 0:
         # Draw some samples randomly.
         epsilon_choices = np.random.choice(len(scores), size=int(epsilon * n), replace=False)
-        chosen_indices.extend(epsilon_choices.tolist())
+        chosen_indices.extend(epsilon_choices.tolist())  # type: ignore
 
     if temperature < 1e-6:
         # Deterministic top-N selection (argmax without replacement)
@@ -44,7 +60,9 @@ def internal_sample_n_indices(
             remaining_indices = [ii for ii in range(len(scores)) if ii not in chosen_indices]
             while len(chosen_indices) < n:
                 # Compute softmax over remaining scores
-                remaining_scores = scores[remaining_indices]
+                # Convert the list to an array for proper indexing
+                remaining_indices_arr = np.array(remaining_indices)
+                remaining_scores = scores[remaining_indices_arr]
                 probs = softmax(remaining_scores / temperature)
 
                 # Sample one index
@@ -111,6 +129,10 @@ def convert_compaign_result_collection_to_df(
                     round_num = round_metrics.round_num
                     mutants_this_round = mutant_metric_df[mutant_metric_df.round_found == round_num]
                     mutants_so_far = mutant_metric_df[mutant_metric_df.round_found <= round_num]
+                    best_activity_so_far = mutants_so_far.activity.max()
+                    normalized_best_activity_so_far = (
+                        best_activity_so_far - campaign_result.min_activity
+                    ) / (campaign_result.max_activity - campaign_result.min_activity)
                     round_metrics_list.append(
                         {
                             "dms_id": dms_id,
@@ -119,9 +141,11 @@ def convert_compaign_result_collection_to_df(
                             "variant_pool_size": sim_result.variant_pool_size,
                             "best_activity_this_round": mutants_this_round.activity.max(),
                             "best_percentile_this_round": mutants_this_round.activity.max(),
-                            "best_activity_so_far": mutants_so_far.activity.max(),
+                            "best_activity_so_far": best_activity_so_far,
+                            "normalized_best_activity_so_far": normalized_best_activity_so_far,
                             "best_percentile_so_far": mutants_so_far.percentile.max(),
                             **round_metrics.model_dump(),
+                            **round_metrics.misc,
                         }
                     )
                 round_metrics_df = pd.DataFrame(round_metrics_list)

@@ -1,10 +1,12 @@
 import logging
 import os
+import signal
 import time
 import traceback
-from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Union, cast
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable
+
+import pytz
 
 from app.models import Invokation
 
@@ -53,98 +55,6 @@ def _live_update_tail(stdout: str) -> str:
     return _tail(stdout, 30000)
 
 
-# Define type for the add_log function
-AddLogFn = Callable[..., None]
-
-
-def try_run_job_with_logging(f: Callable[[AddLogFn], None], invokation: Invokation) -> None:
-    """
-    Execute a job function with logging and exception handling.
-
-    Args:
-        f: The job function to execute, which takes an add_log function
-        invokation: The Invokation model instance to update with logs and state
-    """
-    final_state: str = "failed"
-    start_time: float = time.time()
-    logs: List[str] = []
-
-    def sanitize_log(log_str: str) -> str:
-        """
-        Remove or replace problematic characters from log strings.
-
-        Args:
-            log_str: The log string to sanitize
-
-        Returns:
-            A sanitized string with problematic characters removed
-        """
-        # Remove NUL characters
-        sanitized = log_str.replace("\x00", "")
-
-        # Optionally replace other problematic characters
-        sanitized = "".join(char if ord(char) >= 32 else " " for char in sanitized)
-
-        return sanitized
-
-    def add_log(
-        msg: str, tail_function: Callable[[str], str] = _live_update_tail, **kwargs: Any
-    ) -> None:
-        """
-        Add a log message and update the invokation record.
-
-        Args:
-            msg: The log message to add
-            tail_function: Function to truncate logs for display
-            **kwargs: Additional fields to update in the invokation
-        """
-        timestamp = datetime.now(UTC).isoformat(sep=" ", timespec="milliseconds")
-        timestamped_msg = f"{timestamp} - {sanitize_log(msg)}"
-        logs.append(timestamped_msg)
-        print(timestamped_msg, flush=True)
-
-        # Ensure starttime is in UTC with timezone info
-        if "starttime" in kwargs:
-            kwargs["starttime"] = datetime.fromtimestamp(start_time, timezone.utc)
-
-        invokation.update(
-            log=tail_function("\n".join(logs)),
-            timedelta=timedelta(seconds=time.time() - start_time),
-            **kwargs,
-        )
-
-    try:
-        add_log(
-            "Starting...",
-            state="running",
-            starttime=datetime.fromtimestamp(start_time),
-        )
-        f(add_log)
-        # 7. Updated Evolution record with model and visualizations.
-        final_state = "finished"
-    except Exception as e:
-        # Capture the full traceback
-        full_traceback = traceback.format_exc()
-
-        add_log(f"Job failed with exception:\n\n{e} {full_traceback}")
-    finally:
-        # This will get executed regardless of the exceptions raised in try
-        # or except statements.
-        add_log(
-            f"Invokation ending with final state {final_state}",
-            tail_function=_psql_tail,
-            state=final_state,
-        )
-
-        if final_state != "finished":
-            logs_tail = _psql_tail("\n".join(logs))
-            print(
-                f"Job finished in state {final_state} with logs:\n\n{logs_tail}",
-                flush=True,
-            )
-            assert False, _psql_tail("\n".join(logs))
-
-
 def get_torch_cuda_is_available_and_add_logs(add_log: Callable[[str], Any]) -> bool:
     """
     Check CUDA availability and log GPU diagnostics.
@@ -159,7 +69,7 @@ def get_torch_cuda_is_available_and_add_logs(add_log: Callable[[str], Any]) -> b
 
     add_log("=== GPU Diagnostics ===")
     add_log(f"PyTorch version: {torch.__version__}")
-    add_log(f"CUDA is{'not' if not torch.cuda.is_available() else ''} available")
+    add_log(f"CUDA is{' not' if not torch.cuda.is_available() else ''} available")
 
     # Check if PyTorch was built with CUDA
     add_log(f"PyTorch CUDA built: {torch.version.cuda is not None}")
@@ -193,11 +103,21 @@ class LoggingRecorder(logging.Handler):
         """
         super().__init__(level)
         self.invokation = invokation
-        self.logs: List[str] = []
+        self.logs: list[str] = []
         self.starttime: float = time.time()
         self.final_state: str = "failed"  # Default state, will be set to "finished" on success
         self._previous_level: int = logging.INFO
-        self._previous_handlers: List[logging.Handler] = []
+        self._previous_handlers: list[logging.Handler] = []
+        self._sigterm_stack: list[str] = []
+        # ---------- install graceful-term handler ----------
+        self._old_sigterm = signal.getsignal(signal.SIGTERM)
+
+        def _graceful_term(signum, frame):
+            # Capture *current* stack so we know where we were killed
+            self._sigterm_stack = traceback.format_stack(frame, limit=10)
+            raise SystemExit("terminated by SIGTERM")
+
+        signal.signal(signal.SIGTERM, _graceful_term)
 
         try:
             self.invokation.update(
@@ -218,7 +138,8 @@ class LoggingRecorder(logging.Handler):
         msg = self.format(record)
 
         # Add timestamp and severity
-        timestamp = datetime.now(UTC).isoformat(sep=" ", timespec="milliseconds")
+        pt_tz = pytz.timezone('America/Los_Angeles')
+        timestamp = datetime.now(pt_tz).isoformat(sep=" ", timespec="milliseconds")
         severity = record.levelname
         formatted_msg = f"{timestamp} [{severity}] - {msg}"
 
@@ -235,7 +156,7 @@ class LoggingRecorder(logging.Handler):
 
         Returns:
             The LoggingRecorder instance
-        """
+            """
         # Get the root logger
         logger = logging.getLogger()
 
@@ -243,15 +164,17 @@ class LoggingRecorder(logging.Handler):
         self._previous_level = logger.level
         self._previous_handlers = logger.handlers[:]
 
-        # Remove existing handlers and set new level
-        logger.handlers = []
-        logger.setLevel(self.level)
+        # Don't remove existing handlers, just add ours and maybe adjust level
+        logger.setLevel(min(self.level, logger.level))  # Use the more verbose level
 
-        # Add ourselves as a handler
+        # Add ourselves as a handler alongside existing ones
         logger.addHandler(self)
+
+        log_node_info(logger)
+
         return self
 
-    def __exit__(self, exc_type: Optional[type], exc_val: Optional[Exception], exc_tb: Any) -> None:
+    def __exit__(self, exc_type: type | None, exc_val: Exception | None, exc_tb: Any) -> None:
         """
         Restore previous logging state when exiting the context.
 
@@ -261,16 +184,32 @@ class LoggingRecorder(logging.Handler):
             exc_tb: The traceback information, if an exception was raised
             False to propagate exceptions
         """
+        # Restore previous SIGTERM handler first
+        signal.signal(signal.SIGTERM, self._old_sigterm)
+
         logger = logging.getLogger()
 
         try:
             if exc_type is not None:
-                # Capture the full traceback
-                full_traceback = traceback.format_exc()
-                logging.error(f"Job failed with exception:\n\n{exc_val}\n{full_traceback}")
+                if exc_type is SystemExit and str(exc_val) != "0":
+                    # Treat non-zero SystemExit (SIGTERM path) as failure
+                    self.final_state = "failed"
+                    # Attach captured stack (if any)
+                    if getattr(self, "_sigterm_stack", None):
+                        self.logs.append(
+                            "----- stack @ SIGTERM -----\n" +
+                            "".join(self._sigterm_stack)
+                        )
+                    logger.info("""Check for preemption with 'gcloud compute operations list --filter="compute.instances.preempted"'""")
+                else:
+                    self.final_state = "failed"
+                    full_tb = "".join(traceback.format_exception(exc_type, exc_val, exc_tb))
+                    self.logs.append("----- exception traceback -----\n" + full_tb)
             else:
                 self.final_state = "finished"
         finally:
+            log_node_info(logger)
+
             # Log the final state
             self.logs.append(f"Invokation ending with final state {self.final_state}")
 
@@ -293,4 +232,14 @@ class LoggingRecorder(logging.Handler):
                     f"Job finished in state {self.final_state} with logs:\n\n{logs_tail}",
                     flush=True,
                 )
-                assert False, _psql_tail("\n".join(self.logs))
+        return None
+
+
+def log_node_info(logger: logging.Logger) -> None:
+    """
+    Log node information.
+    """
+    logger.info(f"Node name: {os.environ.get('NODE_NAME', 'unknown')}")
+    logger.info(f"Node IP: {os.environ.get('NODE_IP', 'unknown')}")
+    logger.info(f"Pod name: {os.environ.get('POD_NAME', 'unknown')}")
+    logger.info(f"Pod namespace: {os.environ.get('POD_NAMESPACE', 'unknown')}")

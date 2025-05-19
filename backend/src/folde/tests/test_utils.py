@@ -95,39 +95,45 @@ class MockZeroShotModel(ZeroShotModel):
 class MockFewShotModel(FewShotModel):
     """Mock FewShotModel for testing campaign simulations."""
 
-    def __init__(self, return_values=None):
+    def __init__(self, return_values=None, decision_mode="median", temperature=0.0, epsilon=0.0, random_state=42):
         """Initialize mock model.
 
         Args:
             return_values: Optional fixed values to return for predictions
+            decision_mode: How to combine ensemble predictions
+            temperature: Temperature for sampling
+            epsilon: Epsilon for epsilon-greedy exploration
         """
+        super().__init__(decision_mode=decision_mode, temperature=temperature, epsilon=epsilon)
         self.return_values = return_values
+        self.random_state = random_state
         self.fit_called = False
         self.fit_inputs = []
         self.predict_called = False
         self.predict_inputs = []
 
-    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs) -> "MockFewShotModel":
+    def fit(self, naturalness_series: pd.Series, embedding_series: pd.Series, 
+            measured_activity_series: pd.Series, validation_activity_series=None, **kwargs) -> "MockFewShotModel":
         """Mock fit method."""
         self.fit_called = True
-        self.fit_inputs.append((X, y))
+        self.fit_inputs.append((naturalness_series, embedding_series, measured_activity_series))
         return self
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(self, naturalness_series: pd.Series, embedding_series: pd.Series) -> List[pd.Series]:
         """Mock predict method."""
         self.predict_called = True
-        self.predict_inputs.append(X)
+        self.predict_inputs.append((naturalness_series, embedding_series))
 
         if self.return_values is not None:
-            return self.return_values
+            if isinstance(self.return_values, list):
+                return self.return_values
+            else:
+                # Convert to a list with a single Series
+                return [pd.Series(self.return_values, index=embedding_series.index)]
 
-        # By default, return random values with slight correlation to input
-        random_values = np.random.rand(len(X))
-        # Add a small correlation with the average of each embedding
-        if X.ndim > 1:
-            correlation = np.mean(X, axis=1) * 0.2
-            return random_values + correlation
-        return random_values
+        # Return a list with a single Series of random values
+        np.random.seed(self.random_state)
+        return [pd.Series(np.random.rand(len(embedding_series)), index=embedding_series.index)]
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Mock debug info method."""

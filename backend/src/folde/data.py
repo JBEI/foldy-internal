@@ -153,13 +153,15 @@ def get_proteingym_dataset(
         )
 
     # Convert embedding column from string to numpy array if needed
-    if isinstance(embedding_df["embedding"].iloc[0], str):
-        # embedding_df["embedding"] = embedding_df["embedding"].apply(
-        #     lambda x: np.array(ast.literal_eval(x)) if isinstance(x, str) else x
-        # )
-        embedding_df["embedding"] = embedding_df["embedding"].apply(
-            lambda x: np.array(json.loads(x)) if isinstance(x, str) else x
-        )
+    for col in embedding_df.columns:
+        if col == "embedding" or col.startswith("embedding_layer_"):
+            if isinstance(embedding_df[col].iloc[0], str):
+                # embedding_df["embedding"] = embedding_df["embedding"].apply(
+                #     lambda x: np.array(ast.literal_eval(x)) if isinstance(x, str) else x
+                # )
+                embedding_df[col] = embedding_df[col].apply(
+                    lambda x: np.array(json.loads(x)) if isinstance(x, str) else x
+                )
 
     common_seq_ids = list(
         set(naturalness_df.seq_id) & set(embedding_df.seq_id) & set(activity_df.seq_id)

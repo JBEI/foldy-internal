@@ -1,4 +1,6 @@
 import json
+import logging
+import sys
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union, cast
 
@@ -9,10 +11,49 @@ SequenceType = str
 ComplexType = List[Tuple[str, str]]
 SequenceOrComplexType = Union[SequenceType, ComplexType]
 
+
 # Import for type checking only
 if TYPE_CHECKING:
     import torch
     from esm.sdk.api import ESMProtein
+
+
+def recursive_cleanup(obj):
+    """Recursively detach and delete tensors in a complex nested object."""
+    import torch
+
+    if isinstance(obj, torch.Tensor):
+        # Detach and move to CPU before deletion
+        if obj.is_cuda:
+            obj = obj.detach().cpu()
+        return None  # Return None to indicate this should be deleted
+
+    elif hasattr(obj, '__dict__'):
+        # For objects with attributes
+        for attr_name, attr_value in list(obj.__dict__.items()):
+            result = recursive_cleanup(attr_value)
+            if result is None:
+                delattr(obj, attr_name)
+            else:
+                setattr(obj, attr_name, result)
+
+    elif isinstance(obj, dict):
+        # For dictionaries
+        for key in list(obj.keys()):
+            result = recursive_cleanup(obj[key])
+            if result is None:
+                del obj[key]
+            else:
+                obj[key] = result
+
+    elif isinstance(obj, (list, tuple)):
+        # For lists/tuples
+        new_obj = type(obj)(
+            recursive_cleanup(item) for item in obj if recursive_cleanup(item) is not None
+        )
+        return new_obj if new_obj else None
+
+    return obj  # Return object with cleaned up components
 
 
 class FoldyESMClient(ABC):
@@ -51,7 +92,8 @@ class FoldyESMClient(ABC):
         self,
         sequence_or_complex: SequenceOrComplexType,
         pdb_file_path: Optional[str] = None,
-    ) -> List[float]:
+        extra_layers: List[int] = [],
+    ) -> List[List[float]]:
         """
         Get embedding for a protein sequence or complex.
 
@@ -61,15 +103,13 @@ class FoldyESMClient(ABC):
             pdb_file_path: Optional path to a PDB file for structure-aware models
 
         Returns:
-            A list of floats representing the embedding vector
+            A list of list of floats representing embedding vectors for extra_layers, and the final layer.
         """
         pass
 
     @abstractmethod
     def get_logits(
-        self,
-        sequence_or_complex: SequenceOrComplexType,
-        pdb_file_path: Optional[str] = None,
+        self, sequence_or_complex: SequenceOrComplexType, pdb_file_path: Optional[str] = None
     ) -> pd.DataFrame:
         """
         Get logits for a protein sequence or complex.
@@ -170,7 +210,8 @@ class FoldyESMCClient(FoldyESMClient):
         self,
         sequence_or_complex: SequenceOrComplexType,
         pdb_file_path: Optional[str] = None,
-    ) -> List[float]:
+        extra_layers: List[int] = [],
+    ) -> List[List[float]]:
         """
         Get embedding for a protein sequence or complex.
 
@@ -180,25 +221,69 @@ class FoldyESMCClient(FoldyESMClient):
             pdb_file_path: Optional path to a PDB file (not supported for ESM-C)
 
         Returns:
-            A list of floats representing the embedding vector
+            A list of list of floats representing embedding vectors for extra_layers, and the final layer.
         """
+        import gc
+
+        import torch
         from esm.sdk.api import ESMProtein, LogitsConfig
         from esm.utils.structure.protein_complex import ProteinComplex
 
-        if isinstance(sequence_or_complex, list):
-            protein_tensor = self._get_esm_protein_tensor_for_complex(
-                sequence_or_complex, pdb_file_path
-            )
-        else:
-            protein_tensor = self._get_esm_protein_tensor_for_sequence(
-                sequence_or_complex, pdb_file_path
-            )
-        logits_output = self.client.logits(
-            protein_tensor, LogitsConfig(sequence=False, return_embeddings=True)
-        )
-        # Average across residue dimension
-        embedding = logits_output.embeddings.mean(dim=1).squeeze(0)
-        return embedding.tolist()
+        # Force CUDA synchronization before we start
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+        embeddings = []
+        protein_tensor = None
+        logits_output = None
+
+        try:
+            if isinstance(sequence_or_complex, list):
+                protein_tensor = self._get_esm_protein_tensor_for_complex(
+                    sequence_or_complex, pdb_file_path
+                )
+            else:
+                protein_tensor = self._get_esm_protein_tensor_for_sequence(
+                    sequence_or_complex, pdb_file_path
+                )
+
+            with torch.no_grad():
+                logits_output = self.client.logits(
+                    protein_tensor,
+                    LogitsConfig(
+                        sequence=False,
+                        return_embeddings=True,
+                        return_hidden_states=True if len(extra_layers) > 0 else False,
+                    ),
+                )
+            if extra_layers:
+                hidden_states = logits_output.hidden_states
+                for extra_layer_idx in extra_layers:
+                    layer_embedding = hidden_states[extra_layer_idx].mean(dim=-2).squeeze()
+                    embeddings.append(layer_embedding.cpu().tolist())
+                del hidden_states
+
+            final_embedding = logits_output.embeddings.detach().cpu().mean(dim=1).squeeze(0)
+            embeddings.append(final_embedding.tolist())
+
+        finally:
+            # First recursively clean complex objects
+            if 'logits_output' in locals() and logits_output is not None:
+                recursive_cleanup(logits_output)
+
+            if 'protein_tensor' in locals() and protein_tensor is not None:
+                recursive_cleanup(protein_tensor)
+         # Expanded cleanup
+            for local_var in [
+                "logits_output",
+                "protein_tensor",
+                "all_embeddings",
+                "final_embedding",
+            ]:
+                if local_var in locals() and locals()[local_var] is not None:
+                    del locals()[local_var]
+
+        return embeddings
 
     def get_logits(
         self,
@@ -358,6 +443,16 @@ class FoldyESM1and2Client(FoldyESMClient):
         """
         import torch
 
+        logging.info(
+            f"Loading ESM-1/2 model: {model_name} (note: we have esm in sys.modules: {'esm' in sys.modules})"
+        )
+        if "esm" in sys.modules:
+            logging.error(
+                f"WE ARE BOOTING ESM FROM sys.modules... GOD HELP US. This is effectively uninstalling ESMC/ESM3 from the system. If they get used later, they will mysteriously fail."
+            )
+            sys.modules.pop("esm")
+
+        self.model_name = model_name
         self.model, self.alphabet = torch.hub.load("facebookresearch/esm:main", model_name)
         self.batch_converter = self.alphabet.get_batch_converter()
         self.model.eval()  # Set to evaluation mode
@@ -372,7 +467,8 @@ class FoldyESM1and2Client(FoldyESMClient):
         self,
         sequence_or_complex: SequenceOrComplexType,
         pdb_file_path: Optional[str] = None,
-    ) -> List[float]:
+        extra_layers: List[int] = [],
+    ) -> List[List[float]]:
         """
         Get embedding for a protein sequence.
 
@@ -381,30 +477,84 @@ class FoldyESM1and2Client(FoldyESMClient):
             pdb_file_path: Not supported for ESM-1/2
 
         Returns:
-            A list of floats representing the embedding vector
+            A list of list of floats representing embedding vectors for extra_layers, and the final layer.
 
         Raises:
             ValueError: If a complex or PDB file is provided (not supported)
         """
+        import gc
+
         import torch
 
-        if isinstance(sequence_or_complex, list):
-            raise ValueError("ESM1 and 2 do not support protein complexes")
+        # Force CUDA synchronization before we start
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
         sequence = sequence_or_complex
         if pdb_file_path:
             raise ValueError("ESM1 and 2 do not support PDB-based embeddings")
+        if isinstance(sequence_or_complex, list):
+            raise ValueError("ESM1 and 2 do not support protein complexes")
+        if len(extra_layers) > 0:
+            raise ValueError("ESM1 and 2 do not support extra layers")
 
-        data = [("protein", sequence)]
-        _, _, batch_tokens = self.batch_converter(data)
-        batch_tokens = batch_tokens.to(self.device)
+        batch_tokens = None
+        token_embeddings = None
+        protein_embedding = None
 
-        with torch.no_grad():
-            results = self.model(batch_tokens, repr_layers=[33])
-        token_embeddings = results["representations"][33]
+        try:
+            data = [("protein", sequence)]
+            _, _, batch_tokens = self.batch_converter(data)
+            batch_tokens = batch_tokens.to(self.device)
 
-        # Remove cls and eos tokens, then average
-        protein_embedding = token_embeddings[0, 1:-1].mean(0)
-        return protein_embedding.cpu().tolist()
+            MODEL_TO_NUM_LAYERS = {
+                "esm2_t48_15B_UR50D": 48,
+                "esm2_t36_3B_UR50D": 36,
+                "esm2_t33_650M_UR50D": 33,
+                "esm2_t30_150M_UR50D": 30,
+                "esm2_t12_35M_UR50D": 12,
+                "esm2_t6_8M_UR50D": 6,
+                "esm1v_t33_650M_UR90S_1": 33,
+                "esm1v_t33_650M_UR90S_2": 33,
+                "esm1v_t33_650M_UR90S_3": 33,
+                "esm1v_t33_650M_UR90S_4": 33,
+                "esm1v_t33_650M_UR90S_5": 33,
+                "esm_msa1b_t12_100M_UR50S": 12,
+                "esm_msa1_t12_100M_UR50S": 12,
+                "esm1b_t33_650M_UR50S": 33,
+                "esm1_t34_670M_UR50S": 34,
+                "esm1_t34_670M_UR50D": 34,
+                "esm1_t34_670M_UR100": 34,
+                "esm1_t12_85M_UR50S": 12,
+                "esm1_t6_43M_UR50S": 6,
+            }
+
+            with torch.no_grad():
+                results = self.model(
+                    batch_tokens, repr_layers=[MODEL_TO_NUM_LAYERS.get(self.model_name)]
+                )
+                layer_num = MODEL_TO_NUM_LAYERS.get(self.model_name)
+                token_embeddings = results["representations"][layer_num]
+
+                # Remove cls and eos tokens, then average within no_grad block
+                protein_embedding = token_embeddings[0, 1:-1].mean(0).detach().cpu()
+                embeddings = [protein_embedding.tolist()]
+
+        finally:
+            # Expanded cleanup
+            for local_var in ["batch_tokens", "token_embeddings", "protein_embedding", "results"]:
+                if local_var in locals() and locals()[local_var] is not None:
+                    del locals()[local_var]
+
+            # Force garbage collection
+            gc.collect()
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()  # Ensure GPU operations are complete
+                torch.cuda.ipc_collect()  # Critical for multi-process environments
+
+        return embeddings
 
     def get_logits(
         self,

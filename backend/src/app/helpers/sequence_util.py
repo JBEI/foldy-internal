@@ -1,4 +1,5 @@
 import json
+import logging
 import random
 import re
 from collections import defaultdict
@@ -270,7 +271,8 @@ def process_and_validate_evolve_input_files(
     wt_aa_seq: str,
     raw_activity_df: pd.DataFrame,
     raw_embedding_df: Optional[pd.DataFrame] = None,
-) -> Union[pd.DataFrame, Tuple[pd.DataFrame, pd.DataFrame]]:
+    raw_naturalness_df: Optional[pd.DataFrame] = None,
+) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], Optional[pd.DataFrame]]:
     """Prepares raw inputs for EvolvePRO logic, raises ValueError if inputs are invalid.
 
     Args:
@@ -279,15 +281,18 @@ def process_and_validate_evolve_input_files(
         raw_embedding_df: Optional DataFrame containing embeddings
 
     Returns:
-        If raw_embedding_df is None, returns the validated activity DataFrame.
-        Otherwise, returns a tuple of (activity_df, embedding_df).
+        Returns a triple of (
+            the validated activity DataFrame,
+            embedding_df (if raw_embedding_df was provided),
+            naturalness_df (if raw_naturalness_df was provided)
+        )
 
     Raises:
         ValueError: If inputs are invalid
     """
     activity_df = raw_activity_df.copy()
     embedding_df = raw_embedding_df.copy() if raw_embedding_df is not None else None
-
+    naturalness_df = raw_naturalness_df.copy() if raw_naturalness_df is not None else None
     if "seq_id" not in activity_df.columns:
         raise ValueError(f"Activity file must contain a 'seq_id' column, got {activity_df.columns}")
     if "activity" not in activity_df.columns:
@@ -303,157 +308,52 @@ def process_and_validate_evolve_input_files(
             raise ValueError(
                 f"Embedding file must contain a 'embedding' column, got {embedding_df.columns}"
             )
+    if naturalness_df is not None:
+        if "seq_id" not in naturalness_df.columns:
+            raise ValueError(
+                f"Naturalness file must contain a 'seq_id' column, got {naturalness_df.columns}"
+            )
+        if "wt_marginal" not in naturalness_df.columns:
+            raise ValueError(
+                f"Naturalness file must contain a 'wt_marginal' column, got {naturalness_df.columns}"
+            )
+
+    # Naturalness, in particular, has weird seq_ids. Let's remove those first.
+    naturalness_df = naturalness_df[naturalness_df.seq_id.apply(
+        lambda seq_id: maybe_get_seq_id_error_message(wt_aa_seq, seq_id) is None
+    )]
 
     # activity_df.replace({"seq_id": {np.nan: ""}}, inplace=True)  # "WT": "",
-    for seq_id in activity_df.seq_id:
-        seq_id_error_msg = maybe_get_seq_id_error_message(wt_aa_seq, seq_id)
-        if seq_id_error_msg:
-            raise ValueError(f"Invalid seq_id '{seq_id}': {seq_id_error_msg}")
+    for df, df_name in [(activity_df, "activity"), (embedding_df, "embedding"), (naturalness_df, "naturalness")]:
+        for seq_id in df.seq_id:
+            seq_id_error_msg = maybe_get_seq_id_error_message(wt_aa_seq, seq_id)
+            if seq_id_error_msg:
+                raise ValueError(f"Invalid seq_id '{seq_id}' in {df_name} file: {seq_id_error_msg}")
 
-    # embedding_df.fillna({"seq_id": ""}, inplace=True)
+    # Sometimes embedding_df gets duplicates on seq_id. That's fine but we need to get rid of them.
+    if embedding_df.seq_id.duplicated().sum():
+        logging.warning(f"Found {embedding_df.seq_id.duplicated().sum()} duplicate seq_ids in embedding_series. Keeping first occurrence.")
+        embedding_df = embedding_df[~embedding_df.seq_id.duplicated(keep='first')]
 
-    if embedding_df is None:
-        return activity_df
-    else:
-        return activity_df, embedding_df
+    activity_df = activity_df.set_index("seq_id")
+    if embedding_df is not None:
+        embedding_df = embedding_df.set_index("seq_id")
+    if naturalness_df is not None:
+        naturalness_df = naturalness_df.set_index("seq_id")
 
+    
+    for col in embedding_df.columns:
+        if col == "embedding" or col.startswith("embedding_layer_"):
+            if isinstance(embedding_df[col].iloc[0], str):
+                # embedding_df["embedding"] = embedding_df["embedding"].apply(
+                #     lambda x: np.array(ast.literal_eval(x)) if isinstance(x, str) else x
+                # )
+                embedding_df[col] = embedding_df[col].apply(
+                    lambda x: np.array(json.loads(x)) if isinstance(x, str) else x
+                )
+    
+    return (activity_df, embedding_df, naturalness_df)
 
-def get_measured_and_unmeasured_mutant_seq_ids(
-    activity_df: pd.DataFrame, embedding_df: pd.DataFrame
-) -> Tuple[List[str], List[str]]:
-    """Returns the measured and unmeasured sequence IDs from activity and embedding DataFrames.
-
-    Args:
-        activity_df: DataFrame containing measured activities
-        embedding_df: DataFrame containing embeddings for all mutants
-
-    Returns:
-        Tuple containing:
-        - measured_mutants: List of sequence IDs with both activity and embedding data
-        - unmeasured_mutants: List of sequence IDs with embedding data but no activity data
-
-    Raises:
-        BadRequest: If any sequence ID is NaN
-    """
-    # Make a copy to avoid modifying the original
-    activity_df_copy = activity_df.copy()
-    embedding_df_copy = embedding_df.copy()
-
-    # Set index properly
-    activity_df_copy = activity_df_copy.set_index("seq_id")
-    embedding_df_copy = embedding_df_copy.set_index("seq_id")
-
-    activity_mutants: Set[Any] = set(activity_df["seq_id"])
-    embedding_mutants: Set[Any] = set(embedding_df["seq_id"])
-
-    if np.nan in activity_mutants:
-        raise BadRequest("Activity file contains NaN seq_ids.")
-
-    if np.nan in embedding_mutants:
-        raise BadRequest("Embedding file contains NaN seq_ids.")
-
-    # Calculate overlap and test sets
-    measured_mutants = list(activity_mutants.intersection(embedding_mutants))
-    unmeasured_mutants = list(embedding_mutants - activity_mutants)
-    return measured_mutants, unmeasured_mutants
-
-
-def train_and_predict_activities(
-    activity_df: pd.DataFrame, embedding_df: pd.DataFrame, mode: str
-) -> Tuple[List[str], List[str], Union[RandomForestRegressor, MLPRegressor], pd.DataFrame]:
-    """Train a machine learning model on measured mutants and predict activities for all mutants.
-
-    Args:
-        activity_df: DataFrame containing measured activities with mutant seq_ids as index
-        embedding_df: DataFrame containing embeddings for all mutants (measured + unmeasured)
-        mode: Model type to use ("randomforest" or "mlp")
-
-    Returns:
-        Tuple containing:
-        - measured_mutants: list of measured mutant seq_ids
-        - unmeasured_mutants: list of unmeasured mutant seq_ids
-        - model: trained model (RandomForestRegressor or MLPRegressor)
-        - predicted_activity_df: DataFrame containing predictions for all mutants with columns:
-          * seq_id: mutant identifier
-          * predicted_activity: model predictions
-          * relevant_measured_mutants: space-separated list of measured mutants sharing loci
-          * actual_activity: measured activity (if available)
-
-    Raises:
-        ValueError: If an invalid model choice is provided
-    """
-    # Get measured and unmeasured mutant sets
-    measured_mutants, unmeasured_mutants = get_measured_and_unmeasured_mutant_seq_ids(
-        activity_df, embedding_df
-    )
-
-    # Prepare training data
-    X_train = np.vstack([json.loads(x) for x in embedding_df.loc[activity_df.index].embedding])
-    y_train = activity_df.activity.to_numpy()
-
-    model: Union[RandomForestRegressor, MLPRegressor]
-    if mode == "randomforest":
-        model = RandomForestRegressor(
-            n_estimators=100,
-            criterion="friedman_mse",
-            max_depth=None,
-            min_samples_split=2,
-            min_samples_leaf=1,
-            min_weight_fraction_leaf=0.0,
-            max_features=1.0,
-            max_leaf_nodes=None,
-            min_impurity_decrease=0.0,
-            bootstrap=True,
-            oob_score=False,
-            n_jobs=None,
-            random_state=1,
-            verbose=0,
-            warm_start=False,
-            ccp_alpha=0.0,
-            max_samples=None,
-        )
-    elif mode == "mlp":
-        model = MLPRegressor(random_state=1, max_iter=5000, hidden_layer_sizes=(100, 50))
-    else:
-        raise ValueError(f"Invalid model choice: {mode}")
-    model.fit(X_train, y_train)
-
-    # Prepare prediction data for all mutants
-    all_mutants_embedding_array = np.vstack(
-        [json.loads(x) for x in embedding_df.loc[measured_mutants + unmeasured_mutants].embedding]
-    )
-
-    # Make predictions
-    y_all_pred = model.predict(all_mutants_embedding_array)
-
-    # Create results DataFrame
-    predicted_activity_df = pd.DataFrame(
-        {
-            "seq_id": measured_mutants + unmeasured_mutants,
-            "predicted_activity": y_all_pred,
-        }
-    )
-    predicted_activity_df = predicted_activity_df.set_index("seq_id")
-
-    # Add relevant measured mutants - we need to get the index as a Series first
-    idx_series = predicted_activity_df.index.to_series()
-    predicted_activity_df["relevant_measured_mutants"] = idx_series.apply(
-        lambda seq_id: " ".join(
-            [m for m in measured_mutants if get_loci_set(m) & get_loci_set(seq_id)]
-        )
-    )
-
-    # Add actual activities where available
-    predicted_activity_df["actual_activity"] = predicted_activity_df.join(
-        activity_df.groupby(level=0).activity.mean(), how="left"
-    ).activity
-
-    return (
-        measured_mutants,
-        unmeasured_mutants,
-        model,
-        predicted_activity_df.sort_values("predicted_activity", ascending=False),
-    )
 
 
 def get_cross_validation_holdout_sets(

@@ -98,13 +98,14 @@ class BradleyTerryMLP(nn.Module):
         prev_dim = embedding_dim
 
         for hidden_dim in hidden_dims:
-            layers.append(nn.Linear(prev_dim, hidden_dim))
+            layers.append(nn.Linear(prev_dim, hidden_dim, bias=False))
+            layers.append(nn.BatchNorm1d(hidden_dim))
             layers.append(activation)
             layers.append(nn.Dropout(dropout))
             prev_dim = hidden_dim
 
         # Final layer to scalar preference score
-        layers.append(nn.Linear(prev_dim, 1))
+        layers.append(nn.Linear(prev_dim, 1, bias=False))  # no bias)
 
         self.mlp = nn.Sequential(*layers)
 
@@ -137,41 +138,59 @@ class BradleyTerryMLP(nn.Module):
 
 
 def batch_bradley_terry_loss(
-    embeddings: torch.Tensor,  # not used directly
-    scores: torch.Tensor,  # (batch_size, 1)
-    activity_labels: torch.Tensor,
+    scores,
+    labels,
     exclude_pair_from_loss: Callable[[int, int], bool] = lambda i, j: False,
-) -> torch.Tensor:
-    batch_size = scores.shape[0]
-    device = scores.device
+):
+    # scores : (B,1)  labels : (B,)
+    s = scores.view(-1, 1)  # (B,1)
+    diff = s - s.T  # (B,B)
+    y = (labels.view(-1, 1) > labels).float()
+    mask = labels.view(-1, 1) != labels  # ignore ties
+    if mask.sum() == 0:
+        # add a tiny penalty to keep grads flowing
+        return (scores**2).mean() * 1e-4
+    loss = F.binary_cross_entropy_with_logits(diff[mask], y[mask])
+    return loss
 
-    # Flatten
-    scores = scores.view(-1)
 
-    # i < j
-    i_idx, j_idx = torch.triu_indices(batch_size, batch_size, offset=1, device=device)
+# def batch_bradley_terry_loss(
+#     scores: torch.Tensor,  # (batch_size, 1)
+#     activity_labels: torch.Tensor,
+#     exclude_pair_from_loss: Callable[[int, int], bool] = lambda i, j: False,
+# ) -> torch.Tensor:
+#     batch_size = scores.shape[0]
+#     device = scores.device
 
-    # Filter out pairs i,j with equal label or excluded
-    mask = []
-    for i, j in zip(i_idx.tolist(), j_idx.tolist()):
-        if exclude_pair_from_loss(i, j):
-            continue
-        if activity_labels[i] == activity_labels[j]:
-            continue
-        mask.append((i, j))
-    if not mask:
-        return torch.tensor(0.0, requires_grad=True, device=device)
+#     # Flatten
+#     scores = scores.view(-1)
 
-    i_valid = torch.tensor([p[0] for p in mask], device=device)
-    j_valid = torch.tensor([p[1] for p in mask], device=device)
+#     # i < j
+#     i_idx, j_idx = torch.triu_indices(batch_size, batch_size, offset=1, device=device)
 
-    # 1 if label[i] > label[j]
-    y_true = (activity_labels[i_valid] > activity_labels[j_valid]).float()
-    y_pred = scores[i_valid] - scores[j_valid]
+#     # Filter out pairs i,j with equal label or excluded
+#     mask = []
+#     for i, j in zip(i_idx.tolist(), j_idx.tolist()):
+#         if exclude_pair_from_loss(i, j):
+#             continue
+#         if activity_labels[i] == activity_labels[j]:
+#             continue
+#         mask.append((i, j))
+#     if not mask:
+#         return torch.tensor(0.0, requires_grad=True, device=device)
 
-    pred_prob = torch.sigmoid(y_pred)
-    loss = -(y_true * torch.log(pred_prob + 1e-7) + (1 - y_true) * torch.log(1 - pred_prob + 1e-7))
-    return loss.mean()
+#     i_valid = torch.tensor([p[0] for p in mask], device=device)
+#     j_valid = torch.tensor([p[1] for p in mask], device=device)
+
+#     # 1 if label[i] > label[j]
+#     y_true = (activity_labels[i_valid] > activity_labels[j_valid]).float()
+#     y_pred = scores[i_valid] - scores[j_valid]
+
+#     return F.binary_cross_entropy_with_logits(y_pred, y_true)
+
+# pred_prob = torch.sigmoid(y_pred)
+# loss = -(y_true * torch.log(pred_prob + 1e-7) + (1 - y_true) * torch.log(1 - pred_prob + 1e-7))
+# return loss.mean()
 
 
 #     embeddings: torch.Tensor,
@@ -230,6 +249,7 @@ class PreferenceTrainer:
     def __init__(
         self,
         model: BradleyTerryMLP,
+        random_state: int,
         learning_rate: float = 1e-4,
         weight_decay: float = 1e-5,
         device: Optional[str] = None,
@@ -247,6 +267,10 @@ class PreferenceTrainer:
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             self.device = device
+
+        self.random_state = random_state
+        torch.manual_seed(random_state)  # Set PyTorch random seed
+        np.random.seed(random_state)  # Set NumPy random seed
 
         self.model = model.to(self.device)
         self.optimizer = torch.optim.Adam(
@@ -311,13 +335,17 @@ class PreferenceTrainer:
         # Create datasets
         train_embeddings = embeddings[train_indices]
         train_activity_labels = activity_labels[train_indices]
-        val_embeddings = embeddings[val_indices]
-        val_activity_labels = activity_labels[val_indices]
+        val_embeddings = embeddings[val_indices] if len(val_indices) > 0 else None
+        val_activity_labels = activity_labels[val_indices] if len(val_indices) > 0 else None
 
         # Create datasets and dataloaders
         train_dataset = PreferenceDataset(train_embeddings, train_activity_labels)
+
+        # Create datasets and dataloaders with fixed random seed
+        g = torch.Generator()
+        g.manual_seed(self.random_state)
         train_loader = DataLoader(
-            train_dataset, batch_size=batch_size, shuffle=True, drop_last=False
+            train_dataset, batch_size=batch_size, shuffle=True, drop_last=False, generator=g
         )
 
         metrics: Dict[str, List[float]] = {"train_loss": [], "val_loss": []}
@@ -345,7 +373,6 @@ class PreferenceTrainer:
                     loss = F.mse_loss(scores.squeeze(-1), batch_activity_labels)
                 else:
                     loss = batch_bradley_terry_loss(
-                        batch_embeddings,
                         scores,
                         batch_activity_labels,
                         exclude_pair_from_loss,
@@ -355,7 +382,6 @@ class PreferenceTrainer:
                     logger.warning(
                         f"Zero loss encountered in batch {batch_number} in epoch {epoch} with {len(batch_embeddings)} members"
                     )
-                    continue
 
                 loss.backward()
 
@@ -387,7 +413,8 @@ class PreferenceTrainer:
             metrics["train_loss"].append(train_loss)
 
             # Validation - only run every val_frequency epochs
-            if (epoch + 1) % val_frequency == 0:
+            is_val_round = epoch == 0 or ((epoch + 1) % val_frequency == 0)
+            if is_val_round and len(val_indices) > 0:
                 val_loss = self.evaluate(
                     val_embeddings,
                     val_activity_labels,
@@ -404,16 +431,9 @@ class PreferenceTrainer:
                     no_improve_epochs += val_frequency  # Increment by val_frequency instead of 1
 
                 if no_improve_epochs >= patience:
-                    if verbose:
-                        logger.info(f"Early stopping at epoch {epoch+1}")
-                    break
+                    logger.info(f"Early stopping at epoch {epoch+1}")
             else:
-                # Repeat last val_loss for epochs where we don't calculate it
-                if metrics["val_loss"]:
-                    metrics["val_loss"].append(metrics["val_loss"][-1])
-                else:
-                    # Add placeholder value for epochs where we don't have validation
-                    metrics["val_loss"].append(float("inf"))
+                metrics["val_loss"].append(np.nan)
 
             # Logging
             if verbose and (epoch + 1) % 10 == 0:
@@ -422,7 +442,7 @@ class PreferenceTrainer:
                     if (epoch + 1) % val_frequency == 0
                     else "Val Loss: N/A"
                 )
-                logger.info(
+                logger.debug(
                     f"Epoch {epoch+1}/{epochs} - "
                     f"Train Loss: {train_loss:.4f}, "
                     f"{val_loss_str}"
@@ -468,7 +488,6 @@ class PreferenceTrainer:
 
                 # Compute loss across all pairs in batch
                 loss = batch_bradley_terry_loss(
-                    batch_embeddings,
                     scores,
                     batch_activity_labels,
                     exclude_pair_from_loss,
@@ -615,10 +634,16 @@ class PreferenceTrainer:
         # 8. Compute ROC AUC for preference prediction
         auc_val = roc_auc_score(y_true, y_pred)
 
+        # assert False, "MUST FINISH GETTING THIS THRESHOLDING FUNCTION FINISHED"
+        # top16_binarization = true_labels.rank(descending=False) < 16
+        # top16_auc = compute_auc(predicted_scores, top16_binarization)
+        top16_auc = 0.0
+
         return {
             "spearman_corr": spearman_corr,
             "preference_accuracy": preference_accuracy,
             "auc": auc_val,
+            "top16_auc": top16_auc,
         }
 
 
@@ -629,6 +654,7 @@ def create_preference_model(
     learning_rate: float = 1e-4,
     weight_decay: float = 1e-5,
     device: Optional[str] = None,
+    random_state: int = 0,
 ) -> Tuple[BradleyTerryMLP, PreferenceTrainer]:
     """Create a preference model and trainer with standard parameters.
 
@@ -648,9 +674,11 @@ def create_preference_model(
         Tuple containing (model, trainer)
     """
     model = BradleyTerryMLP(embedding_dim=embedding_dim, hidden_dims=hidden_dims, dropout=dropout)
+    # model = torch.compile(model)
 
     trainer = PreferenceTrainer(
         model=model,
+        random_state=random_state,
         learning_rate=learning_rate,
         weight_decay=weight_decay,
         device=device,

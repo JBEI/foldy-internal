@@ -1,6 +1,7 @@
 import random
 from unittest.mock import MagicMock, patch
 
+from app.helpers.sequence_util import VALID_AMINO_ACIDS
 import numpy as np
 import pandas as pd
 import pytest
@@ -31,9 +32,23 @@ def test_fold_evolution(app, test_fold, test_invokation):
     with app.app_context():
         evolution = Evolution.create(
             name="test_evolve",
+            mode="TorchMLPFewShotModel",
             fold_id=test_fold.id,
             invokation_id=test_invokation.id,
             embedding_files="embed/test_embedding_file.csv",
+            naturalness_files="embed/test_naturalness_file.csv",
+            few_shot_params="""{
+  "pretrain": true,
+  "pretrain_epochs": 50,
+  "ensemble_size": 5,
+  "decision_mode": "ucb",
+  "embedding_dim": 3,
+  "hidden_dims": [100, 50],
+  "dropout": 0.2,
+  "learning_rate": 0.001,
+  "weight_decay": 1e-5,
+  "train_epochs": 200
+}"""
         )
         db.session.add(evolution)
         db.session.commit()
@@ -62,15 +77,22 @@ def mock_foldy_storage(app, tmp_path, test_fold, test_fold_evolution):
     embed_dir.mkdir(parents=True)
 
     # Create the necessary files.
-    pd.DataFrame({"seq_id": ["WT", "A1G"], "activity": [1, 2]}).to_excel(
+    pd.DataFrame({"seq_id": ["WT", "A1G", "A1Y"], "activity": [1, 2, 0]}).to_excel(
         evolve_dir / "activity.xlsx"
     )
     pd.DataFrame(
         {
-            "seq_id": ["WT", "A1G", "A1G_C2Y"],
-            "embedding": ["[0, 1, 0]", "[0, 2, 0]", "[0, 3, 0]"],
+            "seq_id": ["WT","A1G_C2Y"] + [f"A1{aa}" for aa in VALID_AMINO_ACIDS],
+            "embedding": ["[1, 0, 0]", "[0, 2, 3]"] + ["[0, 2, 0]"] * len(VALID_AMINO_ACIDS)
         }
     ).to_csv(embed_dir / "test_embedding_file.csv")
+
+    pd.DataFrame(
+        {
+            "seq_id": ["WT", "C2Y"] + [f"A1{aa}" for aa in VALID_AMINO_ACIDS],
+            "wt_marginal": [1.0, 3.0] + [0.75] * len(VALID_AMINO_ACIDS),
+        }
+    ).to_csv(embed_dir / "test_naturalness_file.csv")
     yield storage_dir
 
 
@@ -78,6 +100,27 @@ def test_run_evolvepro_fails_nofile(app, client, mock_storage_manager, test_fold
     """Basic test for run_evolvepro function."""
     with app.app_context():
         with pytest.raises(AssertionError, match="xlsx not found"):
+            run_evolvepro(evolve_id=test_fold_evolution.id)
+
+
+def test_old_modes_not_supported(
+    app, client, tmp_path, mock_storage_manager, test_fold_evolution, mock_foldy_storage
+):
+    """Basic test for run_evolvepro function."""
+    with app.app_context():
+        with pytest.raises(AssertionError, match="no longer supported"):
+            test_fold_evolution.update({'mode': 'randomforest'})
+
+            run_evolvepro(evolve_id=test_fold_evolution.id)
+
+def test_requires_few_shot_params(
+    app, client, tmp_path, mock_storage_manager, test_fold_evolution, mock_foldy_storage
+):
+    """Basic test for run_evolvepro function."""
+    with app.app_context():
+        with pytest.raises(AssertionError, match="no longer supported"):
+            test_fold_evolution.update({'few_shot_params': None})
+
             run_evolvepro(evolve_id=test_fold_evolution.id)
 
 

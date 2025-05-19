@@ -87,49 +87,59 @@ class MockZeroShotModel(ZeroShotModel):
         self.predict_called = False
         self.predict_inputs = []
 
-    def predict(self, naturalness_df, embedding_df=None):
+    def predict(self, naturalness_series, embedding_series=None):
         """Mock predict method."""
         self.predict_called = True
-        self.predict_inputs.append((naturalness_df, embedding_df))
+        self.predict_inputs.append((naturalness_series, embedding_series))
 
         if self.return_values is not None:
             return self.return_values
 
-        # By default, return values proportional to naturalness scores
-        return naturalness_df["wt_marginal"].values
+        # By default, return a list with a single series
+        return [pd.Series(naturalness_series.values, index=naturalness_series.index)]
 
 
 class MockFewShotModel(FewShotModel):
     """Mock FewShotModel for testing campaign simulations."""
 
-    def __init__(self, return_values=None):
+    def __init__(self, return_values=None, decision_mode="median", temperature=0.0, epsilon=0.0, random_state=42):
         """Initialize mock model.
 
         Args:
             return_values: Optional fixed values to return for predictions
+            decision_mode: How to combine ensemble predictions
+            temperature: Temperature for sampling
+            epsilon: Epsilon for epsilon-greedy exploration
         """
+        super().__init__(decision_mode=decision_mode, temperature=temperature, epsilon=epsilon)
         self.return_values = return_values
+        self.random_state = random_state
         self.fit_called = False
         self.fit_inputs = []
         self.predict_called = False
         self.predict_inputs = []
 
-    def fit(self, X, y, **kwargs):
+    def fit(self, naturalness_series, embedding_series, measured_activity_series, validation_activity_series=None, **kwargs):
         """Mock fit method."""
         self.fit_called = True
-        self.fit_inputs.append((X, y))
+        self.fit_inputs.append((naturalness_series, embedding_series, measured_activity_series))
         return self
 
-    def predict(self, X):
+    def predict(self, naturalness_series, embedding_series):
         """Mock predict method."""
         self.predict_called = True
-        self.predict_inputs.append(X)
+        self.predict_inputs.append((naturalness_series, embedding_series))
 
         if self.return_values is not None:
-            return self.return_values
+            if isinstance(self.return_values, list):
+                return self.return_values
+            else:
+                # Convert to a list with a single Series
+                return [pd.Series(self.return_values, index=embedding_series.index)]
 
-        # By default, return random values
-        return np.random.rand(len(X))
+        # Return a list with a single Series of random values
+        np.random.seed(self.random_state)
+        return [pd.Series(np.random.rand(len(embedding_series)), index=embedding_series.index)]
 
     def get_debug_info(self):
         """Mock debug info method."""
@@ -145,17 +155,17 @@ class TestCampaignWorldState:
         dataset_generator = TestDatasetGeneration()
         dataset_generator.test_create_simulated_dataset()
 
-        # Initialize world state
+        # Initialize world state with series
         world_state = CampaignWorldState(
-            dataset_generator.activity_df,
-            dataset_generator.naturalness_df,
-            dataset_generator.embedding_df,
+            dataset_generator.activity_df["DMS_score"],  # Converting to Series
+            dataset_generator.naturalness_df["wt_marginal"],  # Converting to Series
+            dataset_generator.embedding_df["embedding"],  # Converting to Series
         )
 
         # Verify initialization
-        assert world_state.golden_activity_df.equals(dataset_generator.activity_df)
-        assert world_state.naturalness_df.equals(dataset_generator.naturalness_df)
-        assert world_state.embedding_df.equals(dataset_generator.embedding_df)
+        assert world_state.golden_activity_series.equals(dataset_generator.activity_df["DMS_score"])
+        assert world_state.naturalness_series.equals(dataset_generator.naturalness_df["wt_marginal"])
+        assert world_state.embedding_series.equals(dataset_generator.embedding_df["embedding"])
         assert world_state.measured_seq_ids == []
 
     def test_measure_variant_activities(self):
@@ -191,38 +201,33 @@ class TestCampaignWorldState:
         dataset_generator = TestDatasetGeneration()
         dataset_generator.test_create_simulated_dataset()
 
+        # Get the series
+        activity_series = dataset_generator.activity_df["DMS_score"]
+        naturalness_series = dataset_generator.naturalness_df["wt_marginal"]
+        embedding_series = dataset_generator.embedding_df["embedding"]
+
         # Initialize world state
-        world_state = CampaignWorldState(
-            dataset_generator.activity_df,
-            dataset_generator.naturalness_df,
-            dataset_generator.embedding_df,
-        )
+        world_state = CampaignWorldState(activity_series, naturalness_series, embedding_series)
 
         # Measure some variants
         seq_ids_to_measure = ["seq_0", "seq_5", "seq_10"]
         world_state.measure_variant_activities(seq_ids_to_measure)
 
         # Get unmeasured variants
-        unmeasured_activity_df = world_state.get_unmeasured_variants_activity_df()
-        unmeasured_naturalness_df = world_state.get_unmeasured_naturalness_df()
-        unmeasured_embeddings_df = world_state.get_unmeasured_embeddings_df()
+        unmeasured_activity_series = world_state.get_unmeasured_variants_activity_df()
+        unmeasured_naturalness_series = world_state.get_unmeasured_naturalness_series()
+        unmeasured_embeddings_series = world_state.get_unmeasured_embeddings_series()
 
         # Verify unmeasured variants
-        assert len(unmeasured_activity_df) == len(dataset_generator.activity_df) - len(
-            seq_ids_to_measure
-        )
-        assert len(unmeasured_naturalness_df) == len(dataset_generator.naturalness_df) - len(
-            seq_ids_to_measure
-        )
-        assert len(unmeasured_embeddings_df) == len(dataset_generator.embedding_df) - len(
-            seq_ids_to_measure
-        )
+        assert len(unmeasured_activity_series) == len(activity_series) - len(seq_ids_to_measure)
+        assert len(unmeasured_naturalness_series) == len(naturalness_series) - len(seq_ids_to_measure)
+        assert len(unmeasured_embeddings_series) == len(embedding_series) - len(seq_ids_to_measure)
 
         # Verify measured variants are excluded
         for seq_id in seq_ids_to_measure:
-            assert seq_id not in unmeasured_activity_df.index
-            assert seq_id not in unmeasured_naturalness_df.index
-            assert seq_id not in unmeasured_embeddings_df.index
+            assert seq_id not in unmeasured_activity_series.index
+            assert seq_id not in unmeasured_naturalness_series.index
+            assert seq_id not in unmeasured_embeddings_series.index
 
     def test_get_measured_variants(self):
         """Test getting measured variants."""
@@ -230,32 +235,33 @@ class TestCampaignWorldState:
         dataset_generator = TestDatasetGeneration()
         dataset_generator.test_create_simulated_dataset()
 
+        # Get the series
+        activity_series = dataset_generator.activity_df["DMS_score"]
+        naturalness_series = dataset_generator.naturalness_df["wt_marginal"]
+        embedding_series = dataset_generator.embedding_df["embedding"]
+
         # Initialize world state
-        world_state = CampaignWorldState(
-            dataset_generator.activity_df,
-            dataset_generator.naturalness_df,
-            dataset_generator.embedding_df,
-        )
+        world_state = CampaignWorldState(activity_series, naturalness_series, embedding_series)
 
         # Measure some variants
         seq_ids_to_measure = ["seq_0", "seq_5", "seq_10"]
         world_state.measure_variant_activities(seq_ids_to_measure)
 
         # Get measured variants
-        measured_activity_df = world_state.get_measured_activity_df()
-        measured_naturalness_df = world_state.get_measured_naturalness_df()
-        measured_embeddings_df = world_state.get_measured_embeddings_df()
+        measured_activity_series = world_state.get_measured_activity_series()
+        measured_naturalness_series = world_state.get_measured_naturalness_series()
+        measured_embeddings_series = world_state.get_measured_embeddings_series()
 
         # Verify measured variants
-        assert len(measured_activity_df) == len(seq_ids_to_measure)
-        assert len(measured_naturalness_df) == len(seq_ids_to_measure)
-        assert len(measured_embeddings_df) == len(seq_ids_to_measure)
+        assert len(measured_activity_series) == len(seq_ids_to_measure)
+        assert len(measured_naturalness_series) == len(seq_ids_to_measure)
+        assert len(measured_embeddings_series) == len(seq_ids_to_measure)
 
         # Verify only measured variants are included
         for seq_id in seq_ids_to_measure:
-            assert seq_id in measured_activity_df.index
-            assert seq_id in measured_naturalness_df.index
-            assert seq_id in measured_embeddings_df.index
+            assert seq_id in measured_activity_series.index
+            assert seq_id in measured_naturalness_series.index
+            assert seq_id in measured_embeddings_series.index
 
 
 class TestEvaluateMetrics:
@@ -315,6 +321,12 @@ class TestRunSingleSimulation:
         dataset_generator = TestDatasetGeneration()
         dataset_generator.test_create_simulated_dataset()
 
+        # Get the series and list of available seq_ids
+        available_seq_ids = dataset_generator.activity_df.index.tolist()
+        activity_series = dataset_generator.activity_df["DMS_score"]
+        naturalness_series = dataset_generator.naturalness_df["wt_marginal"]
+        embedding_series = dataset_generator.embedding_df["embedding"]
+
         # Create model configuration
         model_config = FolDEModelConfig(
             name="test_config",
@@ -332,12 +344,14 @@ class TestRunSingleSimulation:
 
         # Run simulation for 1 round only
         result = _run_single_simulation(
-            dataset_generator.activity_df,
-            dataset_generator.naturalness_df,
-            dataset_generator.embedding_df,
+            available_seq_ids,
+            activity_series,
+            naturalness_series,
+            embedding_series,
             round_size=5,
             config=model_config,
             max_rounds=1,
+            random_seed=42,
         )
 
         # Verify simulation results
@@ -374,6 +388,12 @@ class TestRunSingleSimulation:
         dataset_generator = TestDatasetGeneration()
         dataset_generator.test_create_simulated_dataset()
 
+        # Get the series and list of available seq_ids
+        available_seq_ids = dataset_generator.activity_df.index.tolist()
+        activity_series = dataset_generator.activity_df["DMS_score"]
+        naturalness_series = dataset_generator.naturalness_df["wt_marginal"]
+        embedding_series = dataset_generator.embedding_df["embedding"]
+
         # Create model configuration
         model_config = FolDEModelConfig(
             name="test_config",
@@ -393,12 +413,14 @@ class TestRunSingleSimulation:
 
         # Run simulation for multiple rounds
         result = _run_single_simulation(
-            dataset_generator.activity_df,
-            dataset_generator.naturalness_df,
-            dataset_generator.embedding_df,
+            available_seq_ids,
+            activity_series,
+            naturalness_series,
+            embedding_series,
             round_size=5,
             config=model_config,
             max_rounds=3,
+            random_seed=42,
         )
 
         # Verify simulation results

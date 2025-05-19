@@ -20,7 +20,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Install special requirements.
 # RUN /opt/conda/envs/worker/bin/pip install esm tokenizers==0.13.2 transformers==4.26.1 datasets==2.9.0 evaluate==0.4.0 peft==0.9.0 deepspeed==0.8.1
-RUN /opt/conda/envs/worker/bin/pip install \
+RUN /opt/conda/envs/worker/bin/pip --no-cache-dir install \
     tokenizers==0.15.2 \
     transformers==4.37.2 \
     datasets==2.16.1 \
@@ -29,6 +29,12 @@ RUN /opt/conda/envs/worker/bin/pip install \
     deepspeed==0.13.1 \
     accelerate==0.27.2 \
     esm==3.1.3
+
+# TODO(jacob): Move this into setup.sh.
+RUN /opt/conda/bin/conda install -y -n worker -c conda-forge libgcc-ng libstdcxx-ng openpyxl
+RUN /opt/conda/envs/worker/bin/pip install nvidia-ml-py
+# RUN echo 'export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH' >> /etc/profile.d/conda.sh
+ENV LD_LIBRARY_PATH="/opt/conda/envs/worker/lib:${LD_LIBRARY_PATH}"
 
 # # Download the huggingface models...
 # RUN HF_HUB_ENABLE_HF_TRANSFER=1 /opt/conda/envs/worker/bin/huggingface-cli download \

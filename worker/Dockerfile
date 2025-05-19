@@ -79,6 +79,8 @@ RUN /opt/conda/envs/diffdock/bin/python -m pip install --no-cache-dir \
   "fair-esm" \
   torch_geometric
 
+# TODO: move this into setup.sh.
+RUN /opt/conda/envs/worker/bin/pip --no-cache-dir install openpyxl
 
 # Copy in code.
 COPY backend/ /backend/

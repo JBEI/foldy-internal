@@ -81,9 +81,7 @@ function SudoPage() {
     const localRemoveFailedJobs = () => {
         removeFailedJobs(queueToClear).then(
             () => {
-                UIkit.notification(
-                    `Successfully removed failed jobs from ${queueToClear}.`
-                );
+                notify.success(`Successfully removed failed jobs from ${queueToClear}.`);
             },
             (e) => {
                 notify.error(e.toString());

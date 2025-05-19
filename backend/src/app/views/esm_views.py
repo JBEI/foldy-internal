@@ -3,27 +3,29 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
-from app.authorization import user_jwt_grants_edit_access, verify_has_edit_access
-from app.extensions import db, rq
-from app.helpers.fold_storage_manager import FoldStorageManager
-from app.jobs import esm_jobs, other_jobs
-from app.models import Dock, Embedding, Fold, Invokation, Logit
-from app.util import get_job_type_replacement, make_new_folds
-from app.views.other_views import logit_fields
 from flask import (
-    Response,
-    current_app,
-    make_response,
     request,
-    send_file,
-    stream_with_context,
 )
 from flask_jwt_extended import jwt_required
 from flask_jwt_extended.utils import get_jwt, get_jwt_identity
 from flask_restx import Namespace, Resource, fields, reqparse
-from rq.job import Job
+from rq import Callback
 from sqlalchemy.sql.elements import and_
 from werkzeug.exceptions import BadRequest
+
+from app.authorization import user_jwt_grants_edit_access, verify_has_edit_access
+from app.extensions import db
+from app.helpers.fold_storage_manager import FoldStorageManager
+from app.helpers.rq_helpers import (
+    add_meta_to_job,
+    get_queue,
+    send_failure_email,
+    send_success_email,
+)
+from app.jobs import esm_jobs, other_jobs
+from app.models import Dock, Embedding, Fold, Invokation, Logit
+from app.util import get_job_type_replacement, make_new_folds
+from app.views.other_views import embedding_fields, logit_fields
 
 ns = Namespace("esm_views", decorators=[jwt_required(fresh=True)])
 
@@ -45,22 +47,11 @@ ALLOWED_ESM_MODELS: List[str] = [
 ALLOWED_LOGITS_MODELS: List[str] = ALLOWED_ESM_MODELS + ["esm1v_t33_650M_UR90S_ensemble"]
 
 
-embeddings_fields = ns.model(
-    "Embeddings",
-    {
-        "batch_name": fields.String(required=True),
-        "embedding_model": fields.String(required=True),
-        "extra_seq_ids": fields.List(fields.String(), required=False),
-        "dms_starting_seq_ids": fields.List(fields.String(), required=False),
-    },
-)
-
-
-@ns.route("/embeddings/<int:fold_id>")
+@ns.route("/embeddings")
 class CalculateEmbeddingsResource(Resource):
     @verify_has_edit_access
-    @ns.expect(embeddings_fields)
-    def post(self, fold_id: int) -> bool:
+    @ns.expect(embedding_fields)
+    def post(self) -> bool:
         """Create a new embedding calculation job for a fold.
 
         Args:
@@ -74,13 +65,22 @@ class CalculateEmbeddingsResource(Resource):
         """
         req = request.get_json()
 
-        batch_name: str = req["batch_name"]
+        fold_id: int = req["fold_id"]
+        embedding_name: str = req["name"]
         embedding_model: str = req["embedding_model"]
-        extra_seq_ids: List[str] = req.get("extra_seq_ids", [])
-        dms_starting_seq_ids: List[str] = req.get("dms_starting_seq_ids", [])
+        extra_seq_ids_str: str = req.get("extra_seq_ids", "")
+        dms_starting_seq_ids_str: str = req.get("dms_starting_seq_ids", "")
+        extra_layers_str: str = req.get("extra_layers", "")
 
-        extra_seq_ids = [seq_id.strip() for seq_id in extra_seq_ids if seq_id.strip()]
-        dms_starting_seq_ids = [seq_id.strip() for seq_id in dms_starting_seq_ids if seq_id.strip()]
+        extra_seq_ids: list[str] = [
+            seq_id.strip() for seq_id in extra_seq_ids_str.split(",") if seq_id.strip()
+        ]
+        dms_starting_seq_ids: list[str] = [
+            seq_id.strip() for seq_id in dms_starting_seq_ids_str.split(",") if seq_id.strip()
+        ]
+        extra_layers: list[str] = [
+            layer.strip() for layer in extra_layers_str.split(",") if layer.strip()
+        ]
 
         if embedding_model not in ALLOWED_ESM_MODELS:
             raise BadRequest(
@@ -92,24 +92,28 @@ class CalculateEmbeddingsResource(Resource):
         if not fold:
             raise BadRequest(f"Fold with ID {fold_id} not found")
 
-        new_invokation_id = get_job_type_replacement(fold, f"embed_{batch_name}")
+        new_invokation_id = get_job_type_replacement(fold, f"embed_{embedding_name}")
 
         embed_record = Embedding.create(
-            name=batch_name,
+            name=embedding_name,
             fold_id=fold_id,
             embedding_model=embedding_model,
             extra_seq_ids=",".join(extra_seq_ids),
             dms_starting_seq_ids=",".join(dms_starting_seq_ids),
+            extra_layers=",".join(extra_layers),
             invokation_id=new_invokation_id,
         )
 
-        esm_q = rq.get_queue("esm")
+        esm_q = get_queue("esm")
         enqueued_job = esm_q.enqueue(
             esm_jobs.get_esm_embeddings,
             embed_record.id,
             job_timeout="12h",
             result_ttl=48 * 60 * 60,  # 2 days
+            on_success=Callback(send_success_email, timeout='5s'),
+            on_failure=Callback(send_failure_email, timeout='5s'),
         )
+        add_meta_to_job(enqueued_job, fold, "embed", embed_record.id)
 
         logging.info(
             f"Queued embedding job {enqueued_job.id} for fold {fold_id}, model {embedding_model}"
@@ -167,13 +171,16 @@ class StartLogitsResource(Resource):
             invokation_id=new_invokation_id,
         )
 
-        esm_q = rq.get_queue("esm")
+        esm_q = get_queue("esm")
         enqueued_job = esm_q.enqueue(
             esm_jobs.get_esm_logits,
             logit_record.id,
             job_timeout="12h",
             result_ttl=48 * 60 * 60,  # 2 days
+            on_success=Callback(send_success_email, timeout='5s'),
+            on_failure=Callback(send_failure_email, timeout='5s'),
         )
+        add_meta_to_job(enqueued_job, fold, "logits", logit_record.id)
 
         logging.info(
             f"Queued logit job {enqueued_job.id} for fold {fold_id}, model {logit_model}, "

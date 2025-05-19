@@ -1,14 +1,20 @@
-from app.extensions import rq
+import os
+
 from prometheus_client import Gauge
 
+from app.helpers.rq_helpers import get_queue
 
-def get_queue_size(queue_name: str):
-    return len(rq.get_queue(queue_name))
+
+def get_queue_size(queue_name: str) -> int:
+    redis_url = os.environ.get('RQ_REDIS_URL')
+    if not redis_url:
+        raise ValueError("RQ_REDIS_URL is not set...")
+    return len(get_queue(queue_name, redis_url=redis_url))
 
 
 def get_size_gauge(queue_name):
     g = Gauge(f"size_{queue_name}_queue", f"Number of jobs on the {queue_name} queue")
-    g.set_function(lambda: get_queue_size(queue_name))
+    g.set_function(lambda: get_queue_size(queue_name=queue_name))
     return g
 
 

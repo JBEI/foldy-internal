@@ -12,21 +12,20 @@ from datetime import UTC, datetime, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
 
-import docker
 import pandas as pd
-from app import email_to
-from app.database import db
-from app.extensions import rq
+from flask import current_app
+from werkzeug.exceptions import BadRequest
+
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.esm_client import FoldyESMClient
 from app.helpers.esm_util import get_naturalness
 from app.helpers.fold_storage_manager import FoldStorageManager
+from app.helpers.gpu_util import clean_up_torch_memory, log_memory_usage
 from app.helpers.jobs_util import (
     LoggingRecorder,
     _live_update_tail,
     _psql_tail,
     get_torch_cuda_is_available_and_add_logs,
-    try_run_job_with_logging,
 )
 from app.helpers.sequence_util import (
     get_loci_set,
@@ -36,8 +35,6 @@ from app.helpers.sequence_util import (
     seq_id_to_seq,
 )
 from app.models import Dock, Embedding, Evolution, Fold, Invokation, Logit
-from flask import current_app
-from werkzeug.exceptions import BadRequest
 
 
 def get_esm_embeddings(
@@ -59,6 +56,11 @@ def get_esm_embeddings(
         embed_record.dms_starting_seq_ids.split(",") if embed_record.dms_starting_seq_ids else []
     )
     extra_seq_ids = embed_record.extra_seq_ids.split(",") if embed_record.extra_seq_ids else []
+    extra_layers = (
+        [int(ii) for ii in embed_record.extra_layers.split(",")]
+        if embed_record.extra_layers
+        else []
+    )
 
     fold = embed_record.fold
     if not fold:
@@ -117,11 +119,17 @@ def get_esm_embeddings(
         foldy_esm_client = FoldyESMClient.get_client(embedding_model)
 
         def get_embedding_dict(seq_id, seq):
-            return {
+            embedding_list = foldy_esm_client.embed(seq, extra_layers=extra_layers)
+            output_dict = {
                 "seq_id": seq_id,
                 "seq": seq,
-                "embedding": json.dumps(foldy_esm_client.embed(seq)),
+                "embedding": json.dumps(embedding_list[-1]),
             }
+            for extra_layer_idx, extra_layer_embedding in zip(extra_layers, embedding_list[:-1]):
+                output_dict[f"embedding_layer_{extra_layer_idx}"] = json.dumps(
+                    extra_layer_embedding
+                )
+            return output_dict
 
         embedding_dicts = []
 
@@ -129,6 +137,9 @@ def get_esm_embeddings(
             embedding_dicts.append(get_embedding_dict(seq_id, seq_id_to_seq(wt_aa_seq, seq_id)))
             if ii % 100 == 0:
                 logging.info(f"Finished embedding {ii}/{len(dms_seq_ids)}")
+            if ii % 2000 == 0:
+                log_memory_usage()
+                clean_up_torch_memory()
 
         embedding_df = pd.DataFrame(embedding_dicts)
 
@@ -145,15 +156,6 @@ def get_esm_embeddings(
         fsm = FoldStorageManager()
         fsm.setup()
         fsm.storage_manager.write_file(fold.id, embedding_path, embedding_csv_string)
-
-    # Define the logger function that will be passed to try_run_job_with_logging
-    def run_get_esm_embeddings_with_logger() -> None:
-        """Run the ESM embeddings computation with logging."""
-        # Since we're already inside the function that's doing the work,
-        # there's no need to call a separate function
-        pass
-
-    try_run_job_with_logging(run_get_esm_embeddings_with_logger, invokation)
 
 
 def get_esm_logits(logit_id: int):
@@ -256,6 +258,7 @@ def finetune_esm_model(evolve_id: int):
 
         logging.info("Loading training code.")
         import torch
+
         from app.helpers.finetuning.training import score_sequences, train_per_protein
 
         if not fold.yaml_config:
@@ -291,7 +294,7 @@ def finetune_esm_model(evolve_id: int):
 
         elif all([v in raw_activity_df.columns for v in ["seq_id", "activity"]]):
             loss = "entropy"
-            activity_df = process_and_validate_evolve_input_files(wt_aa_seq, raw_activity_df)
+            activity_df, _ = process_and_validate_evolve_input_files(wt_aa_seq, raw_activity_df)
             # Convert activity_df, which has seq_id and activity, into train and valid dfs with an 80/20 split and columns sequence and label.
             activity_df["sequence"] = activity_df["seq_id"].apply(
                 lambda seq_id: seq_id_to_seq(wt_aa_seq, seq_id)

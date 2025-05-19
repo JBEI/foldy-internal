@@ -16,12 +16,6 @@ from typing import (
 )
 
 import numpy as np
-from app.authorization import user_jwt_grants_edit_access, verify_has_edit_access
-from app.extensions import db, rq
-from app.helpers.fold_storage_manager import FoldStorageManager
-from app.jobs import esm_jobs, other_jobs
-from app.models import Dock, Fold, Invokation
-from app.util import get_job_type_replacement, make_new_folds, start_stage
 from flask import (
     Response,
     current_app,
@@ -35,6 +29,14 @@ from flask_jwt_extended.utils import get_jwt, get_jwt_identity
 from flask_restx import Namespace, Resource, fields, reqparse
 from sqlalchemy.sql.elements import and_
 from werkzeug.exceptions import BadRequest
+
+from app.authorization import user_jwt_grants_edit_access, verify_has_edit_access
+from app.extensions import db
+from app.helpers.fold_storage_manager import FoldStorageManager
+from app.helpers.rq_helpers import get_queue
+from app.jobs import esm_jobs, other_jobs
+from app.models import Dock, Fold, Invokation
+from app.util import get_job_type_replacement, make_new_folds, start_stage
 
 ns = Namespace("other_views", decorators=[jwt_required(fresh=True)])
 
@@ -111,13 +113,14 @@ logit_fields = ns.model(
 embedding_fields = ns.model(
     "EmbeddingFields",
     {
-        "id": fields.Integer(required=True),
         "name": fields.String(required=True),
         "fold_id": fields.Integer(required=True),
-        "embedding_model": fields.String(),
-        "extra_seq_ids": fields.String(),
-        "dms_starting_seq_ids": fields.String(),
-        "invokation_id": fields.Integer(),
+        "embedding_model": fields.String(required=True),
+        "id": fields.Integer(required=False),
+        "extra_seq_ids": fields.String(required=False),
+        "dms_starting_seq_ids": fields.String(required=False),
+        "extra_layers": fields.String(required=False),
+        "invokation_id": fields.Integer(required=False),
     },
 )
 
@@ -129,8 +132,10 @@ evolution_fields = ns.model(
         "fold_id": fields.Integer(required=True),
         "mode": fields.String(required=True),
         "embedding_files": fields.String(),
+        "naturalness_files": fields.String(),
         "finetuning_model_checkpoint": fields.String(),
         "invokation_id": fields.Integer(),
+        "few_shot_params": fields.String(),
     },
 )
 
@@ -480,7 +485,7 @@ class DockCreateResource(Resource):
 
         new_invokation_id = get_job_type_replacement(fold, f"dock_{ligand_name}")
 
-        new_dock = Dock(
+        new_dock: Dock = Dock(
             ligand_name=ligand_name,
             ligand_smiles=ligand_smiles,
             tool=tool,
@@ -491,7 +496,7 @@ class DockCreateResource(Resource):
         )
         new_dock.save()
 
-        cpu_q = rq.get_queue("cpu")
+        cpu_q = get_queue("cpu")
         job = cpu_q.enqueue(
             other_jobs.run_dock,
             new_dock.id,

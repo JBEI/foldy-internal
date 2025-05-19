@@ -4,9 +4,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import rq_dashboard
 import werkzeug
-from app import models
-from app.authorization import user_jwt_grants_edit_access
-from app.extensions import admin, compress, db, migrate, rq
 from flask import Flask, jsonify
 from flask.helpers import make_response
 from flask_admin.contrib.sqla import ModelView
@@ -24,6 +21,10 @@ from werkzeug.exceptions import BadRequest, HTTPException
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 from wtforms import TextAreaField
 from wtforms.widgets import TextArea
+
+from app import models
+from app.authorization import user_jwt_grants_edit_access
+from app.extensions import admin, compress, db, migrate  # , rq
 
 app = Flask(__name__)
 
@@ -175,6 +176,7 @@ def register_extensions(app: Flask) -> None:
             "embedding_model",
             "extra_seq_ids",
             "dms_starting_seq_ids",
+            "extra_layers",
         ]
         column_sortable_list = ["id", "name", "embedding_model"]
         column_searchable_list = ["name", "embedding_model"]
@@ -213,7 +215,7 @@ def register_extensions(app: Flask) -> None:
     admin.init_app(app)
     db.init_app(app)
     migrate.init_app(app, db)
-    rq.init_app(app)
+    # rq.init_app(app)
     compress.init_app(app)
 
 

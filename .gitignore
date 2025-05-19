@@ -128,8 +128,6 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-.vscode
-
 # Secrets
 cluster_config.yamlok
 config.yaml
@@ -154,3 +152,5 @@ backend/EvolveTest
 
 CLAUDE.md
 CLAUDE_NOTES.md
+
+**/.claude/settings.local.json
