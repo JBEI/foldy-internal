@@ -85,6 +85,13 @@ config_list = apply_diff_list_to_config(
             }
         ),
         ModelDiff(
+            name="reweightMinHoldoutPairsPatience30",
+            diffs={
+                "few_shot_model_params.do_validation_with_pair_fraction": 0.2,
+                "few_shot_model_params.train_patience": 30,
+            }
+        ),
+        ModelDiff(
             name="reweightMinT20",
             diffs={
                 "few_shot_model_params.importance_sampling_reweighting_strat": 'min',
@@ -96,15 +103,6 @@ config_list = apply_diff_list_to_config(
             diffs={
                 "few_shot_model_params.importance_sampling_reweighting_strat": 'max',
                 "few_shot_model_params.importance_sampling_temperature": 10.0
-            }
-        ),
-        ModelDiff(
-            name="reweightMinHoldoutPairsPatience10",
-            diffs={
-                "few_shot_model_params.importance_sampling_reweighting_strat": 'min',
-                "few_shot_model_params.importance_sampling_temperature": 10.0,
-                "few_shot_model_params.do_validation_with_pair_fraction": 0.2,
-                "few_shot_model_params.train_patience": 10,
             }
         ),
     ]

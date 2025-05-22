@@ -306,7 +306,7 @@ class PreferenceTrainer:
 
         best_val_loss = float("inf")
         best_val_loss_epoch = 0
-
+        best_model_state = None
         optimizer = torch.optim.Adam(
             self.model.parameters(), lr=learning_rate, weight_decay=weight_decay
         )
@@ -389,10 +389,17 @@ class PreferenceTrainer:
                     if val_loss < best_val_loss:
                         best_val_loss = val_loss
                         best_val_loss_epoch = epoch
+                        best_model_state = {
+                            k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()
+                        }
 
                     if patience is not None and epoch - best_val_loss_epoch >= patience:
-                        logger.debug(f"Early stopping at epoch {epoch+1}")
+                        logger.info(f"Early stopping at epoch {epoch+1}")
                         break
+        
+        if best_model_state is not None:
+            with torch.no_grad():
+                self.model.load_state_dict({k: v.to(self.device) for k,v in best_model_state.items()})
 
         return metrics
 

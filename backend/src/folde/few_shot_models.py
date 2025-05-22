@@ -460,7 +460,7 @@ class TorchMLPFewShotModel(FewShotModel):
         pretrain: bool = False,
         pretrain_epochs: int = 10,
         train_epochs: int = 50,
-        train_patience: int = 10,
+        train_patience: int | None = None,
         val_frequency: int = 10,
         use_mse_loss: bool = False,
         do_holdout_validation: bool = False,
