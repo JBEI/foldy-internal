@@ -182,7 +182,10 @@ def run_evolvepro(evolve_id: int):
         # Save debug info to file
         try:
             fsm.storage_manager.write_file(
-
+                evolve.fold_id,
+                str(evolve_directory / "debug_info.json"),
+                json.dumps(few_shot_model.get_debug_info()),
+            )
         except Exception as e:
             logging.error(f"Error saving debug info to file: {e}")
         fsm.storage_manager.write_file(

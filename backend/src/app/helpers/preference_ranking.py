@@ -159,6 +159,7 @@ def batch_bradley_terry_loss(
     targets = Y[pair_mask_bool]
     w = w_full[pair_mask_bool]
     w = w / w.sum()  # normalize within this split
+    w = w.detach()
     losses = F.binary_cross_entropy_with_logits(
         logits, targets, reduction="none"
     )
