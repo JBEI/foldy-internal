@@ -455,20 +455,20 @@ class TorchMLPFewShotModel(FewShotModel):
         dropout: float = 0.1,
         device: str | None = None,
         ensemble_size: int = 1,
+        learning_rate: float = 1e-4,
+        weight_decay: float = 1e-5,
         pretrain: bool = False,
         pretrain_epochs: int = 10,
         train_epochs: int = 50,
         train_patience: int = 10,
         val_frequency: int = 10,
-        do_holdout_validation: bool = False,
-        cheating_is_ok_i_accept_the_consequences: bool = False,
         use_mse_loss: bool = False,
-        use_exponential_learning_rate_decay: bool = False,
-        use_plateau_learning_rate_decay: bool = False,
-        learning_rate: float = 1e-4,
-        weight_decay: float = 1e-5,
+        do_holdout_validation: bool = False,
+        do_validation_with_pair_fraction: float | None = None,
         importance_sampling_reweighting_strat: str | None = None,
         importance_sampling_temperature: float | None = None,
+        use_exponential_learning_rate_decay: bool = False,
+        use_plateau_learning_rate_decay: bool = False,
         **kwargs,
     ):
         """Initialize the Random Forest regressor with any parameters supported by sklearn's RandomForestRegressor."""
@@ -485,18 +485,18 @@ class TorchMLPFewShotModel(FewShotModel):
         self.dropout = dropout
         self.device = device
         self.ensemble_size = ensemble_size
+        self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
         self.should_pretrain = pretrain
         self.pretrain_epochs = pretrain_epochs
         self.train_epochs = train_epochs
-        self.val_frequency = val_frequency
-        self.cheating_is_ok_i_accept_the_consequences = cheating_is_ok_i_accept_the_consequences
         self.train_patience = train_patience
+        self.val_frequency = val_frequency
         self.use_mse_loss = use_mse_loss
-        self.learning_rate = learning_rate
-        self.weight_decay = weight_decay
+        self.do_holdout_validation = do_holdout_validation
+        self.do_validation_with_pair_fraction = do_validation_with_pair_fraction
         self.importance_sampling_reweighting_strat = importance_sampling_reweighting_strat
         self.importance_sampling_temperature = importance_sampling_temperature
-        self.do_holdout_validation = do_holdout_validation
         self.use_exponential_learning_rate_decay = use_exponential_learning_rate_decay
         self.use_plateau_learning_rate_decay = use_plateau_learning_rate_decay
 
@@ -563,7 +563,7 @@ class TorchMLPFewShotModel(FewShotModel):
                 epochs=self.pretrain_epochs,
                 patience=20,
                 use_mse_loss=self.use_mse_loss,
-                val_frequency=10,
+                val_frequency=5,
                 learning_rate=1e-4 * 8,  # Increased LR to compensate for larger batches.
                 weight_decay=1e-5,
                 importance_sampling_reweighting_strat=None,
@@ -635,6 +635,7 @@ class TorchMLPFewShotModel(FewShotModel):
             X_train, X_val, X_test, y_train, y_val, y_test = None, None, None, None, None, None
 
             if self.do_holdout_validation:
+                assert self.do_validation_with_pair_fraction is None, f'Cannot do both holdout validation and specify a pair fraction to hold out.'
                 # Do the train / test split.
                 train_indices, val_indices = kf_splits[model_idx]
                 train_seqids = measured_activity_series.index[train_indices]
@@ -659,7 +660,7 @@ class TorchMLPFewShotModel(FewShotModel):
                 val_activity_labels=y_val,
                 test_embeddings=X_test,
                 test_activity_labels=y_test,
-                batch_size=min(16, y_train.shape[0]),
+                batch_size=max(16, y_train.shape[0]),
                 epochs=self.train_epochs,
                 patience=self.train_patience,
                 # patience=None,
@@ -667,6 +668,7 @@ class TorchMLPFewShotModel(FewShotModel):
                 learning_rate=self.learning_rate,
                 weight_decay=self.weight_decay,
                 val_frequency=self.val_frequency,
+                do_validation_with_pair_fraction=self.do_validation_with_pair_fraction,
                 importance_sampling_reweighting_strat=self.importance_sampling_reweighting_strat,
                 importance_sampling_temperature=self.importance_sampling_temperature,
                 use_exponential_learning_rate_decay=self.use_exponential_learning_rate_decay,

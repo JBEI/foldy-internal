@@ -109,6 +109,8 @@ def run_evolvepro(evolve_id: int):
         activity_df, embedding_df, naturalness_df = process_and_validate_evolve_input_files(
             wt_aa_seq, raw_activity_df, raw_embedding_df, raw_naturalness_df
         )
+        assert embedding_df is not None
+        assert naturalness_df is not None
         logging.info(
             f"Found {activity_df.shape[0]} activity measurements among {activity_df.index.unique().shape[0]} mutants"
         )
@@ -142,6 +144,11 @@ def run_evolvepro(evolve_id: int):
             **params,
         )
 
+        few_shot_model.pretrain(
+            augmented_naturalness_series,
+            embedding_df.embedding,
+        )
+
         few_shot_model.fit(
             augmented_naturalness_series,
             embedding_df.embedding,
@@ -171,6 +178,13 @@ def run_evolvepro(evolve_id: int):
             )
         except Exception as e:
             logging.error(f"Error computing relevant measured mutants: {e}")
+        
+        # Save debug info to file
+        try:
+            fsm.storage_manager.write_file(
+
+        except Exception as e:
+            logging.error(f"Error saving debug info to file: {e}")
         fsm.storage_manager.write_file(
             evolve.fold_id,
             str(evolve_directory / "predicted_activity.csv"),

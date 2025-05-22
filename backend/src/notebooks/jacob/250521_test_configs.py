@@ -11,7 +11,7 @@ from folde.util import apply_diff_list_to_config
 
 
 # Example configuration
-NAME = '250521_new_weights_who_this'
+NAME = '250522-holdup-pairs'
 
 base_config = FolDEModelConfig(
     name="FolDE",
@@ -57,6 +57,12 @@ config_list = apply_diff_list_to_config(
             }
         ),
         ModelDiff(
+            name="holdoutPairs",
+            diffs={
+                "few_shot_model_params.do_validation_with_pair_fraction": 0.2,
+            }
+        ),
+        ModelDiff(
             name="reweightMinT5",
             diffs={
                 "few_shot_model_params.importance_sampling_reweighting_strat": 'min',
@@ -78,11 +84,11 @@ config_list = apply_diff_list_to_config(
             }
         ),
         ModelDiff(
-            name="reweightMinHoldout",
+            name="reweightMinHoldoutPairs",
             diffs={
                 "few_shot_model_params.importance_sampling_reweighting_strat": 'min',
                 "few_shot_model_params.importance_sampling_temperature": 10.0,
-                "few_shot_model_params.do_holdout_validation": True,
+                "few_shot_model_params.do_validation_with_pair_fraction": 0.2,
             }
         ),
         ModelDiff(
