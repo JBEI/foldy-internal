@@ -626,9 +626,10 @@ class TorchMLPFewShotModel(FewShotModel):
             for idx, (model, trainer) in enumerate(self.finetuned_model_and_trainer_list):
                 model.load_state_dict(self.pretrained_model_state_dicts[idx])
         
-
-        kf = KFold(n_splits=self.ensemble_size, shuffle=True, random_state=self.base_random_state)
-        kf_splits = list(kf.split(measured_activity_series.index))
+        kf_splits = None
+        if self.do_holdout_validation:
+            kf = KFold(n_splits=self.ensemble_size, shuffle=True, random_state=self.base_random_state)
+            kf_splits = list(kf.split(measured_activity_series.index))
 
         self.finetune_metrics = []
         for model_idx, (model, trainer) in enumerate(self.finetuned_model_and_trainer_list):
