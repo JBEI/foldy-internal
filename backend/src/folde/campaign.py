@@ -5,10 +5,13 @@ This module provides functions for simulating protein engineering campaigns
 and evaluating different model configurations.
 """
 
+import json
 import logging
+from pathlib import Path
 import random
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Union
+import re
 
 import numpy as np
 import pandas as pd
@@ -27,7 +30,7 @@ from folde.types import (
     SimulationResult,
     SingleConfigCampaignResult,
 )
-from folde.util import get_consensus_scores
+from folde.util import get_consensus_scores, get_top_percentile_recall_score, top_k_mask
 from folde.zero_shot_models import get_zero_shot_model
 
 logger = logging.getLogger(__name__)
@@ -83,7 +86,7 @@ class CampaignWorldState:
             assert seq_id not in self.measured_seq_ids, f"seq_id {seq_id} already measured"
         self.measured_seq_ids.extend(seq_ids)
 
-    def get_unmeasured_variants_activity_df(self) -> pd.Series:
+    def get_unmeasured_activity_series(self) -> pd.Series:
         return self.golden_activity_series.loc[
             ~self.golden_activity_series.index.isin(self.measured_seq_ids)
         ]
@@ -158,7 +161,7 @@ def _run_single_simulation(
     for round_num in range(1, max_rounds + 1):
         logger.debug(f"Running round {round_num}")
 
-        if world_state.get_unmeasured_variants_activity_df().shape[0] == 0:
+        if len(world_state.get_unmeasured_activity_series()) == 0:
             logger.info("No more unmeasured variants, ending simulation")
             break
 
@@ -167,12 +170,25 @@ def _run_single_simulation(
         predicted_activity_ensemble: List[pd.Series] = []
         held_out_prediction_ensemble: List[pd.Series] = []
 
+        # Get the zero-shot model
+        zero_shot_model = get_zero_shot_model(
+            config.zero_shot_model_name, **config.zero_shot_model_params
+        )
+
+        # Get few-shot model
+        few_shot_model = get_few_shot_model(
+            config.few_shot_model_name,
+            random_state=random_seed,
+            **config.few_shot_model_params,
+        )
+
+        few_shot_model.pretrain(
+            whole_world_naturalness_series,
+            whole_world_embedding_series,
+        )
+
         # First round: always use zero-shot model
         if round_num == 1:
-            # Get the zero-shot model
-            zero_shot_model = get_zero_shot_model(
-                config.zero_shot_model_name, **config.zero_shot_model_params
-            )
             # Get top variants using zero-shot model's get_top_n method
             top_seq_ids, predicted_activity_ensemble = zero_shot_model.get_top_n(
                 round_size,
@@ -187,14 +203,6 @@ def _run_single_simulation(
 
         # Subsequent rounds: use few-shot model if specified
         else:
-
-            # Get few-shot model
-            few_shot_model = get_few_shot_model(
-                config.few_shot_model_name,
-                random_state=random_seed,
-                **config.few_shot_model_params,
-            )
-
             # Convert list of embeddings to numpy array
             train_activity_series = world_state.get_measured_activity_series()
 
@@ -202,6 +210,9 @@ def _run_single_simulation(
                 whole_world_naturalness_series,
                 whole_world_embedding_series,
                 train_activity_series,
+                held_out_naturalness_series,
+                held_out_embedding_series,
+                held_out_activity_series,
             )
 
             # Use the get_top_n method from FewShotModel
@@ -240,12 +251,14 @@ def _run_single_simulation(
                 type(golden_activity) == float or type(golden_activity) == np.float64
             ), f"golden_activity must be a float, got {type(golden_activity)}"
             percentile = all_percentiles.loc[top_seq_id]
+            predicted_activity_stddev = float(np.std([pa.loc[top_seq_id] for pa in predicted_activity_ensemble]))
             mutant_metrics_list.append(
                 MutantMetrics(
                     seq_id=top_seq_id,
                     round_found=round_num,
-                    activity=golden_activity,
+                    activity=float(golden_activity),
                     predicted_activity=consensus_predicted_activity.loc[top_seq_id],
+                    predicted_activity_stddev=predicted_activity_stddev,
                     percentile=percentile,
                     relevant_mutants=[],  # TODO(jacob): Compute relevant mutants
                 )
@@ -268,7 +281,7 @@ def _run_single_simulation(
             consensus_held_out_predictions.values,
         )[0]
 
-        def get_held_out_stats_for_percentile(percentile):
+        def old_get_held_out_stats_for_percentile(percentile):
             """Returns some stats on the held out predictions for a percentile, zero to 100 (eg 1.0 for top 1 percent)."""
 
             def top_k_mask(series: pd.Series) -> pd.Series:
@@ -292,8 +305,28 @@ def _run_single_simulation(
             )
             return held_out_stat_recall, held_out_stat_auc
 
+
+        def get_held_out_stats_for_percentile(percentile):
+            """Returns some stats on the held out predictions for a percentile, zero to 100 (eg 1.0 for top 1 percent)."""
+            
+
+            assert held_out_activity_series.index.equals(consensus_held_out_predictions.index)
+            held_out_stat_recall = get_top_percentile_recall_score(
+                held_out_activity_series.to_numpy(), consensus_held_out_predictions.to_numpy(),  percentile,
+            )
+
+            held_out_stat_auc = roc_auc_score(
+                top_k_mask(held_out_activity_series, percentile),
+                consensus_held_out_predictions,
+            )
+            return held_out_stat_recall, held_out_stat_auc
+
         held_out_1pct_recall, held_out_1pct_auc = get_held_out_stats_for_percentile(1)
         held_out_10pct_recall, held_out_10pct_auc = get_held_out_stats_for_percentile(10)
+
+
+
+        old_held_out_1pct_recall, old_held_out_1pct_auc = old_get_held_out_stats_for_percentile(1)
 
         round_metrics = RoundMetrics(
             round_num=round_num,
@@ -304,8 +337,15 @@ def _run_single_simulation(
                 "held_out_1pct_auc": float(held_out_1pct_auc),  # type: ignore
                 "held_out_10pct_recall": float(held_out_10pct_recall),  # type: ignore
                 "held_out_10pct_auc": float(held_out_10pct_auc),  # type: ignore
+                "old_held_out_1pct_recall": float(old_held_out_1pct_recall),  # type: ignore
+                "old_held_out_1pct_auc": float(old_held_out_1pct_auc),  # type: ignore
             },
         )
+
+        if round_num == 1:
+            round_metrics.misc['zero_shot_debug_info'] = zero_shot_model.get_debug_info()
+        else:
+            round_metrics.misc['few_shot_debug_info'] = few_shot_model.get_debug_info()
 
         results.rounds = round_num
         results.round_metrics.append(round_metrics)
@@ -431,7 +471,7 @@ def simulate_campaign(
         campaign_result.max_activity = activity_df[activity_column].max()
 
         single_model_campaign_results = None
-        with ProcessPoolExecutor() as executor:
+        with ProcessPoolExecutor(max_workers=10) as executor:
         # with ThreadPoolExecutor() as executor:
             futures = []
             for sim_idx in range(number_of_simulations):
@@ -473,3 +513,139 @@ def simulate_campaigns(name: str, dms_ids: List[str], **kwargs) -> ModelEvaluati
     for dms_id in dms_ids:
         results.campaign_results.append(simulate_campaign(dms_id, **kwargs))
     return results
+
+
+
+# --------------------------------------------------------------------------- #
+# New, config‑centric checkpointing helper
+# --------------------------------------------------------------------------- #
+def simulate_campaigns_with_config_checkpoints(
+    eval_prefix: str,
+    dms_ids: List[str],
+    config_list: List[FolDEModelConfig],
+    checkpoint_dir: str,
+    overwrite: bool = False,
+    **kwargs,
+) -> Dict[str, ModelEvaluation]:
+    """Run campaigns with *per-config* checkpoint files.
+
+    Each ``FolDEModelConfig`` gets its own ``ModelEvaluation`` JSON file named
+    ``{eval_prefix}_{config_name}.json`` in ``checkpoint_dir``.  The outer loop
+    iterates over configs so the expensive dataset loading happens only once
+    per config.
+
+    Parameters
+    ----------
+    eval_prefix
+        Prefix for checkpoint filenames.
+    dms_ids
+        List of DMS dataset identifiers to evaluate.
+    config_list
+        Ordered list of model configs to evaluate.
+    checkpoint_dir
+        Where to store ``*.json`` checkpoint files.
+    overwrite
+        If *True*, always start fresh for every config even if a checkpoint is
+        present.
+    **kwargs
+        Passed straight through to :func:`simulate_campaign`.  Must include
+        ``round_size`` and ``number_of_simulations`` at minimum.
+
+    Returns
+    -------
+    Dict[str, ModelEvaluation]
+        Mapping ``config.name -> ModelEvaluation`` with all results.
+    """
+    cp_dir = Path(checkpoint_dir)
+    cp_dir.mkdir(parents=True, exist_ok=True)
+
+    # Validate config names early
+    for cfg in config_list:
+        cfg_name = cfg.name
+        if not re.match(r"^[A-Za-z0-9.\-]+$", cfg_name):
+            raise ValueError(
+                f"Config name '{cfg_name}' contains invalid characters. "
+                "Allowed characters are A-Z, a-z, 0-9, hyphen (-) and period (.). "
+                "Underscores and other characters are not permitted."
+            )
+
+    # ------------------------------------------------------------------ #
+    # First pass – validate existing checkpoints so we fail fast on
+    # conflicts *before* starting any expensive work.
+    # ------------------------------------------------------------------ #
+    for cfg in config_list:
+        cfg_name = cfg.name
+        cp_path = cp_dir / f"{eval_prefix}_{cfg_name}.json"
+
+        if cp_path.exists() and not overwrite:
+            with cp_path.open() as f:
+                data = json.load(f)
+            eval_obj = ModelEvaluation.model_validate(data)
+
+            # Sanity‑check that the stored config matches exactly
+            if not eval_obj.campaign_results:
+                raise ValueError(
+                    f"Checkpoint {cp_path} exists but contains no campaign_results."
+                )
+            stored_cfg = eval_obj.campaign_results[0].config_results[0].config
+            if stored_cfg.model_dump() != cfg.model_dump():
+                raise ValueError(
+                    f"Config mismatch for checkpoint {cp_path}. "
+                    "Pass overwrite=True or pick a new prefix."
+                )
+
+            # Ensure stored DMS IDs are a subset of the requested list
+            stored_dms = {cr.dms_id for cr in eval_obj.campaign_results}
+            if not stored_dms.issubset(set(dms_ids)):
+                raise ValueError(
+                    f"Checkpoint {cp_path} contains DMS IDs not requested in this run "
+                    f"({sorted(stored_dms - set(dms_ids))})."
+                )
+
+    # ------------------------------------------------------------------ #
+    # Second pass – run / resume each config
+    # ------------------------------------------------------------------ #
+    all_evals: Dict[str, ModelEvaluation] = {}
+    for cfg in config_list:
+        cfg_name = cfg.name
+        cp_path = cp_dir / f"{eval_prefix}_{cfg_name}.json"
+
+        if cp_path.exists() and not overwrite:
+            with cp_path.open() as f:
+                data = json.load(f)
+            eval_obj = ModelEvaluation.model_validate(data)
+            completed_dms = {cr.dms_id for cr in eval_obj.campaign_results}
+            logger.info(
+                f"Resuming config '{cfg_name}' with {len(completed_dms)} / "
+                f"{len(dms_ids)} DMS datasets complete."
+            )
+        else:
+            eval_obj = ModelEvaluation(
+                name=f"{eval_prefix}_{cfg_name}", campaign_results=[]
+            )
+            completed_dms: set[str] = set()
+
+        # Inner loop over DMS datasets
+        for dms_id in dms_ids:
+            if dms_id in completed_dms:
+                logger.info(
+                    f"[{cfg_name}] Skipping already‑completed DMS '{dms_id}'."
+                )
+                continue
+
+            logger.info(f"[{cfg_name}] Simulating DMS '{dms_id}'.")
+            eval_obj.campaign_results.append(
+                simulate_campaign(
+                    dms_id,
+                    config_list=[cfg],
+                    **kwargs,
+                )
+            )
+
+            # Write / update checkpoint
+            with cp_path.open("w") as f:
+                json.dump(eval_obj.model_dump(), f, indent=2)
+
+        all_evals[cfg_name] = eval_obj
+
+    return all_evals

@@ -22,6 +22,7 @@ class MutantMetrics(BaseModel):
     round_found: int
     activity: float
     predicted_activity: float
+    predicted_activity_stddev: float | None = None
     percentile: float
     relevant_mutants: List[str]
 
@@ -62,3 +63,9 @@ class CampaignResult(BaseModel):
 class ModelEvaluation(BaseModel):
     name: str
     campaign_results: List[CampaignResult]
+
+
+class ModelDiff(BaseModel):
+    name: str
+    # key is the path to the parameter, value is the new value
+    diffs: dict[str, Any]

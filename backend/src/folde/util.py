@@ -1,12 +1,14 @@
 import logging
+from pandas.core.frame import DataFrame
 from typing import Any, List, Tuple, Union, cast
 
 import numpy as np
 import pandas as pd
-from folde.types import ModelEvaluation
+from folde.types import ModelEvaluation, FolDEModelConfig, ModelDiff
 from numpy.typing import NDArray
 from pandas import DataFrame
 from scipy.special import softmax
+from sklearn.metrics import recall_score
 
 
 def get_consensus_scores(pred_list: List[pd.Series], decision_mode: str) -> pd.Series:
@@ -91,6 +93,30 @@ def internal_sample_n_indices(
     return chosen_indices
 
 
+def top_k_mask(series: pd.Series, percentile: float) -> pd.Series:
+    k = max(1, int(np.ceil(len(series) * percentile / 100)))
+    top_idx = series.nlargest(k).index  # strict ranking
+    out = pd.Series(False, index=series.index)
+    out.loc[top_idx] = True
+    return out
+
+
+def get_top_percentile_recall_score(target: np.ndarray, pred: np.ndarray, pct: float) -> float:
+    target = np.asarray(target).ravel()      # <-- makes it 1-D
+    pred   = np.asarray(pred).ravel()
+    assert target.size == pred.size, "arrays must be same length"
+
+    n = target.size
+    k = max(1, int(np.ceil(n * pct / 100)))
+    assert k <= n, f'k must be less than or equal to n, got k={k} and n={n}. target shape {target.shape}, pred shape {pred.shape} pct {pct}'
+        
+
+    top_tgt = np.argpartition(target, n - k)[n - k:]
+    top_prd = np.argpartition(pred,   n - k)[n - k:]
+
+    # recall = |intersection| / k
+    return np.intersect1d(top_tgt, top_prd).size / k
+
 def convert_compaign_result_collection_to_df(
     model_evaluation: ModelEvaluation,
 ) -> Tuple[DataFrame, DataFrame]:
@@ -155,3 +181,83 @@ def convert_compaign_result_collection_to_df(
     round_metrics_df = pd.concat(round_metrics_df_list)
 
     return mutant_df, round_metrics_df
+
+
+def get_training_loss_df(results: ModelEvaluation, round_idx: int) -> pd.DataFrame:
+    train_df = pd.DataFrame()
+    for campaign_results in results.campaign_results:
+        for config_results in campaign_results.config_results:
+            for sim_idx, sim_result in enumerate(config_results.simulation_results):
+                few_shot_info = sim_result.round_metrics[round_idx].misc['few_shot_debug_info']
+                for model_idx in range(len(few_shot_info['pretrain_metrics'])):
+                    pretrain_train_loss_list = few_shot_info['pretrain_metrics'][model_idx]['train_loss']
+                    pretrain_val_loss_list = few_shot_info['pretrain_metrics'][model_idx]['val_loss']
+                    finetune_train_loss_list = few_shot_info['finetune_metrics'][model_idx]['train_loss']
+                    finetune_val_loss_list = few_shot_info['finetune_metrics'][model_idx]['val_loss']
+                    finetune_test_recall_1pct_list = few_shot_info['finetune_metrics'][model_idx]['test_recall_1pct']
+                    model_train_df = pd.concat([pd.DataFrame({  
+                        'loss_type': 'pretrain_train',
+                        'log_step': list(range(len(pretrain_train_loss_list))),
+                        'loss': pretrain_train_loss_list,
+                    }), pd.DataFrame({
+                        'loss_type': 'pretrain_val',
+                        'log_step': list(range(len(pretrain_val_loss_list))),
+                        'loss': pretrain_val_loss_list,
+                    }), pd.DataFrame({
+                        'loss_type': 'finetune_train',
+                        'log_step': list(range(len(finetune_train_loss_list))),
+                        'loss': finetune_train_loss_list,   
+                    }), pd.DataFrame({
+                        'loss_type': 'finetune_val',
+                        'log_step': list(range(len(finetune_val_loss_list))),
+                        'loss': finetune_val_loss_list,
+                    }), pd.DataFrame({
+                        'loss_type': 'finetune_recall_1pct',
+                        'log_step': list(range(len(finetune_test_recall_1pct_list))),
+                        'loss': finetune_test_recall_1pct_list,
+                    })], ignore_index=True)
+                    
+                    model_train_df['model_idx'] = model_idx
+                    model_train_df['sim_idx'] = sim_idx
+                    model_train_df['dms_id'] = campaign_results.dms_id
+                    model_train_df['config_name'] = config_results.config.name
+                    train_df = pd.concat([train_df, model_train_df])
+    return train_df
+
+
+def apply_diff_to_dict_recursive(
+    config_dict: dict[str, Any],
+    path_components: list[str],
+    new_value: Any,
+) -> None:
+    assert isinstance(path_components, list)
+    if len(path_components) == 1:
+        config_dict[path_components[0]] = new_value
+        return
+    else:
+        next_component = path_components[0]
+        if next_component not in config_dict:
+            raise ValueError(f"Component {next_component} not found in config_dict")
+        if type(config_dict[next_component]) is not dict:
+            raise ValueError(f"Component {next_component} is not a dict")
+        apply_diff_to_dict_recursive(config_dict[next_component], path_components[1:], new_value)
+
+
+def apply_diff_list_to_config(
+    folde_model_config_base: FolDEModelConfig,
+    model_diffs: List[ModelDiff],
+) -> List[FolDEModelConfig]:
+    original_config = folde_model_config_base.model_copy(deep=True, update={"name": folde_model_config_base.name + '-base'})
+    config_list = [original_config]
+    for model_diff in model_diffs:
+        folde_model_config_dict = folde_model_config_base.model_dump()
+        for param_path, new_value in model_diff.diffs.items():
+            apply_diff_to_dict_recursive(
+                folde_model_config_dict,
+                param_path.split("."),
+                new_value,
+            )
+        folde_model_config = FolDEModelConfig(**folde_model_config_dict)
+        folde_model_config.name = f"{folde_model_config_base.name}-{model_diff.name}"
+        config_list.append(folde_model_config)
+    return config_list

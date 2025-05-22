@@ -17,7 +17,6 @@
     "python.pythonPath": "./.venv/bin/python",
     "editor.detectIndentation": false,
     "docker.enableDockerComposeLanguageService": false,
-    "basedpyright.analysis.extraPaths": [
-        "\"${workspaceFolder}/backend\""
-    ]
+    "cursor.general.disableHttp2": true,
 }
+// BasedPyright settings in vscode are ignored when using pyrightconfig.json is provided.

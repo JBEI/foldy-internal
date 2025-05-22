@@ -1,7 +1,7 @@
 {
     "venvPath": ".",
     "venv": ".venv",
-    "pythonPath": "${workspaceFolder}/.venv/bin/python",
+    // "pythonPath": "${workspaceFolder}/.venv/bin/python",
     "extraPaths": ["backend/src"],
     "include": ["backend/src"],
     "executionEnvironments": [
@@ -9,5 +9,6 @@
         "root": "backend/src",
         "extraPaths": ["backend/src"]
       }
-    ]
+    ],
+    "typeCheckingMode": "standard"
 }

@@ -6,34 +6,35 @@ target-version = ['py312']
 profile = "black"
 line_length = 100
 
-[tool.pyright]
-pythonVersion = "3.12"
-include = ["backend/src"]
-exclude = [
-    "**/node_modules",
-    "**/__pycache__",
-]
-typeCheckingMode = "basic"
-reportMissingImports = false
-reportMissingTypeStubs = false
-useLibraryCodeForTypes = true
-reportOptionalMemberAccess = false
-reportOptionalSubscript = false
-reportOptionalCall = false
-reportOptionalIterable = false
-reportOptionalContextManager = false
-reportOptionalOperand = false
-reportUnknownMemberType = false
-reportUnknownArgumentType = false
-reportUnknownParameterType = false
-
-# Test-specific settings - more permissive
-[[tool.pyright.overrides]]
-files = ["src/**/tests/**", "src/**/test_*.py"]
-reportUnknownMemberType = false
-reportAttributeAccessIssue = false
-reportCallIssue = false
-reportArgumentType = false
+# BasedPyright settings in pyproject.toml are ignored if we set pyrightconfig.json.
+# [tool.pyright]
+# pythonVersion = "3.12"
+# include = ["backend/src"]
+# exclude = [
+#     "**/node_modules",
+#     "**/__pycache__",
+# ]
+# typeCheckingMode = "basic"
+# reportMissingImports = false
+# reportMissingTypeStubs = false
+# useLibraryCodeForTypes = true
+# reportOptionalMemberAccess = false
+# reportOptionalSubscript = false
+# reportOptionalCall = false
+# reportOptionalIterable = false
+# reportOptionalContextManager = false
+# reportOptionalOperand = false
+# reportUnknownMemberType = false
+# reportUnknownArgumentType = false
+# reportUnknownParameterType = false
+# 
+# # Test-specific settings - more permissive
+# [[tool.pyright.overrides]]
+# files = ["src/**/tests/**", "src/**/test_*.py"]
+# reportUnknownMemberType = false
+# reportAttributeAccessIssue = false
+# reportCallIssue = false
+# reportArgumentType = false
 
 # Handle pandas-specific issues in data-heavy modules
 [[tool.pyright.overrides]]
@@ -112,6 +113,7 @@ dependencies = [
     "ipykernel==6.29.5",
     "ipywidgets==8.1.5",
     "tqdm==4.67.1",
+    "statannotations==0.7.2",
 ]
 
 [project.optional-dependencies]
