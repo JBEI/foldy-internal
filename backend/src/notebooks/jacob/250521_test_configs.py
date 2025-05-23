@@ -11,7 +11,7 @@ from folde.util import apply_diff_list_to_config
 
 
 # Example configuration
-NAME = '250522-holdup-pairs'
+NAME = '250523-final-error'
 
 base_config = FolDEModelConfig(
     name="FolDE",
@@ -32,10 +32,10 @@ base_config = FolDEModelConfig(
         "embedding_dim": 960,
         "hidden_dims": [100, 50],
         "dropout": 0.2,
-        "learning_rate": 0.001,
+        "learning_rate": 3e-4,
         "weight_decay": 1e-5,
         "train_epochs": 200,
-        "train_patience": 1000,
+        "train_patience": 40,
         "val_frequency": 10,
     },
 )
@@ -44,65 +44,42 @@ config_list = apply_diff_list_to_config(
     base_config,
     [
         ModelDiff(
-            name="holdout",
-            diffs={
-                "few_shot_model_params.do_holdout_validation": True,
-            }
-        ),
-        ModelDiff(
-            name="holdoutNoUCB",
-            diffs={
-                "few_shot_model_params.do_holdout_validation": True,
-                "few_shot_model_params.decision_mode": "mean",
-            }
-        ),
-        ModelDiff(
-            name="holdoutPairs",
+            name="pairHoldout",
             diffs={
                 "few_shot_model_params.do_validation_with_pair_fraction": 0.2,
             }
         ),
         ModelDiff(
-            name="reweightMinHoldoutPairs",
+            name="noNormal",
             diffs={
-                "few_shot_model_params.importance_sampling_reweighting_strat": 'min',
-                "few_shot_model_params.importance_sampling_temperature": 10.0,
-                "few_shot_model_params.do_validation_with_pair_fraction": 0.2,
+                "few_shot_model_params.disable_ensemble_normalization": True,
             }
         ),
         ModelDiff(
-            name="reweightMinT5",
-            diffs={
-                "few_shot_model_params.importance_sampling_reweighting_strat": 'min',
-                "few_shot_model_params.importance_sampling_temperature": 5.0
-            }
-        ),
-        ModelDiff(
-            name="reweightMinT10",
-            diffs={
-                "few_shot_model_params.importance_sampling_reweighting_strat": 'min',
-                "few_shot_model_params.importance_sampling_temperature": 10.0
-            }
-        ),
-        ModelDiff(
-            name="reweightMinHoldoutPairsPatience30",
+            name="pairHoldout-liar",
             diffs={
                 "few_shot_model_params.do_validation_with_pair_fraction": 0.2,
-                "few_shot_model_params.train_patience": 30,
+                "few_shot_model_params.decision_mode": "constantliar",
             }
         ),
         ModelDiff(
-            name="reweightMinT20",
+            name="pairHoldout-krigingbeliever",
             diffs={
-                "few_shot_model_params.importance_sampling_reweighting_strat": 'min',
-                "few_shot_model_params.importance_sampling_temperature": 20.0
+                "few_shot_model_params.do_validation_with_pair_fraction": 0.2,
+                "few_shot_model_params.decision_mode": "krigingbeliever",
             }
         ),
         ModelDiff(
-            name="reweightMax",
+            name="liar",
             diffs={
-                "few_shot_model_params.importance_sampling_reweighting_strat": 'max',
-                "few_shot_model_params.importance_sampling_temperature": 10.0
+                "few_shot_model_params.decision_mode": "constantliar",
+            }
+        ),
+        ModelDiff(
+            name="pairHoldout-nopatience",
+            diffs={
+                "few_shot_model_params.do_validation_with_pair_fraction": 0.2,
+                "few_shot_model_params.train_patience": None,
             }
         ),
     ]

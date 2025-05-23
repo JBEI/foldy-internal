@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import KFold
 from app.helpers.preference_ranking import BradleyTerryMLP, PreferenceTrainer, create_preference_model
-from folde.util import get_consensus_scores, internal_sample_n_indices
+from folde.util import constant_liar_sample, get_consensus_scores, internal_sample_n_indices
 from numpy.typing import NDArray
 from pandas import DataFrame, Series
 from sklearn.ensemble import RandomForestRegressor as SklearnRandomForestRegressor
@@ -30,7 +30,9 @@ class FewShotModel(ABC):
     """Abstract base class for few-shot protein property prediction models."""
 
     def __init__(
-        self, decision_mode: str = "median", temperature: float = 0.0, epsilon: float = 0.0
+        self, decision_mode: str = "median",
+        temperature: float = 0.0,
+        epsilon: float = 0.0,
     ):
         self.decision_mode = decision_mode
         self.temperature = temperature
@@ -90,17 +92,35 @@ class FewShotModel(ABC):
         # Convert list of embeddings to numpy array
         ensemble_of_predictions = self.predict(naturalness_series, embedding_series)
 
-        ensemble_scores = get_consensus_scores(ensemble_of_predictions, self.decision_mode)
-
-        chosen_indices = internal_sample_n_indices(
-            ensemble_scores.to_numpy(),
-            n,
-            temperature=self.temperature,
-            epsilon=self.epsilon,
-        )
+        if self.decision_mode == 'constantliar' or self.decision_mode == 'krigingbeliever':
+            ensemble_scores = get_consensus_scores(ensemble_of_predictions, 'ucb')
+            pred_df = {
+                f'model_{ii}': ensemble_of_predictions[ii]
+                for ii in range(len(ensemble_of_predictions))
+            }
+            pred_df['score'] = ensemble_scores
+            pred_df = pd.DataFrame(pred_df, index=ensemble_of_predictions[0].index)\
+                .sort_values('score', ascending=False)\
+                .drop(columns=['score'])
+            chosen_seq_ids = constant_liar_sample(
+                pred_df.to_numpy(),
+                pred_df.index.to_numpy(),
+                n,
+                beta=1.0,
+                choice_of_baseline='min' if self.decision_mode == 'constantliar' else 'mean',
+            )
+        else:
+            ensemble_scores = get_consensus_scores(ensemble_of_predictions, self.decision_mode)
+            chosen_indices = internal_sample_n_indices(
+                ensemble_scores.to_numpy(),
+                n,
+                temperature=self.temperature,
+                epsilon=self.epsilon,
+            )
+            chosen_seq_ids = naturalness_series.index[chosen_indices].tolist()
 
         return (
-            naturalness_series.index[chosen_indices].tolist(),
+            chosen_seq_ids,
             ensemble_of_predictions,
         )
 
@@ -455,10 +475,12 @@ class TorchMLPFewShotModel(FewShotModel):
         dropout: float = 0.1,
         device: str | None = None,
         ensemble_size: int = 1,
+        disable_ensemble_normalization: bool = False,
         learning_rate: float = 1e-4,
         weight_decay: float = 1e-5,
         pretrain: bool = False,
         pretrain_epochs: int = 10,
+        pretrain_val_frequency: int = 5,
         train_epochs: int = 50,
         train_patience: int | None = None,
         val_frequency: int = 10,
@@ -485,10 +507,12 @@ class TorchMLPFewShotModel(FewShotModel):
         self.dropout = dropout
         self.device = device
         self.ensemble_size = ensemble_size
+        self.disable_ensemble_normalization = disable_ensemble_normalization
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.should_pretrain = pretrain
         self.pretrain_epochs = pretrain_epochs
+        self.pretrain_val_frequency = pretrain_val_frequency
         self.train_epochs = train_epochs
         self.train_patience = train_patience
         self.val_frequency = val_frequency
@@ -543,9 +567,12 @@ class TorchMLPFewShotModel(FewShotModel):
         single_mutant_embeddings = embedding_series[is_single_mutant]
 
         # Create pretrained version of each model.
-        for model, trainer in self._create_model_ensemble():
-            validation_seqids = np.random.choice(
-                single_mutant_embeddings.index, size=int(single_mutant_embeddings.shape[0] * 0.2), replace=False
+        for ii, (model, trainer) in enumerate(self._create_model_ensemble()):
+            rng = np.random.RandomState(self.base_random_state + ii)
+            validation_seqids = rng.choice(
+                single_mutant_embeddings.index,
+                size=int(single_mutant_embeddings.shape[0] * 0.2),
+                replace=False
             )
             train_seqids = np.setdiff1d(single_mutant_embeddings.index, validation_seqids)
 
@@ -563,7 +590,7 @@ class TorchMLPFewShotModel(FewShotModel):
                 epochs=self.pretrain_epochs,
                 patience=20,
                 use_mse_loss=self.use_mse_loss,
-                val_frequency=5,
+                val_frequency=self.pretrain_val_frequency,
                 learning_rate=1e-4 * 8,  # Increased LR to compensate for larger batches.
                 weight_decay=1e-5,
                 importance_sampling_reweighting_strat=None,
@@ -694,19 +721,24 @@ class TorchMLPFewShotModel(FewShotModel):
         if not self.is_fitted:
             raise ValueError("Model has not been trained yet. Call fit() first.")
         X = np.array([np.array(emb) for emb in embedding_series.values])
-        return [
-            pd.Series(
-                t.predict_scores(X),
-                index=embedding_series.index,
-            )
-            for _, t in self.finetuned_model_and_trainer_list
-        ]
+        pred_series_list = []
+        for _, t in self.finetuned_model_and_trainer_list:
+            score_array = t.predict_scores(X)
+            if not self.disable_ensemble_normalization:
+                score_array = (score_array - score_array.mean(axis=0)) / score_array.std(axis=0)
+            pred_series_list.append(pd.Series(score_array, index=embedding_series.index))
+        return pred_series_list
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information for the Random Forest."""
         if not self.is_fitted:
             raise ValueError("Model has not been trained yet. Call fit() first.")
-        return {"pretrain_metrics": self.pretrain_metrics, "finetune_metrics": self.finetune_metrics}
+        return {
+            "pretrain_metrics": self.pretrain_metrics,
+            'pretrain_val_frequency': self.pretrain_val_frequency,
+            "finetune_metrics": self.finetune_metrics,
+            'finetune_val_frequency': self.val_frequency,
+        }
 
 
 def is_valid_few_shot_model_name(model_name: str) -> bool:
