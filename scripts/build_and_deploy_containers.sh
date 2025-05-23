@@ -33,8 +33,6 @@ echo "  GOOGLE_CLOUD_ARTIFACT_REPO: $GOOGLE_CLOUD_ARTIFACT_REPO"
 echo "  VERSION: $VERSION"
 echo "  BACKEND_URL: $BACKEND_URL"
 echo "  INSTITUTION: $INSTITUTION"
-# TODO: delete
-# echo "  FOLDY ALPHAFOLD TAG: $FOLDY_ALPHAFOLD_TAG"
 
 FRONTEND_TAG=$GOOGLE_CLOUD_REGION-docker.pkg.dev/$GOOGLE_CLOUD_PROJECT_ID/$GOOGLE_CLOUD_ARTIFACT_REPO/frontend:$VERSION
 BACKEND_TAG=$GOOGLE_CLOUD_REGION-docker.pkg.dev/$GOOGLE_CLOUD_PROJECT_ID/$GOOGLE_CLOUD_ARTIFACT_REPO/backend:$VERSION
@@ -42,20 +40,12 @@ WORKER_TAG=$GOOGLE_CLOUD_REGION-docker.pkg.dev/$GOOGLE_CLOUD_PROJECT_ID/$GOOGLE_
 WORKER_ESM_TAG=$GOOGLE_CLOUD_REGION-docker.pkg.dev/$GOOGLE_CLOUD_PROJECT_ID/$GOOGLE_CLOUD_ARTIFACT_REPO/worker_esm:$VERSION
 WORKER_BOLTZ_TAG=$GOOGLE_CLOUD_REGION-docker.pkg.dev/$GOOGLE_CLOUD_PROJECT_ID/$GOOGLE_CLOUD_ARTIFACT_REPO/worker_boltz:$VERSION
 
-# TODO: delete
-# echo "Building Alphafold (required for worker)..."
-# DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t $FOLDY_ALPHAFOLD_TAG -f worker/alphafold/docker/Dockerfile worker/alphafold
-# # docker tag FOLDY_ALPHAFOLD_TAG_OLD FOLDY_ALPHAFOLD_TAG
-
 echo "Building backend..."
 DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t $BACKEND_TAG -f backend/Dockerfile \
   .
 echo "Building worker..."
 DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t $WORKER_TAG -f worker/Dockerfile \
   .
-
-# TODO: delete
-#   --build-arg FOLDY_ALPHAFOLD_TAG=$FOLDY_ALPHAFOLD_TAG \
 
 echo "Building worker ESM..."
 DOCKER_DEFAULT_PLATFORM=linux/amd64 docker build -t $WORKER_ESM_TAG -f worker/Dockerfile.esm \
@@ -74,8 +64,3 @@ docker push $WORKER_TAG
 docker push $WORKER_ESM_TAG
 docker push $WORKER_BOLTZ_TAG
 docker push $FRONTEND_TAG
-
-# TODO: delete
-# if [ "$#" -eq 1 ]; then
-#   docker push $FOLDY_ALPHAFOLD_TAG
-# fi

@@ -44,3 +44,8 @@ export async function evolve(
     });
     return response.data;
 }
+
+
+export const deleteEvolution = async (evolutionId: number): Promise<void> => {
+    await axiosInstance.delete(`/api/evolve/${evolutionId}`);
+};

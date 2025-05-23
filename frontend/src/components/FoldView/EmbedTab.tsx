@@ -1,11 +1,12 @@
-import React, { useState, ChangeEvent } from 'react';
+import React, { useState } from 'react';
 import { startEmbeddings } from "../../api/embedApi";
-import UIkit from 'uikit';
 import { Embedding, Invokation } from '../../types/types';
 import { FaDownload, FaFileCode, FaRedo } from 'react-icons/fa';
-import { downloadFileStraightToFilesystem, getFile } from '../../api/fileApi';
+import { downloadFileStraightToFilesystem } from '../../api/fileApi';
 import { notify } from '../../services/NotificationService';
 import { ESMModelPicker } from './ESMModelPicker';
+import { TabContainer, DescriptionSection, TableSection, CollapsibleSection, FormRow, FormField, ResponsiveTable } from '../../util/tabComponents';
+import { TextInputControl, TextAreaControl } from '../../util/controlComponents';
 
 interface EmbedTabProps {
     foldId: number;
@@ -23,17 +24,6 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
     const [showEmbeddingSection, setShowEmbeddingSection] = useState<boolean>(false);
     const [model, setModel] = useState<string>('esmc_300m');
 
-    const handleDmsStartingSeqIDsTextareaChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-        setDmsStartingSeqIds(event.target.value);
-    };
-
-    const handleExtraSeqIDsTextareaChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-        setExtraSequenceIDs(event.target.value);
-    };
-
-    const handleExtraLayersTextareaChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-        setExtraLayers(event.target.value);
-    };
 
     const handleStartDmsEmbeddings = async () => {
         const dmsStartingSeqIdsArray: string[] = dmsStartingSeqIds
@@ -90,11 +80,9 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
     };
 
     return (
-        <div style={{ padding: '20px', backgroundColor: '#f8f9fa', boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)', borderRadius: '8px' }}>
+        <TabContainer>
             {/* Description Section */}
-            <section style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                <h3 style={{ marginBottom: '10px' }}>DMS Embedding Overview</h3>
-                <div>
+            <DescriptionSection title="DMS Embedding Overview">
                     This tab allows you to embed protein sequences using large language
                     models like <a href="https://github.com/evolutionaryscale/esm">ESMC</a>.
                     These embeddings can be used to do low-N directed evolution, as in the
@@ -119,14 +107,11 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
                     <p>
                         <code>Estimated cost:</code>~$100 for a DMS of a 500AA protein.
                     </p>
-                </div>
-            </section>
+            </DescriptionSection>
 
             {/* Batch Status Section */}
-            <section style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflowX: 'scroll' }}>
-                <h4>Ongoing Batches</h4>
-                <div style={{ overflowX: 'auto' }}>
-                    <table className="uk-table uk-table-striped">
+            <TableSection title="Ongoing Batches">
+                <ResponsiveTable>
                         <thead>
                             <tr>
                                 <th>Batch Name</th>
@@ -160,106 +145,67 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
                             ))
                                 || <tr><td colSpan={2}>No embeddings available</td></tr>}
                         </tbody>
-                    </table>
-                </div>
-            </section>
+                </ResponsiveTable>
+            </TableSection>
 
             {/* Collapsible Section */}
-            <div>
-                <div
-                    className='uk-margin-top uk-margin-bottom'
-                    style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "10px 15px",
-                        backgroundColor: "#f8f9fa",
-                        border: "1px solid #e0e0e0",
-                        borderRadius: "8px",
-                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                        cursor: "pointer",
-                        fontWeight: "bold",
-                    }}
-                    onClick={() => setShowEmbeddingSection(!showEmbeddingSection)}
-                >
-                    <span>New Embedding Run</span>
-                    <span>{showEmbeddingSection ? "▲" : "▼"}</span>
-                </div>
-                {showEmbeddingSection && (
-                    <div style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                        <h4>Start a New Embedding Run</h4>
-                        {/* Batch Name */}
-                        <div style={{ flex: 1, minWidth: '200px' }}>
-                            <label htmlFor="batch-name" className="uk-form-label">Batch Name</label>
-                            <input
-                                id="batch-name"
-                                className="uk-input"
-                                type="text"
-                                placeholder="Enter batch name"
-                                value={batchName || ''}
-                                onChange={(e) => setBatchName(e.target.value)}
-                            />
-                        </div>
+            <CollapsibleSection
+                title="New Embedding Run"
+                isOpen={showEmbeddingSection}
+                onToggle={() => setShowEmbeddingSection(!showEmbeddingSection)}
+            >
+                <h4>Start a New Embedding Run</h4>
+                <TextInputControl
+                    label="Batch Name"
+                    value={batchName || ''}
+                    onChange={setBatchName}
+                    placeholder="Enter batch name"
+                />
 
-                        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-                            {/* Extra Sequence IDs */}
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                <label htmlFor="extra-sequence-ids" className="uk-form-label">Extra Sequence IDs</label>
-                                <textarea
-                                    id="extra-sequence-ids"
-                                    className="uk-textarea"
-                                    rows={5}
-                                    placeholder="Enter one mutation per line, e.g., A37T, W100C_T431G"
-                                    value={extraSequenceIDs}
-                                    onChange={handleExtraSeqIDsTextareaChange}
-                                ></textarea>
-                            </div>
+                <FormRow>
+                    <FormField>
+                        <TextAreaControl
+                            label="Extra Sequence IDs"
+                            value={extraSequenceIDs}
+                            onChange={setExtraSequenceIDs}
+                            placeholder="Enter one mutation per line, e.g., A37T, W100C_T431G"
+                        />
+                    </FormField>
 
-                            {/* DMS Starting Sequence IDs */}
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                <label htmlFor="dms-starting-seq-ids" className="uk-form-label">DMS Starting Sequence IDs</label>
-                                <textarea
-                                    id="dms-starting-seq-ids"
-                                    className="uk-textarea"
-                                    rows={5}
-                                    placeholder="Enter one mutation per line, e.g., WT, W100C_T431G"
-                                    value={dmsStartingSeqIds}
-                                    onChange={handleDmsStartingSeqIDsTextareaChange}
-                                ></textarea>
-                            </div>
-                        </div>
+                    <FormField>
+                        <TextAreaControl
+                            label="DMS Starting Sequence IDs"
+                            value={dmsStartingSeqIds}
+                            onChange={setDmsStartingSeqIds}
+                            placeholder="Enter one mutation per line, e.g., WT, W100C_T431G"
+                        />
+                    </FormField>
+                </FormRow>
 
                         <ESMModelPicker
                             value={model}
                             onChange={setModel}
                         />
 
-                        {/* Extra Layers */}
-                        <div style={{ flex: 1, minWidth: '200px' }}>
-                            <label htmlFor="extra-layers" className="uk-form-label">Extra Layers</label>
-                            <textarea
-                                id="extra-layers"
-                                className="uk-input"
-                                // rows={5}
-                                placeholder="Enter extra embedding layers to extract like 5,10,15"
-                                value={extraLayers}
-                                onChange={handleExtraLayersTextareaChange}
-                            ></textarea>
-                        </div>
+                <TextAreaControl
+                    label="Extra Layers"
+                    value={extraLayers}
+                    onChange={setExtraLayers}
+                    placeholder="Enter extra embedding layers to extract like 5,10,15"
+                    rows={1}
+                    inputStyle={{ resize: 'vertical' }}
+                />
 
-                        <div style={{ marginTop: '20px' }}>
-                            <button
-                                className="uk-button uk-button-primary"
-                                onClick={() => handleStartDmsEmbeddings()}
-                            >
-                                Start Embedding
-                            </button>
-
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
+                <div style={{ marginTop: '20px' }}>
+                    <button
+                        className="uk-button uk-button-primary"
+                        onClick={() => handleStartDmsEmbeddings()}
+                    >
+                        Start Embedding
+                    </button>
+                </div>
+            </CollapsibleSection>
+        </TabContainer>
     );
 };
 

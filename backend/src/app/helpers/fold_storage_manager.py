@@ -47,6 +47,9 @@ class StorageAccessor:
     ) -> None:
         raise NotImplementedError
 
+    def delete_folder(self, fold_id: int, relative_folder_path: str) -> None:
+        raise NotImplementedError
+
 
 class LocalBlob:
     """Simulate the GCS blob, for local access."""
@@ -210,6 +213,17 @@ class LocalStorageAccessor(StorageAccessor):
                 shutil.copy(local_file_path, out_file_path)
 
 
+    def delete_folder(self, fold_id: int, relative_folder_path: str) -> None:
+        """Deletes a whole folder, like rm -r."""
+        if self.local_directory is None:
+            raise BadRequest("Local directory not initialized")
+
+        padded_fold_id = f"{fold_id:06d}"
+        dir = self.local_directory / padded_fold_id / relative_folder_path
+        if os.path.exists(dir):
+            shutil.rmtree(dir)
+
+
 class GcloudStorageAccessor(StorageAccessor):
     def __init__(self):
         """Initialize local variables."""
@@ -364,6 +378,23 @@ class GcloudStorageAccessor(StorageAccessor):
                 print(f"Uploaded {local_file_path} to {gcloud_path}", flush=True)
                 blob = bucket.blob(gcloud_path)
                 blob.upload_from_filename(local_file_path)
+
+    def delete_folder(self, fold_id: int, relative_folder_path: str) -> None:
+        """Deletes a whole folder, like rm -r."""
+        if self.client is None or self.bucket_name is None:
+            raise BadRequest("GCloud client not initialized")
+
+        padded_fold_id = f"{fold_id:06d}"
+
+        if self.bucket_prefix:
+            gcloud_path = f"{self.bucket_prefix}/{padded_fold_id}/{relative_folder_path}"
+        else:
+            gcloud_path = f"{padded_fold_id}/{relative_folder_path}"
+
+        bucket = self.client.bucket(self.bucket_name)
+        blobs = list(bucket.list_blobs(prefix=gcloud_path))
+        for blob in blobs:
+            blob.delete()
 
 
 class FoldStorageManager:

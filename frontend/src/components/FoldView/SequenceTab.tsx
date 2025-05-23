@@ -7,6 +7,8 @@ import BoltzYamlBuilder from "../../util/boltzYamlBuilder";
 import UIkit from "uikit";
 import { Selection } from "./StructurePane";
 import { notify } from "../../services/NotificationService";
+import { TabContainer, SectionCard, CollapsibleSection, FormRow, FormField } from "../../util/tabComponents";
+import { CheckboxControl } from "../../util/controlComponents";
 
 export interface SubsequenceSelection {
     chainIdx: number;
@@ -177,201 +179,154 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
     const canEditYaml = props.userType !== "viewer";
 
     return (
-        <div style={{ padding: "20px" }}>
+        <TabContainer>
             {/* Sequence Viewer */}
-            <section
-                style={{
-                    backgroundColor: "#f8f9fa",
-                    borderRadius: "8px",
-                    padding: "15px",
-                    boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
-                }}
-            >
+            <SectionCard>
                 {renderSequenceViewer()}
-            </section>
+            </SectionCard>
 
             {/* YAML Builder Section - only show if user has permission */}
             {canEditYaml && (
-                <div>
-                    <div
-                        className='uk-margin-top uk-margin-bottom'
-                        style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            padding: "10px 15px",
-                            backgroundColor: "#f8f9fa",
-                            border: "1px solid #e0e0e0",
-                            borderRadius: "8px",
-                            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                            cursor: "pointer",
-                            fontWeight: "bold",
+                <CollapsibleSection
+                    title="Edit YAML Configuration"
+                    isOpen={showYamlSection}
+                    onToggle={() => setShowYamlSection(!showYamlSection)}
+                    style={{ marginBottom: '20px' }}
+                >
+                    <BoltzYamlBuilder
+                        initialYaml={props.yamlConfig || undefined}
+                        onSave={(yaml) => {
+                            console.log(`YAML: ${yaml}`);
+                            UIkit.modal
+                                .confirm(
+                                    `Are you sure you want to update the YAML configuration?`
+                                )
+                                .then(async () => {
+                                    await props.setYamlConfig(yaml);
+                                    notify.info("Updated YAML configuration. You can refold the protein from Actions > Refold.");
+                                });
                         }}
-                        onClick={() => setShowYamlSection(!showYamlSection)}
-                    >
-                        <span>Edit YAML Configuration</span>
-                        <span>{showYamlSection ? "▲" : "▼"}</span>
-                    </div>
-                    {showYamlSection && (
-                        <div style={{
-                            padding: '15px',
-                            backgroundColor: '#ffffff',
-                            borderRadius: '8px',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                            marginBottom: '20px'
-                        }}>
-                            <BoltzYamlBuilder
-                                initialYaml={props.yamlConfig || undefined}
-                                onSave={(yaml) => {
-                                    console.log(`YAML: ${yaml}`);
-                                    UIkit.modal
-                                        .confirm(
-                                            `Are you sure you want to update the YAML configuration?`
-                                        )
-                                        .then(async () => {
-                                            await props.setYamlConfig(yaml);
-                                            notify.info("Updated YAML configuration. You can refold the protein from Actions > Refold.");
-                                        });
-                                }}
-                            />
-                        </div>
-                    )}
-                </div>
+                    />
+                </CollapsibleSection>
             )}
 
             {/* Form Section */}
-            <form
-                style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 2fr",
-                    gap: "15px",
-                    marginTop: "20px",
-                    backgroundColor: "#ffffff",
-                    borderRadius: "8px",
-                    padding: "15px",
-                    boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
-                }}
-            >
-                {/* Name */}
-                <label>Name</label>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                    <input
-                        className="uk-input"
-                        value={props.foldName}
-                        disabled
-                        style={{ flex: 1 }}
-                    />
-                    <button
-                        className="uk-button uk-button-default"
-                        onClick={(e) => {
-                            e.preventDefault();
-                            props.setFoldName();
-                        }}
-                        style={{
-                            marginLeft: "10px",
-                            border: "1px solid #ccc",
-                            borderRadius: "5px",
-                        }}
-                        disabled={props.userType === "viewer"}
-                    >
-                        <AiFillEdit />
-                    </button>
-                </div>
+            <SectionCard>
+                <FormRow>
+                    <FormField>
+                        <label className="uk-form-label">Name</label>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <input
+                                className="uk-input"
+                                value={props.foldName}
+                                disabled
+                                style={{ flex: 1 }}
+                            />
+                            <button
+                                className="uk-button uk-button-default uk-button-small"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    props.setFoldName();
+                                }}
+                                disabled={props.userType === "viewer"}
+                                title="Edit name"
+                            >
+                                <AiFillEdit />
+                            </button>
+                        </div>
+                    </FormField>
+                </FormRow>
 
-                {/* Diffusion Samples */}
-                <label>Diffusion Samples</label>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                    <input
-                        className="uk-input"
-                        value={props.foldDiffusionSamples || undefined}
-                        disabled
-                    />
-                </div>
+                <FormRow>
+                    <FormField>
+                        <label className="uk-form-label">Diffusion Samples</label>
+                        <input
+                            className="uk-input"
+                            value={props.foldDiffusionSamples || ''}
+                            disabled
+                        />
+                    </FormField>
+                </FormRow>
 
-                {/* Owner */}
-                <label>Owner</label>
-                <input
-                    className="uk-input"
-                    value={props.foldOwner}
-                    disabled
-                />
+                <FormRow>
+                    <FormField>
+                        <label className="uk-form-label">Owner</label>
+                        <input
+                            className="uk-input"
+                            value={props.foldOwner}
+                            disabled
+                        />
+                    </FormField>
+                </FormRow>
 
-                {/* Created */}
-                <label>Created</label>
-                <input
-                    className="uk-input"
-                    value={props.foldCreateDate}
-                    disabled
-                />
+                <FormRow>
+                    <FormField>
+                        <label className="uk-form-label">Created</label>
+                        <input
+                            className="uk-input"
+                            value={props.foldCreateDate}
+                            disabled
+                        />
+                    </FormField>
+                </FormRow>
 
-                {/* Public */}
-                <label>Public</label>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                    <input
-                        type="checkbox"
-                        checked={props.foldPublic || false}
-                        onChange={(e) => props.setPublic(!props.foldPublic)}
-                        style={{
-                            width: "20px",
-                            height: "20px",
-                            marginRight: "10px",
-                        }}
-                    />
-                    <span>{props.foldPublic ? "Yes" : "No"}</span>
-                </div>
+                <FormRow>
+                    <FormField>
+                        <CheckboxControl
+                            label="Public"
+                            checked={props.foldPublic || false}
+                            onChange={(checked) => props.setPublic(checked)}
+                        />
+                    </FormField>
+                </FormRow>
 
-                {/* Tags */}
-                <label>Tags</label>
-                <EditableTagList
-                    tags={props.foldTags || []}
-                    addTag={props.addTag}
-                    deleteTag={props.deleteTag}
-                    handleTagClick={props.handleTagClick}
-                />
+                <FormRow>
+                    <FormField style={{ width: '100%' }}>
+                        <label className="uk-form-label">Tags</label>
+                        <EditableTagList
+                            tags={props.foldTags || []}
+                            addTag={props.addTag}
+                            deleteTag={props.deleteTag}
+                            handleTagClick={props.handleTagClick}
+                        />
+                    </FormField>
+                </FormRow>
 
-                {/* Model Preset */}
-                <label>Model Preset</label>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                    <input
-                        className="uk-input"
-                        value={props.foldModelPreset || "unset"}
-                        disabled
-                    />
-                    <button
-                        className="uk-button uk-button-default"
-                        onClick={(e) => {
-                            e.preventDefault();
-                            props.setFoldModelPreset();
-                        }}
-                        style={{
-                            marginLeft: "10px",
-                            border: "1px solid #ccc",
-                            borderRadius: "5px",
-                        }}
-                    >
-                        <AiFillEdit />
-                    </button>
-                </div>
+                <FormRow>
+                    <FormField>
+                        <label className="uk-form-label">Model Preset</label>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <input
+                                className="uk-input"
+                                value={props.foldModelPreset || "unset"}
+                                disabled
+                                style={{ flex: 1 }}
+                            />
+                            <button
+                                className="uk-button uk-button-default uk-button-small"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    props.setFoldModelPreset();
+                                }}
+                                title="Edit model preset"
+                            >
+                                <AiFillEdit />
+                            </button>
+                        </div>
+                    </FormField>
+                </FormRow>
 
-                {/* Disable Relaxation */}
-                <label>Disable Relaxation</label>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                    <input
-                        type="checkbox"
-                        checked={props.foldDisableRelaxation !== null ? props.foldDisableRelaxation : true}
-                        onChange={(e) =>
-                            props.setDisableRelaxation(!props.foldDisableRelaxation)
-                        }
-                        style={{
-                            width: "20px",
-                            height: "20px",
-                            marginRight: "10px",
-                        }}
-                    />
-                    <span>{props.foldDisableRelaxation ? "Yes" : "No"}</span>
-                </div>
-            </form>
-        </div>
+                <FormRow>
+                    <FormField>
+                        <CheckboxControl
+                            label="Disable Relaxation"
+                            checked={props.foldDisableRelaxation !== null ? props.foldDisableRelaxation : true}
+                            onChange={(checked) => props.setDisableRelaxation(checked)}
+                        />
+                    </FormField>
+                </FormRow>
+            </SectionCard>
+        </TabContainer>
     );
 });
 

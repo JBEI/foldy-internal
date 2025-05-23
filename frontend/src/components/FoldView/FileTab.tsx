@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import UIkit from "uikit";
 import {
     FileBrowser,
     FileNavbar,
@@ -12,6 +11,7 @@ import { FileInfo } from "../../types/types";
 import { downloadFileStraightToFilesystem } from "../../api/fileApi";
 import { removeLeadingSlash } from "../../api/commonApi";
 import { notify } from '../../services/NotificationService';
+import { TabContainer, SectionCard } from "../../util/tabComponents";
 
 interface FileTabProps {
     foldId: number;
@@ -167,38 +167,41 @@ const FileTab = React.memo((props: FileTabProps) => {
     };
 
     return (
-        <div>
-            <h3>Quick Access</h3>
-            <form className="uk-margin-bottom">
-                <fieldset className="uk-fieldset">
-                    <div>
-                        <button
-                            type="button"
-                            className="uk-button uk-button-primary uk-margin-left uk-form-small"
-                            onClick={props.maybeDownloadPdb}
-                            disabled={!(props.foldName && props.pdbString)}
-                        >
-                            Download Best PDB
-                        </button>
-                    </div>
-                </fieldset>
-            </form>
-
-            <h3>Files</h3>
-            <div style={{ height: "400px" }}>
-                <FileBrowser
-                    files={getImmediateChildren()}
-                    folderChain={getFolderChain()}
-                    defaultFileViewActionId={ChonkyActions.EnableListView.id}
-                    fileActions={[ChonkyActions.DownloadFiles, ChonkyActions.OpenFiles]}
-                    onFileAction={handleFileAction}
+        <TabContainer>
+            <SectionCard>
+                <h3 style={{ marginBottom: '15px' }}>Quick Access</h3>
+                <button
+                    type="button"
+                    className="uk-button uk-button-primary"
+                    onClick={props.maybeDownloadPdb}
+                    disabled={!(props.foldName && props.pdbString)}
                 >
-                    <FileNavbar />
-                    <FileToolbar />
-                    <FileList />
-                </FileBrowser>
-            </div>
-        </div>
+                    Download Best PDB
+                </button>
+            </SectionCard>
+
+            <SectionCard>
+                <h3 style={{ marginBottom: '15px' }}>Files</h3>
+                <div style={{ 
+                    height: "400px", 
+                    border: "1px solid #e0e0e0", 
+                    borderRadius: "8px", 
+                    overflow: "hidden" 
+                }}>
+                    <FileBrowser
+                        files={getImmediateChildren()}
+                        folderChain={getFolderChain()}
+                        defaultFileViewActionId={ChonkyActions.EnableListView.id}
+                        fileActions={[ChonkyActions.DownloadFiles, ChonkyActions.OpenFiles]}
+                        onFileAction={handleFileAction}
+                    >
+                        <FileNavbar />
+                        <FileToolbar />
+                        <FileList />
+                    </FileBrowser>
+                </div>
+            </SectionCard>
+        </TabContainer>
     );
 });
 

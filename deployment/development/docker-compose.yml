@@ -110,17 +110,6 @@ services:
       - ./.boltz:/.boltz
     entrypoint: /opt/conda/envs/worker/bin/python /backend/src/rq_worker_main.py boltz
 
-  jupyter:
-    <<: *worker-base
-    build:
-      context: .
-      dockerfile: worker/Dockerfile.esm # Dockerfile.prosst
-    environment: *worker-env
-    volumes: *worker-volumes
-    ports:
-      - 127.0.0.1:8888:8888  # Expose Jupyter port
-    entrypoint: /opt/conda/envs/worker/bin/jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --notebook-dir=/backend/src --NotebookApp.token='thefoldytoken'
-
   db:
     environment:
       POSTGRES_USER: user
@@ -137,3 +126,14 @@ services:
     image: "redis:7.2-alpine"
     ports:
       - 127.0.0.1:6379:6379
+
+  # jupyter:
+  #   <<: *worker-base
+  #   build:
+  #     context: .
+  #     dockerfile: worker/Dockerfile.esm # Dockerfile.prosst
+  #   environment: *worker-env
+  #   volumes: *worker-volumes
+  #   ports:
+  #     - 127.0.0.1:8888:8888  # Expose Jupyter port
+  #   entrypoint: /opt/conda/envs/worker/bin/jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --notebook-dir=/backend/src --NotebookApp.token='thefoldytoken'

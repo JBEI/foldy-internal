@@ -1,8 +1,8 @@
 import React, { useState, ChangeEvent, useMemo, useEffect } from 'react';
 import UIkit from 'uikit';
 import { FileInfo, Evolution, Invokation } from 'src/types/types';
-import { evolve } from '../../api/evolveApi';
-import { FaDownload, FaEye, FaFileCode, FaRedo } from 'react-icons/fa';
+import { deleteEvolution, evolve } from '../../api/evolveApi';
+import { FaDownload, FaEye, FaFileCode, FaRedo, FaTrash } from 'react-icons/fa';
 import fileDownload from 'js-file-download';
 import { removeLeadingSlash } from '../../api/commonApi';
 import { getFile } from '../../api/fileApi';
@@ -11,6 +11,10 @@ import Papa from 'papaparse';
 import ReactDataGrid from 'react-data-grid';
 import { BoltzYamlHelper } from '../../util/boltzYamlHelper';
 import { Selection } from './StructurePane';
+import Plot from 'react-plotly.js';
+import { TabContainer, DescriptionSection, TableSection, CollapsibleSection, FormRow, FormField, ButtonGroup, ResponsiveTable } from '../../util/tabComponents';
+import { TextInputControl, TextAreaControl, SelectControl, FileUploadControl, MultiSelectControl, NumberInputControl } from '../../util/controlComponents';
+import { DataTableContainer, PlotContainer } from '../../util/plotComponents';
 
 
 
@@ -21,6 +25,7 @@ type RowData = {
     predictionMean: number;
     predictionStddev: number;
     score: number;
+    modelPredictions?: number[];
 }
 
 const seqIdToFootprint = (seqId: string): string => {
@@ -75,6 +80,7 @@ const parseCsvDataIntoRowData = (predictedMutantCsvDataString: string, beta: num
             predictionMean: mean,
             predictionStddev: stddev,
             score: score,
+            modelPredictions: predictions,
         };
     });
 
@@ -117,6 +123,33 @@ const seqIdListToLociList = (seqIdList: string[]): number[] => {
 }
 
 
+// Add a utility function to calculate Pearson correlation
+function calculateCorrelation(x: number[], y: number[]): number {
+    const n = x.length;
+    if (n === 0 || n !== y.length) return 0;
+
+    // Calculate means
+    const xMean = x.reduce((sum, val) => sum + val, 0) / n;
+    const yMean = y.reduce((sum, val) => sum + val, 0) / n;
+
+    // Calculate correlation
+    let numerator = 0;
+    let xDenominator = 0;
+    let yDenominator = 0;
+
+    for (let i = 0; i < n; i++) {
+        const xDiff = x[i] - xMean;
+        const yDiff = y[i] - yMean;
+        numerator += xDiff * yDiff;
+        xDenominator += xDiff * xDiff;
+        yDenominator += yDiff * yDiff;
+    }
+
+    const denominator = Math.sqrt(xDenominator * yDenominator);
+    return denominator === 0 ? 0 : numerator / denominator;
+}
+
+
 interface PredictedMutantTableProps {
     yamlConfig: string | null;
     predictedMutantCsvData: string | null;
@@ -126,6 +159,8 @@ interface PredictedMutantTableProps {
     setSelectedSubsequence: (selection: Selection | null) => void;
 }
 
+
+// Now modify the PredictedMutantTable component to include the heatmap
 const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
     yamlConfig,
     predictedMutantCsvData,
@@ -134,7 +169,11 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
     topPerformersToDisplay,
     setSelectedSubsequence,
 }) => {
-    if (!predictedMutantCsvData) return null;
+    if (!predictedMutantCsvData) {
+        return <div className="uk-text-center">
+            <div uk-spinner="ratio: 4"></div>
+        </div>;
+    }
 
     const [sortColumn, setSortColumn] = useState<string | null>(null);
     const [sortDirection, setSortDirection] = useState<'ASC' | 'DESC'>('DESC');
@@ -157,6 +196,58 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
         }
         return data;
     }, [predictedMutantCsvData, beta, maxPerFootprint, topPerformersToDisplay, sortColumn, sortDirection]);
+
+    const correlationData = useMemo(() => {
+        if (!tableData || tableData.length === 0 || !tableData[0].modelPredictions) {
+            return null;
+        }
+
+        const sequenceCount = tableData.length;
+        if (sequenceCount <= 1) return null;
+
+        // Create a matrix to store correlations between sequences
+        const matrix: number[][] = Array(sequenceCount).fill(0).map(() => Array(sequenceCount).fill(0));
+
+        // For each pair of sequences, we need to calculate correlation of their values
+        // across the different metrics (mean, stddev, score)
+        for (let i = 0; i < sequenceCount; i++) {
+            for (let j = 0; j < sequenceCount; j++) {
+                // For identical sequences, correlation is 1
+                if (i === j) {
+                    matrix[i][j] = 1;
+                    continue;
+                }
+
+                // Calculate correlation coefficient between model predictions
+                const seqIData = tableData[i].modelPredictions!;
+                const seqJData = tableData[j].modelPredictions!;
+
+                // Calculate means
+                const iMean = seqIData.reduce((sum, val) => sum + val, 0) / seqIData.length;
+                const jMean = seqJData.reduce((sum, val) => sum + val, 0) / seqJData.length;
+
+                // Calculate correlation coefficient (normalized covariance)
+                let numerator = 0;
+                let iVariance = 0;
+                let jVariance = 0;
+
+                for (let k = 0; k < seqIData.length; k++) {
+                    const iDiff = seqIData[k] - iMean;
+                    const jDiff = seqJData[k] - jMean;
+                    numerator += iDiff * jDiff;
+                    iVariance += iDiff * iDiff;
+                    jVariance += jDiff * jDiff;
+                }
+
+                // Correlation coefficient = covariance / (stddev_i * stddev_j)
+                const correlation = numerator / (Math.sqrt(iVariance) * Math.sqrt(jVariance));
+
+                matrix[i][j] = correlation;
+            }
+        }
+
+        return matrix;
+    }, [tableData]);
 
     if (!tableData) return null;
     const columns = [
@@ -195,6 +286,7 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
         }
     ];
 
+    // Existing functions
     const copyMutationsToClipboard = () => {
         if (!tableData) return;
         const mutations = tableData
@@ -204,7 +296,6 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
         navigator.clipboard.writeText(mutations);
         notify.success('Seq IDs copied to clipboard!');
     }
-
 
     const highlightResiduesOnModel = () => {
         if (!tableData) return null;
@@ -242,12 +333,11 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
     }, [selectedSeqIds, tableData]);
 
     return (
-        <div style={{ width: "auto", height: "auto", marginTop: "20px" }}>
+        <DataTableContainer>
             <ReactDataGrid
                 columns={columns}
                 rowGetter={i => tableData[i]}
                 rowsCount={tableData.length}
-                // enableRowSelect={true}
                 onGridSort={(sortCol, direction) => {
                     setSortColumn(sortCol);
                     setSortDirection(direction.toUpperCase() as 'ASC' | 'DESC');
@@ -259,18 +349,278 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
                     setSelectedSeqIds([row.seqId]);
                 }}
             />
-            <div style={{ marginTop: '10px', display: 'flex', gap: '10px' }}>
+            <ButtonGroup>
                 <button
                     className="uk-button uk-button-default"
                     onClick={() => copyMutationsToClipboard()}
                 >
                     Copy mutations to clipboard
                 </button>
-                <button className="uk-button uk-button-primary" onClick={() => highlightResiduesOnModel()}>
+                <button
+                    className="uk-button uk-button-primary"
+                    onClick={() => highlightResiduesOnModel()}
+                >
                     Highlight residues on model
                 </button>
+            </ButtonGroup>
+
+            {correlationData && (
+                <div style={{
+                    height: '600px', // Increased height for better visibility
+                    backgroundColor: '#f9f9f9',
+                    padding: '15px',
+                    borderRadius: '4px',
+                    marginTop: '20px',
+                    overflowX: 'auto', // Add horizontal scroll for many sequences
+                    overflowY: 'auto'  // Add vertical scroll too
+                }}>
+                    <Plot
+                        data={[{
+                            z: correlationData,
+                            x: tableData.map(row => row.seqId),
+                            y: tableData.map(row => row.seqId),
+                            type: 'heatmap',
+                            colorscale: 'RdBu',
+                            zmin: -1,
+                            zmax: 1,
+                            text: correlationData.map(row =>
+                                row.map(val => val.toFixed(2))
+                            ),
+                            hovertemplate: '%{x} vs %{y}<br>Correlation: %{text}<extra></extra>',
+                            showscale: true,
+                            colorbar: {
+                                title: 'Correlation',
+                                titleside: 'right'
+                            }
+                        }]}
+                        layout={{
+                            title: 'Sequence Prediction Correlation',
+                            autosize: true,
+                            // Increase margins to accommodate sequence IDs
+                            margin: { l: 150, r: 50, t: 60, b: 150 },
+                            xaxis: {
+                                title: 'Sequence ID',
+                                tickangle: 45,
+                                tickfont: { size: 10 }
+                            },
+                            yaxis: {
+                                title: 'Sequence ID',
+                                autorange: 'reversed',
+                                tickfont: { size: 10 }
+                            },
+                            plot_bgcolor: '#f9f9f9',
+                            paper_bgcolor: '#f9f9f9',
+                            font: { family: 'Arial, sans-serif' }
+                        }}
+                        style={{ width: '100%', height: '100%' }}
+                        useResizeHandler={true}
+                        config={{
+                            responsive: true,
+                            displayModeBar: true,
+                            displaylogo: false,
+                            modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                            toImageButtonOptions: {
+                                format: 'png',
+                                filename: 'sequence_correlation_heatmap',
+                                height: 800,
+                                width: 800,
+                                scale: 2
+                            }
+                        }}
+                    />
+                </div>
+            )}
+        </DataTableContainer>
+    );
+};
+
+
+const createPlotData = (debugData: any) => {
+    if (!debugData || !debugData.pretrain_metrics || !debugData.finetune_metrics) {
+        return {
+            pretrain: [],
+            finetune: []
+        };
+    }
+
+    // Create pretrain traces - one for each model's train and val loss
+    const pretrainData: any[] = [];
+    const finetuneData: any[] = [];
+
+    // Inside the pretrain metrics loop:
+    debugData.pretrain_metrics.forEach((model: any, index: number) => {
+        if (model.train_loss && model.train_loss.length > 0) {
+            pretrainData.push({
+                x: Array.from({ length: model.train_loss.length }, (_, i) => i + 1),
+                y: model.train_loss,
+                name: `Model ${index + 1} Train`,
+                type: 'scatter',
+                mode: 'lines',
+                line: {
+                    color: '#3e7bfa', // Blue for all train
+                    width: 2,
+                    dash: 'solid'
+                }
+            });
+        }
+
+        if (model.val_loss && model.val_loss.length > 0) {
+            pretrainData.push({
+                x: Array.from({ length: model.val_loss.length }, (_, i) => i + 1),
+                y: model.val_loss,
+                name: `Model ${index + 1} Val`,
+                type: 'scatter',
+                mode: 'lines',
+                line: {
+                    color: '#ff9800', // Orange for all val
+                    width: 2,
+                    dash: 'dash'
+                }
+            });
+        }
+    });
+
+    // Inside the finetune metrics loop:
+    debugData.finetune_metrics.forEach((model: any, index: number) => {
+        if (model.train_loss && model.train_loss.some(val => val !== 0 && val !== null)) {
+            // Filter out zeros which appear to be placeholders
+            const nonZeroTrainLoss = model.train_loss.map(val => val === 0 ? null : val);
+
+            finetuneData.push({
+                x: Array.from({ length: model.train_loss.length }, (_, i) => i + 1),
+                y: nonZeroTrainLoss,
+                name: `Model ${index + 1} Train`,
+                type: 'scatter',
+                mode: 'lines',
+                line: {
+                    color: '#3e7bfa', // Blue for all train
+                    width: 2,
+                    dash: 'solid'
+                }
+            });
+        }
+
+        if (model.val_loss && model.val_loss.some(val => val !== 0 && val !== null)) {
+            // Filter out zeros which appear to be placeholders
+            const nonZeroValLoss = model.val_loss.map(val => val === 0 ? null : val);
+
+            finetuneData.push({
+                x: Array.from({ length: model.val_loss.length }, (_, i) => i + 1),
+                y: nonZeroValLoss,
+                name: `Model ${index + 1} Val`,
+                type: 'scatter',
+                mode: 'lines',
+                line: {
+                    color: '#ff9800', // Orange for all val
+                    width: 2,
+                    dash: 'dash'
+                }
+            });
+        }
+    });
+
+    return {
+        pretrain: pretrainData,
+        finetune: finetuneData
+    };
+};
+
+// 5. Create a function to render the plotly charts
+const renderDebugPlots = (debugData: any) => {
+    if (!debugData) return null;
+
+    const plotData = createPlotData(debugData);
+
+    return (
+        <PlotContainer title="Training Metrics" height="700px">
+            {/* Pretraining loss plot */}
+            <div style={{
+                height: '300px',
+                backgroundColor: '#f9f9f9',
+                padding: '15px',
+                borderRadius: '4px'
+            }}>
+                <Plot
+                    data={plotData.pretrain}
+                    layout={{
+                        title: 'Pretraining Loss',
+                        autosize: true,
+                        margin: { l: 60, r: 25, t: 60, b: 60 },
+                        xaxis: {
+                            title: 'Epoch',
+                            gridcolor: '#e1e1e1'
+                        },
+                        yaxis: {
+                            title: 'Loss',
+                            gridcolor: '#e1e1e1'
+                        },
+                        // legend: {
+                        //     orientation: 'h',
+                        //     y: -0.2,
+                        //     xanchor: 'center',
+                        //     x: 0.5,
+                        //     font: { size: 10 },
+                        //     tracegroupgap: 0
+                        // },
+                        plot_bgcolor: '#f9f9f9',
+                        paper_bgcolor: '#f9f9f9',
+                        font: { family: 'Arial, sans-serif' }
+                    }}
+                    style={{ width: '100%', height: '100%' }}
+                    useResizeHandler={true}
+                    config={{
+                        responsive: true,
+                        displayModeBar: true,
+                        displaylogo: false,
+                        modeBarButtonsToRemove: ['lasso2d', 'select2d']
+                    }}
+                />
             </div>
-        </div>
+
+            {/* Finetuning loss plot */}
+            <div style={{
+                height: '300px',
+                backgroundColor: '#f9f9f9',
+                padding: '15px',
+                borderRadius: '4px'
+            }}>
+                <Plot
+                    data={plotData.finetune}
+                    layout={{
+                        title: 'Finetuning Loss',
+                        autosize: true,
+                        margin: { l: 60, r: 25, t: 60, b: 60 },
+                        xaxis: {
+                            title: 'Iteration',
+                            gridcolor: '#e1e1e1'
+                        },
+                        yaxis: {
+                            title: 'Loss',
+                            gridcolor: '#e1e1e1'
+                        },
+                        // legend: {
+                        //     orientation: 'h',
+                        //     y: -0.2,
+                        //     xanchor: 'center',
+                        //     x: 0.5,
+                        //     font: { size: 10 },
+                        //     tracegroupgap: 0
+                        // },
+                        plot_bgcolor: '#f9f9f9',
+                        paper_bgcolor: '#f9f9f9',
+                        font: { family: 'Arial, sans-serif' }
+                    }}
+                    style={{ width: '100%', height: '100%' }}
+                    useResizeHandler={true}
+                    config={{
+                        responsive: true,
+                        displayModeBar: true,
+                        displaylogo: false,
+                        modeBarButtonsToRemove: ['lasso2d', 'select2d']
+                    }}
+                />
+            </div>
+        </PlotContainer>
     );
 };
 
@@ -296,6 +646,7 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
 
     const [displayedEvolutionId, setDisplayedEvolutionId] = useState<number | null>(null);
     const [evolutionCsvData, setEvolutionCsvData] = useState<string | null>(null);
+    const [evolutionDebugData, setEvolutionDebugData] = useState<any>(null);
     const [beta, setBeta] = useState<number>(1.0);
     const [maxMutationsPerFootprint, setMaxMutationsPerFootprint] = useState<number>(2);
     const [topPerformersToDisplay, setTopPerformersToDisplay] = useState<number>(24);
@@ -401,9 +752,9 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
         setDisplayedEvolutionId(evolutionId);
         console.log(`Loading evolution ${evolution.name}...`);
 
+        // Fetch the predicted activity file
         getFile(foldId, `evolve/${evolution.name}/predicted_activity.csv`).then(
             (fileBlob: Blob) => {
-                // Create a FileReader to read the blob as text
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     const fileString = e.target?.result as string;
@@ -413,51 +764,65 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
             },
             (e) => {
                 console.log(e);
-                notify.error(e.toString());
+                notify.error(`Error fetching predicted_activity.csv: ${e.toString()}`);
             }
         );
+
+        // Fetch the debug.json file
+        getFile(foldId, `evolve/${evolution.name}/debug_info.json`).then(
+            (fileBlob: Blob) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const fileString = e.target?.result as string;
+                        // Replace NaN with null for proper JSON parsing
+                        const cleanedString = fileString.replace(/NaN/g, 'null');
+                        const jsonData = JSON.parse(cleanedString);
+                        setEvolutionDebugData(jsonData);
+                    } catch (err) {
+                        console.error("Error parsing debug.json:", err);
+                        notify.error(`Failed to parse debug.json: ${err}`);
+                        console.error(e.target?.result);
+                    }
+                };
+                reader.readAsText(fileBlob);
+            },
+            (e) => {
+                console.log(e);
+                notify.error(`Error fetching debug.json: ${e.toString()}`);
+            }
+        );
+    };
+
+    const deleteEvolutionHelper = async (evolutionId: number) => {
+        await UIkit.modal.confirm('Are you sure you want to delete this evolution? This action is irreversible.');
+        console.log(`Deleting evolution ${evolutionId}...`);
+        deleteEvolution(evolutionId).then(
+            (e) => {
+                notify.success(`Evolution ${evolutionId} deleted.`);
+            },
+            (e) => {
+                notify.error(e.toString());
+            }
+        )
     }
 
 
 
     return (
-        <div style={{ padding: '20px', backgroundColor: '#f8f9fa', boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)', borderRadius: '8px' }}>
+        <TabContainer>
             {/* Description Section */}
-            <section style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                <h3 style={{ marginBottom: '10px' }}>Evolution Runs Overview</h3>
-                <div>
-                    This section allows you to run a version of
-                    <a href="https://www.biorxiv.org/content/10.1101/2024.07.17.604015v1"> EvolvePro </a>
-                    on your protein. This tool facilitates low-N directed evolution of proteins,
-                    with as little as 16 screened mutants per round. Please see the paper for more
-                    details. Each run takes in an
-                    <ul>
-                        <li><code>activity excel file</code> with columns seq_id and activity</li>
-                        <li><code>embedding files</code> embeddings run in the excel tab, containing embeddings for both the mutants with activity measurements as well as all mutants you wish to screen.</li>
-                    </ul>
-                    <p>
-                        Once complete, you can download the predicted activities for all mutants from the Files tab.
-                    </p>
-                    <h4>
-                        Example activity file
-                    </h4>
-                    <img
-                        style={{
-                            width: "200px",
-                        }}
-                        src={`/evolve_activity_excel_example.png`}
-                        alt=""
-                    />
-                    <p>
-                        <code>Estimated cost:</code>~$0.05 per evolution round.
-                    </p>
-                </div>
-            </section>
+            <DescriptionSection title="Evolution Runs Overview">
+                This section allows you to run a version of
+                <a href="https://www.biorxiv.org/content/10.1101/2024.07.17.604015v1"> EvolvePro </a>
+                on your protein. This tool facilitates low-N directed evolution of proteins,
+                with as little as 16 screened mutants per round. Please see the paper for more
+                details.
+            </DescriptionSection>
 
             {/* Evolution Runs Table */}
-            <section style={{ marginBottom: '30px', padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflowX: 'scroll' }}>
-                <h3>Evolution Runs</h3>
-                <table className="uk-table uk-table-striped">
+            <TableSection title="Evolution Runs">
+                <ResponsiveTable>
                     <thead>
                         <tr>
                             <th>Name</th>
@@ -468,9 +833,10 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                     <tbody>
                         {evolutions?.map(evolution => (
                             <tr key={evolution.id}>
-                                <td>{evolution.name}</td>
+                                <td style={{ overflowX: 'hidden' }}><p uk-tooltip={evolution.name}>{evolution.name}</p></td>
                                 <td>{getEvolutionStatus(evolution)}</td>
-                                <td>
+                                <td style={{ width: '200px' }}>
+
                                     <FaFileCode
                                         uk-tooltip="View logs"
                                         onClick={() => openUpLogsForJob(evolution.invokation_id || undefined)}
@@ -489,237 +855,212 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                                     }
                                     <FaRedo uk-tooltip="Retry the evolution run."
                                         onClick={() => rerunEvolution(evolution)} />
+                                    <FaTrash
+                                        uk-tooltip="Delete evolution run."
+                                        onClick={() => deleteEvolutionHelper(evolution.id)} />
                                 </td>
                             </tr>
                         ))}
                     </tbody>
-                </table>
-            </section>
+                </ResponsiveTable>
+            </TableSection>
 
 
             {
                 displayedEvolutionId ?
-                    <>
-                        <div>
-                            <label>
-                                Beta (Upper Confidence Bound parameter):
-                                <input
-                                    type="number"
-                                    className="uk-input"
-                                    value={beta}
-                                    onChange={(e) => setBeta(parseFloat(e.target.value))}
-                                    style={{ width: '100px', marginLeft: '10px' }}
-                                    min="0"
-                                />
-                            </label>
+                    <TableSection title={""} scrollable={false}>
+                        <div style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginBottom: "10px"
+                        }}>
+                            <h3 style={{ margin: 0 }}>
+                                {evolutions?.find(e => e.id === displayedEvolutionId)?.name || "Evolution Results"}
+                            </h3>
+                            <button
+                                onClick={() => setDisplayedEvolutionId(null)}
+                                style={{
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    fontSize: "20px",
+                                    padding: "5px",
+                                    color: "#666"
+                                }}
+                                aria-label="Close"
+                            >
+                                ✕
+                            </button>
                         </div>
-                        <div>
-                            <label>
-                                Max number of mutants per footprint:
-                                <input
-                                    type="number"
-                                    className="uk-input"
-                                    value={maxMutationsPerFootprint}
-                                    onChange={(e) => setMaxMutationsPerFootprint(parseInt(e.target.value))}
-                                    style={{ width: '100px', marginLeft: '10px' }}
-                                    min="1"
-                                />
-                            </label>
-                        </div>
-                        <div>
-                            <label>
-                                Top mutants to display:
-                                <input
-                                    type="number"
-                                    className="uk-input"
-                                    value={topPerformersToDisplay}
-                                    onChange={(e) => setTopPerformersToDisplay(parseInt(e.target.value))}
-                                    style={{ width: '100px', marginLeft: '10px' }}
-                                    min="1"
-                                />
-                            </label>
-                        </div>
-                        <PredictedMutantTable
-                            yamlConfig={yamlConfig}
-                            predictedMutantCsvData={evolutionCsvData}
-                            beta={beta}
-                            maxPerFootprint={maxMutationsPerFootprint}
-                            topPerformersToDisplay={topPerformersToDisplay}
-                            setSelectedSubsequence={setSelectedSubsequence}
+
+                        <NumberInputControl
+                            label="Beta (Upper Confidence Bound parameter)"
+                            value={beta}
+                            onChange={setBeta}
+                            min={0}
+                            step={0.1}
                         />
-                    </>
+                        <NumberInputControl
+                            label="Max number of mutants per footprint"
+                            value={maxMutationsPerFootprint}
+                            onChange={setMaxMutationsPerFootprint}
+                            min={1}
+                        />
+                        <NumberInputControl
+                            label="Top mutants to display"
+                            value={topPerformersToDisplay}
+                            onChange={setTopPerformersToDisplay}
+                            min={1}
+                        />
+                        {/* Mutations table */}
+                        <div style={{ marginBottom: '20px' }}>
+                            <h3 style={{ marginBottom: '15px', color: '#444' }}>Selected Mutants</h3>
+                            <PredictedMutantTable
+                                yamlConfig={yamlConfig}
+                                predictedMutantCsvData={evolutionCsvData}
+                                beta={beta}
+                                maxPerFootprint={maxMutationsPerFootprint}
+                                topPerformersToDisplay={topPerformersToDisplay}
+                                setSelectedSubsequence={setSelectedSubsequence}
+                            />
+                        </div>
+
+                        {/* Render plotly charts with the debug data */}
+                        {renderDebugPlots(evolutionDebugData)}
+                    </TableSection>
                     : null
             }
 
             {/* Collapsible New Run Section */}
-            <div>
-                <div
-                    className='uk-margin-top uk-margin-bottom'
+            <CollapsibleSection
+                title="New Evolution Run"
+                isOpen={showForm}
+                onToggle={() => setShowForm(!showForm)}
+            >
+                <h3>Start New Evolution Run</h3>
+                Each run takes in an
+                <ul>
+                    <li><code>activity excel file</code> with columns seq_id and activity</li>
+                    <li><code>embedding files</code> embeddings run in the excel tab, containing embeddings for both the mutants with activity measurements as well as all mutants you wish to screen.</li>
+                </ul>
+                <p>
+                    Once complete, you can download the predicted activities for all mutants from the Files tab.
+                </p>
+                <h4>
+                    Example activity file
+                </h4>
+                <img
                     style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "10px 15px",
-                        backgroundColor: "#f8f9fa",
-                        border: "1px solid #e0e0e0",
-                        borderRadius: "8px",
-                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                        cursor: "pointer",
-                        fontWeight: "bold",
+                        width: "200px",
                     }}
-                    onClick={() => setShowForm(!showForm)}
+                    src={`/evolve_activity_excel_example.png`}
+                    alt=""
+                />
+                <p>
+                    <code>Estimated cost:</code>~$0.05 per evolution round.
+                </p>
+                <FormRow>
+                    <FormField>
+                        <TextInputControl
+                            label="Name"
+                            value={evolutionName}
+                            onChange={setEvolutionName}
+                        />
+                    </FormField>
+
+                    <FormField>
+                        <FileUploadControl
+                            label="Upload Activity File"
+                            onChange={setActivityFile}
+                            accept=".xlsx,.xls"
+                            selectedFile={activityFile}
+                        />
+                    </FormField>
+
+                    <FormField>
+                        <SelectControl
+                            label="Mode"
+                            value={mode}
+                            onChange={setMode}
+                            options={[
+                                { value: "TorchMLPFewShotModel", label: "MLP Few Shot Model" },
+                                { value: "RandomForestFewShotModel", label: "RandomForestFewShotModel" },
+                                { value: "randomforest", label: "(old) Random Forest" },
+                                { value: "mlp", label: "(old) Multi-Layer Perceptron" },
+                                { value: "finetuning", label: "(old) Finetuning" }
+                            ]}
+                        />
+                    </FormField>
+
+                    {/* Conditional inputs based on mode */}
+                    {mode === 'finetuning' && (
+                        <FormField>
+                            <SelectControl
+                                label="Model Checkpoint"
+                                value={finetuningModelCheckpoint}
+                                onChange={setFinetuningModelCheckpoint}
+                                options={[
+                                    { value: "facebook/esm2_t6_8M_UR50D", label: "ESM2 (8M params)" },
+                                    { value: "facebook/esm2_t33_650M_UR50D", label: "ESM2 (650M params)" },
+                                    { value: "facebook/esm2_t48_15B_UR50D", label: "ESM2 (15B params)" }
+                                ]}
+                            />
+                        </FormField>
+                    )}
+                </FormRow>
+
+                <MultiSelectControl
+                    label="Select Embedding Files"
+                    options={availableEmbeddingFiles.map(file => ({
+                        key: file.key,
+                        label: file.key.split('/').pop() || file.key
+                    }))}
+                    selectedValues={selectedEmbeddingPaths}
+                    onChange={setSelectedEmbeddingPaths}
+                    style={{ width: '100%' }}
+                />
+
+                <MultiSelectControl
+                    label="Select Naturalness Files"
+                    options={availableNaturalnessFiles.map(file => ({
+                        key: file.key,
+                        label: file.key.split('/').pop() || file.key
+                    }))}
+                    selectedValues={selectedNaturalnessPaths}
+                    onChange={setSelectedNaturalnessPaths}
+                    style={{ width: '100%' }}
+                />
+
+                <TextAreaControl
+                    label="Few Shot Parameters (JSON format)"
+                    value={fewShotParams}
+                    onChange={(value) => {
+                        setFewShotParams(value);
+                    }}
+                    placeholder='{"key": "value"}'
+                    rows={4}
+                    inputStyle={{ fontFamily: 'monospace' }}
+                    style={{ width: '100%' }}
+                />
+                <p className="uk-text-meta">
+                    Enter a valid JSON object. Border will turn green when valid, red when invalid.
+                </p>
+
+                <button
+                    className="uk-button uk-button-primary uk-margin-top"
+                    onClick={handleEvolve}
+                    disabled={
+                        evolutionName === '' ||
+                        !activityFile ||
+                        ((mode === 'randomforest' || mode === 'mlp') && selectedEmbeddingPaths.length === 0) ||
+                        (mode === 'finetuning' && !finetuningModelCheckpoint)
+                    }
                 >
-                    <span>New Evolution Run</span>
-                    <span>{showForm ? "▲" : "▼"}</span>
-                </div>
-                {showForm && (
-                    <section style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                        <h3>Start New Evolution Run</h3>
-                        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-
-                            {/* Name Input */}
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                <label className="uk-form-label">Name</label>
-                                <input
-                                    type="text"
-                                    className="uk-input"
-                                    value={evolutionName}
-                                    onChange={(e) => setEvolutionName(e.target.value)}
-                                />
-                            </div>
-
-                            {/* Activity File Upload */}
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                <label className="uk-form-label">Upload Activity File</label>
-                                <input
-                                    type="file"
-                                    accept=".xlsx,.xls"
-                                    onChange={handleActivityFileUpload}
-                                    className="uk-input"
-                                />
-                                {activityFile && (
-                                    <p className="uk-text-meta">Selected file: {activityFile.name}</p>
-                                )}
-                            </div>
-
-                            {/* Mode Selection */}
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                <label className="uk-form-label">Mode</label>
-                                <select
-                                    className="uk-select"
-                                    value={mode}
-                                    onChange={(e) => setMode(e.target.value)}
-                                >
-                                    <option value="TorchMLPFewShotModel">MLP Few Shot Model</option>
-                                    <option value="RandomForestFewShotModel">RandomForestFewShotModel</option>
-                                    <option value="randomforest">(old) Random Forest</option>
-                                    <option value="mlp">(old) Multi-Layer Perceptron</option>
-                                    <option value="finetuning">(old) Finetuning</option>
-                                </select>
-                            </div>
-
-                            {/* Conditional inputs based on mode */}
-                            {mode === 'finetuning' && (
-                                <div style={{ flex: 1, minWidth: '200px' }}>
-                                    <label className="uk-form-label">Model Checkpoint</label>
-                                    <select
-                                        className="uk-select"
-                                        value={finetuningModelCheckpoint}
-                                        onChange={(e) => setFinetuningModelCheckpoint(e.target.value)}
-                                    >
-                                        <option value="facebook/esm2_t6_8M_UR50D">ESM2 (8M params)</option>
-                                        <option value="facebook/esm2_t33_650M_UR50D">ESM2 (650M params)</option>
-                                        <option value="facebook/esm2_t48_15B_UR50D">ESM2 (15B params)</option>
-                                    </select>
-                                </div>
-                            )}
-
-                            <div style={{ flex: '0 0 auto', width: '100%' }}>
-                                <label className="uk-form-label">Select Embedding Files</label>
-                                <select
-                                    className="uk-select"
-                                    multiple
-                                    size={Math.min(10, availableEmbeddingFiles.length || 1)}
-                                    value={selectedEmbeddingPaths}
-                                    onChange={handleEmbeddingFileSelection}
-                                >
-                                    {availableEmbeddingFiles.map(file => (
-                                        <option key={file.key} value={file.key}>
-                                            {file.key.split('/').pop()}
-                                        </option>
-                                    ))}
-                                </select>
-                                <p className="uk-text-meta">
-                                    Selected {selectedEmbeddingPaths.length} embedding file(s)
-                                </p>
-                            </div>
-
-                            <div style={{ flex: '0 0 auto', width: '100%' }}>
-                                <label className="uk-form-label">Select Naturalness Files</label>
-                                <select
-                                    className="uk-select"
-                                    multiple
-                                    size={Math.min(10, availableNaturalnessFiles.length || 1)}
-                                    value={selectedNaturalnessPaths}
-                                    onChange={handleNaturalnessFileSelection}
-                                >
-                                    {availableNaturalnessFiles.map(file => (
-                                        <option key={file.key} value={file.key}>
-                                            {file.key.split('/').pop()}
-                                        </option>
-                                    ))}
-                                </select>
-                                <p className="uk-text-meta">
-                                    Selected {selectedNaturalnessPaths.length} naturalness file(s)
-                                </p>
-                            </div>
-
-                            {/* New Few Shot Parameters Input */}
-                            <div style={{ flex: '0 0 auto', width: '100%' }}>
-                                <label className="uk-form-label">Few Shot Parameters (JSON format)</label>
-                                <textarea
-                                    className="uk-textarea"
-                                    rows={4}
-                                    value={fewShotParams}
-                                    onChange={(e) => {
-                                        setFewShotParams(e.target.value);
-                                        // Try to validate JSON
-                                        try {
-                                            if (e.target.value) {
-                                                JSON.parse(e.target.value);
-                                                e.target.style.borderColor = '#32d296'; // Success color
-                                            } else {
-                                                e.target.style.borderColor = ''; // Default color
-                                            }
-                                        } catch (err) {
-                                            e.target.style.borderColor = '#f0506e'; // Error color
-                                        }
-                                    }}
-                                    placeholder='{"key": "value"}'
-                                    style={{ fontFamily: 'monospace' }}
-                                />
-                                <p className="uk-text-meta">
-                                    Enter a valid JSON object. Border will turn green when valid, red when invalid.
-                                </p>
-                            </div>
-                        </div>
-
-                        <button
-                            className="uk-button uk-button-primary uk-margin-top"
-                            onClick={handleEvolve}
-                            disabled={
-                                evolutionName === '' ||
-                                !activityFile ||
-                                ((mode === 'randomforest' || mode === 'mlp') && selectedEmbeddingPaths.length === 0) ||
-                                (mode === 'finetuning' && !finetuningModelCheckpoint)
-                            }
-                        >
-                            Start Evolution
-                        </button>
-                    </section>
-                )}
-            </div>
-        </div >
+                    Start Evolution
+                </button>
+            </CollapsibleSection>
+        </TabContainer>
     );
 };
 
