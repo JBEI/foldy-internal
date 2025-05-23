@@ -27,7 +27,7 @@ from app.helpers.sequence_util import (
     maybe_get_seq_id_error_message,
 )
 from app.jobs import esm_jobs, evolve_jobs
-from app.models import Evolution, Fold
+from app.models import Evolution, Fold, Invokation
 from app.util import get_job_type_replacement
 from app.views.other_views import evolution_fields
 from folde.few_shot_models import is_valid_few_shot_model_name
@@ -47,18 +47,6 @@ upload_parser.add_argument("few_shot_params", type=str, location="form", require
 
 @ns.route("/evolve")
 class EvolveResource(Resource):
-    @ns.marshal_with(evolution_fields)
-    def get(self, evolution_id: int) -> Evolution:
-        """Get evolution record by ID.
-
-        Args:
-            evolution_id: ID of the evolution to retrieve
-
-        Returns:
-            Evolution record
-        """
-        evolution = Evolution.query.get(evolution_id)
-        return evolution
 
     @verify_has_edit_access
     @ns.expect(upload_parser)
@@ -178,3 +166,47 @@ class EvolveResource(Resource):
             logging.info(f"Queued {mode} job {enqueued_job.id} for evolution {evolve_record.id}")
 
         return evolve_record
+
+
+@ns.route('/evolve/<int:evolution_id>')
+class SingleEvolveResource(Resource):
+    @ns.marshal_with(evolution_fields)
+    def get(self, evolution_id: int) -> Evolution:
+        """Get evolution record by ID.
+
+        Args:
+            evolution_id: ID of the evolution to retrieve
+
+        Returns:
+            Evolution record
+        """
+        evolution = Evolution.query.get(evolution_id)
+        if not evolution:
+            raise BadRequest(f"Evolution not found {evolution_id}")
+        return evolution
+
+    def delete(self, evolution_id: int) -> None:
+        """Delete an evolution record by ID.
+
+        Args:
+            evolution_id: ID of the evolution to delete
+        """
+        evolution = Evolution.query.get(evolution_id)
+        if not evolution:
+            raise BadRequest(f"Evolution not found {evolution_id}")
+
+        manager = FoldStorageManager()
+        manager.setup()
+
+        assert manager.storage_manager is not None
+
+        manager.storage_manager.delete_folder(evolution.fold_id, f'evolve/{evolution.name}')
+
+        if evolution.invokation_id:
+            invokation = Invokation.query.get(evolution.invokation_id)
+            if invokation:
+                invokation.delete()
+
+        evolution.delete()
+
+        return None
