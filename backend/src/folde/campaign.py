@@ -475,7 +475,7 @@ def simulate_campaign(
         # with ThreadPoolExecutor() as executor:
             futures = []
             for sim_idx in range(number_of_simulations):
-                rng = np.random.RandomState(random_seed + sim_idx)
+                rng = np.random.RandomState(random_seed + 1000 * sim_idx)
                 bootstrapped_seq_ids = rng.choice(
                     activity_df.index.values,
                     size=int(len(activity_df) * 0.5),

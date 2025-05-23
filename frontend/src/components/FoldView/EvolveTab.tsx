@@ -835,7 +835,7 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                             <tr key={evolution.id}>
                                 <td style={{ overflowX: 'hidden' }}><p uk-tooltip={evolution.name}>{evolution.name}</p></td>
                                 <td>{getEvolutionStatus(evolution)}</td>
-                                <td style={{ width: '200px' }}>
+                                <td style={{ width: '200px', paddingLeft: '2px', paddingRight: '2px' }}>
 
                                     <FaFileCode
                                         uk-tooltip="View logs"

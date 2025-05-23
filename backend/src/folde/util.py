@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 from pandas import DataFrame
 from scipy.special import softmax
 from sklearn.metrics import recall_score
-
+import torch
 
 def get_consensus_scores(pred_list: List[pd.Series], decision_mode: str) -> pd.Series:
     """Get the prediction of an ensemble using deicision mode (often max or median)."""
@@ -91,6 +91,91 @@ def internal_sample_n_indices(
     ), f"chosen_indices must be unique, got {chosen_indices}"
 
     return chosen_indices
+
+
+def constant_liar_sample(
+    ensemble_preds: np.ndarray,
+    seq_ids: np.ndarray,
+    q_slate_size: int,
+    beta: float,
+    tau2=1e-3,
+    choice_of_baseline: str = 'min') -> list[str]:
+    """
+    The "Constant Liar” approximation to the parallel EI acquisition function.
+
+    Args:
+        ensemble_preds: np.ndarray, shape (S, N)
+        seq_ids: np.ndarray, shape (N,)
+        q_slate_size: int, number of samples to draw
+        beta: float, beta parameter for UCB
+        tau2: float, a model of sample variance, helps numerical stability
+    """
+    if ensemble_preds.ndim != 2:
+        raise ValueError(f"ensemble_preds must be a 2D array, got shape {ensemble_preds.shape}")
+    if ensemble_preds.shape[0] != len(seq_ids):
+        raise ValueError(f"ensemble_preds must have the same number of rows as seq_ids, got {ensemble_preds.shape[1]} and {len(seq_ids)}")
+    if ensemble_preds.shape[0] > 10000:
+        raise ValueError(f"ensemble_preds must have at most 10000 rows, got {ensemble_preds.shape[1]}")
+    if ensemble_preds.shape[0] < q_slate_size:
+        raise ValueError(f"ensemble_preds must have at least q_slate_size rows, got {ensemble_preds.shape[1]} vs {q_slate_size}")
+    if ensemble_preds.shape[1] < 3:
+        raise ValueError(f'Calculating a good variance requires at least 3 models, got {ensemble_preds.shape[1]}')
+
+    pred_tensor  = torch.tensor(ensemble_preds.T, dtype=torch.float32)  # (S, N)
+    S, N = pred_tensor.shape
+
+    # means, deviations, and full covariance 
+    means = pred_tensor.mean(dim=0)          # (N,)
+    devs  = pred_tensor - means              # (S, N)
+    Cov   = (devs.T @ devs) / S              # (N, N)
+    vars  = Cov.diag().clamp_min(tau2)       # (N,)
+    sigmas = vars.sqrt()                     # (N,)
+
+    # constant liar setup: choose L as the ****minimum**** prior mean 
+    # very adversarial
+    if choice_of_baseline == 'min':
+        L = means.min().item()
+    elif choice_of_baseline == 'mean':
+        L = means.mean().item()
+    else:
+        raise ValueError(f"Invalid choice of baseline {choice_of_baseline}")
+
+    # greedy Constant Liar batch‐UCB selection 
+    selected = []
+
+    for _ in range(q_slate_size):
+        # 1) compute marginal UCB scores with current means and variances
+        ucb = means + beta * sigmas
+        ucb[selected] = -float("inf")  # mask out already‐picked
+
+        # 2) select best candidate
+        idx = int(ucb.argmax().item())
+        selected.append(idx)
+        print(f'Selecting {seq_ids[idx]} with UCB: {ucb[idx]} = {means[idx]} + {beta} * {sigmas[idx]}')
+
+        # 3) "lie" by imagining a ***bad*** constant observation y = L at idx:
+        cov_i = Cov[:, idx].clone()        # (N,)
+        v_i   = vars[idx].item()           # Var at idx
+
+        # 4) update posterior means conditional on fake bad y=L
+        #     μ_new = μ + cov_i * (L - μ[idx]) / v_i
+        means = means + cov_i * (L - means[idx]) / (v_i + tau2)
+        # if any(means > 1000):
+        #     problem_indices = torch.where(means > 100)[0]
+        #     print(f'means: {means[problem_indices[0]]}')
+        #     print(f'cov_i: {cov_i[problem_indices[0]]}')
+        #     print(f'v_i: {v_i}')
+        #     print(f'L: {L}')
+
+        # 5) update covariance via Schur complement, same as KG believer
+        Cov   = Cov - torch.outer(cov_i, cov_i) / (v_i + tau2)
+        Cov    = 0.5 * (Cov + Cov.T)         # re-symmetrise
+        vars  = Cov.diag().clamp_min(tau2)
+        sigmas = vars.sqrt()                # update std devs
+
+    # map back to sequence IDs 
+    constant_liar_chosen_seq_ids = seq_ids[selected]     # length Q
+    return constant_liar_chosen_seq_ids.tolist()
 
 
 def top_k_mask(series: pd.Series, percentile: float) -> pd.Series:

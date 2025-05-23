@@ -17,6 +17,7 @@ but contributes to multiple preference pairs.
 
 import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+import random
 
 import numpy as np
 import torch
@@ -168,7 +169,7 @@ def batch_bradley_terry_loss(
     return loss
 
 # function for masks
-def get_random_pair_split(B: int, val_fraction: float = 0.2, device=None):
+def old_get_random_pair_split(B: int, labels: np.ndarray, val_fraction: float = 0.2, device=None):
     """
     two (BxB) boolean masks that stay *constant through all training*:
     - train_mask: ~80% of all i≠j pairs
@@ -185,6 +186,64 @@ def get_random_pair_split(B: int, val_fraction: float = 0.2, device=None):
     train_mask = ~val_mask
     train_mask = train_mask.triu(diagonal=1) # make the mask upper triangular (excluding diagonal).
     
+    return train_mask, val_mask
+
+def get_random_pair_split(B: int, labels: np.ndarray, rng_seed: int, val_fraction: float = 0.2, device=None):
+    """
+    Split directed pairs into training vs validation such that validation
+    masks only include pairs for which there is NO directed chain
+    through any intermediate in the training graph. This ensures that 
+    the validation loss only contains nontrivial comparisons.
+
+    Returns:
+      train_mask, val_mask : (BxB) boolean masks
+    """
+    torch.manual_seed(rng_seed)
+    random.seed(rng_seed)
+    # sample an initial undirected training graph with probability 1 - val_fraction
+    prob_train = 1 - val_fraction
+    train_graph = torch.rand((B, B), device=device) < prob_train
+    train_graph.fill_diagonal_(False)
+
+    # build directed adjacency from training_graph + labels for BFS
+    labels_np = labels.tolist()
+    adj = [[] for _ in range(B)]
+    for u in range(B):
+        for v in range(B):
+            if train_graph[u, v] and labels_np[u] > labels_np[v]:
+                adj[u].append(v)
+
+    # do BFS
+    reach = [[False]*B for _ in range(B)]
+    for u in range(B):
+        visited = [False]*B
+        stack = [u]
+        visited[u] = True
+        while stack:
+            x = stack.pop()
+            for y in adj[x]:
+                if not visited[y]:
+                    visited[y] = True
+                    stack.append(y)
+        reach[u] = visited
+
+    # collect all non‐trivial directed pairs (i→j) with no path for validation loss
+    nontrivial = [(i, j) for i in range(B) for j in range(B) if i != j and not reach[i][j]]
+
+    # sample exactly M = val_fraction * B*(B-1) of them for validation, note that B*(B-1) gets rid of the diagonal
+    M = int(val_fraction * B * (B - 1))
+    M = min(M, len(nontrivial))
+    logging.debug(f"Sampling {M} validation pairs from {len(nontrivial)} non-trivial pairs")
+    selected = random.sample(nontrivial, M)
+
+    # build boolean masks as before
+    val_mask = torch.zeros((B, B), dtype=torch.bool, device=device)
+    for i, j in selected:
+        val_mask[i, j] = True
+    train_mask = ~val_mask
+    train_mask.fill_diagonal_(False)
+    val_mask.fill_diagonal_(False)
+
     return train_mask, val_mask
 
 
@@ -216,8 +275,6 @@ class PreferenceTrainer:
             self.device = device
 
         self.random_state = random_state
-        torch.manual_seed(random_state)  # Set PyTorch random seed
-        np.random.seed(random_state)  # Set NumPy random seed
 
         self.model = model.to(self.device)
         self.scaler = GradScaler()  # Add this line
@@ -264,6 +321,10 @@ class PreferenceTrainer:
                 'val_loss': List of validation losses for each epoch
         """
 
+        torch.manual_seed(self.random_state)
+        random.seed(self.random_state)
+        np.random.seed(self.random_state)
+
         # Create datasets and dataloaders
         train_dataset = PreferenceDataset(train_embeddings, train_activity_labels, device=self.device)
         val_dataset = None
@@ -282,6 +343,8 @@ class PreferenceTrainer:
                 raise ValueError(f'Batch size {batch_size} is less than the number of training samples {train_activity_labels.shape[0]}.')
             train_mask, val_mask = get_random_pair_split(
                 train_activity_labels.shape[0],
+                train_activity_labels,
+                self.random_state,
                 do_validation_with_pair_fraction,
                 device=self.device
             )
@@ -532,6 +595,10 @@ def create_preference_model(
     Returns:
         Tuple containing (model, trainer)
     """
+    # This... might be where we should set seeds for initialization of model weights.
+    torch.manual_seed(random_state)
+    random.seed(random_state)
+    np.random.seed(random_state)
     model = BradleyTerryMLP(embedding_dim=embedding_dim, hidden_dims=hidden_dims, dropout=dropout)
     # model = torch.compile(model)
 
