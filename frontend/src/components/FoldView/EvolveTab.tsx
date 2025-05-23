@@ -25,6 +25,7 @@ type RowData = {
     predictionMean: number;
     predictionStddev: number;
     score: number;
+    modelPredictions?: number[];
 }
 
 const seqIdToFootprint = (seqId: string): string => {
@@ -79,6 +80,7 @@ const parseCsvDataIntoRowData = (predictedMutantCsvDataString: string, beta: num
             predictionMean: mean,
             predictionStddev: stddev,
             score: score,
+            modelPredictions: predictions,
         };
     });
 
@@ -121,6 +123,33 @@ const seqIdListToLociList = (seqIdList: string[]): number[] => {
 }
 
 
+// Add a utility function to calculate Pearson correlation
+function calculateCorrelation(x: number[], y: number[]): number {
+    const n = x.length;
+    if (n === 0 || n !== y.length) return 0;
+
+    // Calculate means
+    const xMean = x.reduce((sum, val) => sum + val, 0) / n;
+    const yMean = y.reduce((sum, val) => sum + val, 0) / n;
+
+    // Calculate correlation
+    let numerator = 0;
+    let xDenominator = 0;
+    let yDenominator = 0;
+
+    for (let i = 0; i < n; i++) {
+        const xDiff = x[i] - xMean;
+        const yDiff = y[i] - yMean;
+        numerator += xDiff * yDiff;
+        xDenominator += xDiff * xDiff;
+        yDenominator += yDiff * yDiff;
+    }
+
+    const denominator = Math.sqrt(xDenominator * yDenominator);
+    return denominator === 0 ? 0 : numerator / denominator;
+}
+
+
 interface PredictedMutantTableProps {
     yamlConfig: string | null;
     predictedMutantCsvData: string | null;
@@ -130,6 +159,8 @@ interface PredictedMutantTableProps {
     setSelectedSubsequence: (selection: Selection | null) => void;
 }
 
+
+// Now modify the PredictedMutantTable component to include the heatmap
 const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
     yamlConfig,
     predictedMutantCsvData,
@@ -165,6 +196,58 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
         }
         return data;
     }, [predictedMutantCsvData, beta, maxPerFootprint, topPerformersToDisplay, sortColumn, sortDirection]);
+
+    const correlationData = useMemo(() => {
+        if (!tableData || tableData.length === 0 || !tableData[0].modelPredictions) {
+            return null;
+        }
+
+        const sequenceCount = tableData.length;
+        if (sequenceCount <= 1) return null;
+
+        // Create a matrix to store correlations between sequences
+        const matrix: number[][] = Array(sequenceCount).fill(0).map(() => Array(sequenceCount).fill(0));
+
+        // For each pair of sequences, we need to calculate correlation of their values
+        // across the different metrics (mean, stddev, score)
+        for (let i = 0; i < sequenceCount; i++) {
+            for (let j = 0; j < sequenceCount; j++) {
+                // For identical sequences, correlation is 1
+                if (i === j) {
+                    matrix[i][j] = 1;
+                    continue;
+                }
+
+                // Calculate correlation coefficient between model predictions
+                const seqIData = tableData[i].modelPredictions!;
+                const seqJData = tableData[j].modelPredictions!;
+
+                // Calculate means
+                const iMean = seqIData.reduce((sum, val) => sum + val, 0) / seqIData.length;
+                const jMean = seqJData.reduce((sum, val) => sum + val, 0) / seqJData.length;
+
+                // Calculate correlation coefficient (normalized covariance)
+                let numerator = 0;
+                let iVariance = 0;
+                let jVariance = 0;
+
+                for (let k = 0; k < seqIData.length; k++) {
+                    const iDiff = seqIData[k] - iMean;
+                    const jDiff = seqJData[k] - jMean;
+                    numerator += iDiff * jDiff;
+                    iVariance += iDiff * iDiff;
+                    jVariance += jDiff * jDiff;
+                }
+
+                // Correlation coefficient = covariance / (stddev_i * stddev_j)
+                const correlation = numerator / (Math.sqrt(iVariance) * Math.sqrt(jVariance));
+
+                matrix[i][j] = correlation;
+            }
+        }
+
+        return matrix;
+    }, [tableData]);
 
     if (!tableData) return null;
     const columns = [
@@ -203,6 +286,7 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
         }
     ];
 
+    // Existing functions
     const copyMutationsToClipboard = () => {
         if (!tableData) return;
         const mutations = tableData
@@ -212,7 +296,6 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
         navigator.clipboard.writeText(mutations);
         notify.success('Seq IDs copied to clipboard!');
     }
-
 
     const highlightResiduesOnModel = () => {
         if (!tableData) return null;
@@ -255,7 +338,6 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
                 columns={columns}
                 rowGetter={i => tableData[i]}
                 rowsCount={tableData.length}
-                // enableRowSelect={true}
                 onGridSort={(sortCol, direction) => {
                     setSortColumn(sortCol);
                     setSortDirection(direction.toUpperCase() as 'ASC' | 'DESC');
@@ -274,13 +356,84 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
                 >
                     Copy mutations to clipboard
                 </button>
-                <button className="uk-button uk-button-primary" onClick={() => highlightResiduesOnModel()}>
+                <button
+                    className="uk-button uk-button-primary"
+                    onClick={() => highlightResiduesOnModel()}
+                >
                     Highlight residues on model
                 </button>
             </ButtonGroup>
+
+            {correlationData && (
+                <div style={{
+                    height: '600px', // Increased height for better visibility
+                    backgroundColor: '#f9f9f9',
+                    padding: '15px',
+                    borderRadius: '4px',
+                    marginTop: '20px',
+                    overflowX: 'auto', // Add horizontal scroll for many sequences
+                    overflowY: 'auto'  // Add vertical scroll too
+                }}>
+                    <Plot
+                        data={[{
+                            z: correlationData,
+                            x: tableData.map(row => row.seqId),
+                            y: tableData.map(row => row.seqId),
+                            type: 'heatmap',
+                            colorscale: 'RdBu',
+                            zmin: -1,
+                            zmax: 1,
+                            text: correlationData.map(row =>
+                                row.map(val => val.toFixed(2))
+                            ),
+                            hovertemplate: '%{x} vs %{y}<br>Correlation: %{text}<extra></extra>',
+                            showscale: true,
+                            colorbar: {
+                                title: 'Correlation',
+                                titleside: 'right'
+                            }
+                        }]}
+                        layout={{
+                            title: 'Sequence Prediction Correlation',
+                            autosize: true,
+                            // Increase margins to accommodate sequence IDs
+                            margin: { l: 150, r: 50, t: 60, b: 150 },
+                            xaxis: {
+                                title: 'Sequence ID',
+                                tickangle: 45,
+                                tickfont: { size: 10 }
+                            },
+                            yaxis: {
+                                title: 'Sequence ID',
+                                autorange: 'reversed',
+                                tickfont: { size: 10 }
+                            },
+                            plot_bgcolor: '#f9f9f9',
+                            paper_bgcolor: '#f9f9f9',
+                            font: { family: 'Arial, sans-serif' }
+                        }}
+                        style={{ width: '100%', height: '100%' }}
+                        useResizeHandler={true}
+                        config={{
+                            responsive: true,
+                            displayModeBar: true,
+                            displaylogo: false,
+                            modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                            toImageButtonOptions: {
+                                format: 'png',
+                                filename: 'sequence_correlation_heatmap',
+                                height: 800,
+                                width: 800,
+                                scale: 2
+                            }
+                        }}
+                    />
+                </div>
+            )}
         </DataTableContainer>
     );
 };
+
 
 const createPlotData = (debugData: any) => {
     if (!debugData || !debugData.pretrain_metrics || !debugData.finetune_metrics) {
@@ -379,11 +532,10 @@ const renderDebugPlots = (debugData: any) => {
     const plotData = createPlotData(debugData);
 
     return (
-        <PlotContainer title="Training Metrics">
+        <PlotContainer title="Training Metrics" height="700px">
             {/* Pretraining loss plot */}
             <div style={{
-                height: '450px',
-                marginBottom: '30px',
+                height: '300px',
                 backgroundColor: '#f9f9f9',
                 padding: '15px',
                 borderRadius: '4px'
@@ -402,14 +554,14 @@ const renderDebugPlots = (debugData: any) => {
                             title: 'Loss',
                             gridcolor: '#e1e1e1'
                         },
-                        legend: {
-                            orientation: 'h',
-                            y: -0.2,
-                            xanchor: 'center',
-                            x: 0.5,
-                            font: { size: 10 },
-                            tracegroupgap: 0
-                        },
+                        // legend: {
+                        //     orientation: 'h',
+                        //     y: -0.2,
+                        //     xanchor: 'center',
+                        //     x: 0.5,
+                        //     font: { size: 10 },
+                        //     tracegroupgap: 0
+                        // },
                         plot_bgcolor: '#f9f9f9',
                         paper_bgcolor: '#f9f9f9',
                         font: { family: 'Arial, sans-serif' }
@@ -427,7 +579,7 @@ const renderDebugPlots = (debugData: any) => {
 
             {/* Finetuning loss plot */}
             <div style={{
-                height: '450px',
+                height: '300px',
                 backgroundColor: '#f9f9f9',
                 padding: '15px',
                 borderRadius: '4px'
@@ -446,14 +598,14 @@ const renderDebugPlots = (debugData: any) => {
                             title: 'Loss',
                             gridcolor: '#e1e1e1'
                         },
-                        legend: {
-                            orientation: 'h',
-                            y: -0.2,
-                            xanchor: 'center',
-                            x: 0.5,
-                            font: { size: 10 },
-                            tracegroupgap: 0
-                        },
+                        // legend: {
+                        //     orientation: 'h',
+                        //     y: -0.2,
+                        //     xanchor: 'center',
+                        //     x: 0.5,
+                        //     font: { size: 10 },
+                        //     tracegroupgap: 0
+                        // },
                         plot_bgcolor: '#f9f9f9',
                         paper_bgcolor: '#f9f9f9',
                         font: { family: 'Arial, sans-serif' }
@@ -661,31 +813,11 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
         <TabContainer>
             {/* Description Section */}
             <DescriptionSection title="Evolution Runs Overview">
-                    This section allows you to run a version of
-                    <a href="https://www.biorxiv.org/content/10.1101/2024.07.17.604015v1"> EvolvePro </a>
-                    on your protein. This tool facilitates low-N directed evolution of proteins,
-                    with as little as 16 screened mutants per round. Please see the paper for more
-                    details. Each run takes in an
-                    <ul>
-                        <li><code>activity excel file</code> with columns seq_id and activity</li>
-                        <li><code>embedding files</code> embeddings run in the excel tab, containing embeddings for both the mutants with activity measurements as well as all mutants you wish to screen.</li>
-                    </ul>
-                    <p>
-                        Once complete, you can download the predicted activities for all mutants from the Files tab.
-                    </p>
-                    <h4>
-                        Example activity file
-                    </h4>
-                    <img
-                        style={{
-                            width: "200px",
-                        }}
-                        src={`/evolve_activity_excel_example.png`}
-                        alt=""
-                    />
-                    <p>
-                        <code>Estimated cost:</code>~$0.05 per evolution round.
-                    </p>
+                This section allows you to run a version of
+                <a href="https://www.biorxiv.org/content/10.1101/2024.07.17.604015v1"> EvolvePro </a>
+                on your protein. This tool facilitates low-N directed evolution of proteins,
+                with as little as 16 screened mutants per round. Please see the paper for more
+                details.
             </DescriptionSection>
 
             {/* Evolution Runs Table */}
@@ -736,70 +868,67 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
 
             {
                 displayedEvolutionId ?
-                    <>
+                    <TableSection title={""} scrollable={false}>
+                        <div style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginBottom: "10px"
+                        }}>
+                            <h3 style={{ margin: 0 }}>
+                                {evolutions?.find(e => e.id === displayedEvolutionId)?.name || "Evolution Results"}
+                            </h3>
+                            <button
+                                onClick={() => setDisplayedEvolutionId(null)}
+                                style={{
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    fontSize: "20px",
+                                    padding: "5px",
+                                    color: "#666"
+                                }}
+                                aria-label="Close"
+                            >
+                                ✕
+                            </button>
+                        </div>
 
-                        <TableSection>
-                            <div style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                marginBottom: "10px"
-                            }}>
-                                <h3 style={{ margin: 0 }}>
-                                    {evolutions?.find(e => e.id === displayedEvolutionId)?.name || "Evolution Results"}
-                                </h3>
-                                <button
-                                    onClick={() => setDisplayedEvolutionId(null)}
-                                    style={{
-                                        background: "none",
-                                        border: "none",
-                                        cursor: "pointer",
-                                        fontSize: "20px",
-                                        padding: "5px",
-                                        color: "#666"
-                                    }}
-                                    aria-label="Close"
-                                >
-                                    ✕
-                                </button>
-                            </div>
+                        <NumberInputControl
+                            label="Beta (Upper Confidence Bound parameter)"
+                            value={beta}
+                            onChange={setBeta}
+                            min={0}
+                            step={0.1}
+                        />
+                        <NumberInputControl
+                            label="Max number of mutants per footprint"
+                            value={maxMutationsPerFootprint}
+                            onChange={setMaxMutationsPerFootprint}
+                            min={1}
+                        />
+                        <NumberInputControl
+                            label="Top mutants to display"
+                            value={topPerformersToDisplay}
+                            onChange={setTopPerformersToDisplay}
+                            min={1}
+                        />
+                        {/* Mutations table */}
+                        <div style={{ marginBottom: '20px' }}>
+                            <h3 style={{ marginBottom: '15px', color: '#444' }}>Selected Mutants</h3>
+                            <PredictedMutantTable
+                                yamlConfig={yamlConfig}
+                                predictedMutantCsvData={evolutionCsvData}
+                                beta={beta}
+                                maxPerFootprint={maxMutationsPerFootprint}
+                                topPerformersToDisplay={topPerformersToDisplay}
+                                setSelectedSubsequence={setSelectedSubsequence}
+                            />
+                        </div>
 
-                            <NumberInputControl
-                                label="Beta (Upper Confidence Bound parameter)"
-                                value={beta}
-                                onChange={setBeta}
-                                min={0}
-                                step={0.1}
-                            />
-                            <NumberInputControl
-                                label="Max number of mutants per footprint"
-                                value={maxMutationsPerFootprint}
-                                onChange={setMaxMutationsPerFootprint}
-                                min={1}
-                            />
-                            <NumberInputControl
-                                label="Top mutants to display"
-                                value={topPerformersToDisplay}
-                                onChange={setTopPerformersToDisplay}
-                                min={1}
-                            />
-                            {/* Mutations table */}
-                            <div style={{ marginBottom: '20px' }}>
-                                <h3 style={{ marginBottom: '15px', color: '#444' }}>Selected Mutants</h3>
-                                <PredictedMutantTable
-                                    yamlConfig={yamlConfig}
-                                    predictedMutantCsvData={evolutionCsvData}
-                                    beta={beta}
-                                    maxPerFootprint={maxMutationsPerFootprint}
-                                    topPerformersToDisplay={topPerformersToDisplay}
-                                    setSelectedSubsequence={setSelectedSubsequence}
-                                />
-                            </div>
-
-                            {/* Render plotly charts with the debug data */}
-                            {renderDebugPlots(evolutionDebugData)}
-                        </TableSection>
-                    </>
+                        {/* Render plotly charts with the debug data */}
+                        {renderDebugPlots(evolutionDebugData)}
+                    </TableSection>
                     : null
             }
 
@@ -810,6 +939,27 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                 onToggle={() => setShowForm(!showForm)}
             >
                 <h3>Start New Evolution Run</h3>
+                Each run takes in an
+                <ul>
+                    <li><code>activity excel file</code> with columns seq_id and activity</li>
+                    <li><code>embedding files</code> embeddings run in the excel tab, containing embeddings for both the mutants with activity measurements as well as all mutants you wish to screen.</li>
+                </ul>
+                <p>
+                    Once complete, you can download the predicted activities for all mutants from the Files tab.
+                </p>
+                <h4>
+                    Example activity file
+                </h4>
+                <img
+                    style={{
+                        width: "200px",
+                    }}
+                    src={`/evolve_activity_excel_example.png`}
+                    alt=""
+                />
+                <p>
+                    <code>Estimated cost:</code>~$0.05 per evolution round.
+                </p>
                 <FormRow>
                     <FormField>
                         <TextInputControl
