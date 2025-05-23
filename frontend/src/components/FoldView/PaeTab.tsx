@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { getResidueHeatmap } from "../../util/plots";
 import { getFoldPae } from "../../api/foldApi";
 import { FoldPae } from "../../types/types";
+import { TabContainer, DescriptionSection, SectionCard } from "../../util/tabComponents";
 
 interface PaeTabProps {
     foldId: number;
@@ -97,15 +98,19 @@ const PaeTab = React.memo(
         };
 
         return (
-            <div className="uk-text-center" key="Pae">
-                <h3>PAE</h3>
-                <p>
-                    Predicted alignment error (PAE) may indicate whether two domains are
-                    rigid with respect to one another (
-                    <a href="https://alphafold.ebi.ac.uk/faq">AlphaFold FAQ</a>).
-                </p>
-                {getPaeProbHeatmap()}
-            </div>
+            <TabContainer key="Pae">
+                <DescriptionSection title="PAE">
+                    <p>
+                        Predicted alignment error (PAE) may indicate whether two domains are
+                        rigid with respect to one another (
+                        <a href="https://alphafold.ebi.ac.uk/faq">AlphaFold FAQ</a>).
+                    </p>
+                </DescriptionSection>
+                
+                <SectionCard style={{ textAlign: 'center' }}>
+                    {getPaeProbHeatmap()}
+                </SectionCard>
+            </TabContainer>
         );
     },
     (prevProps: PaeTabProps, nextProps: PaeTabProps) => {

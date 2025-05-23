@@ -12,6 +12,9 @@ import ReactDataGrid from 'react-data-grid';
 import { BoltzYamlHelper } from '../../util/boltzYamlHelper';
 import { Selection } from './StructurePane';
 import Plot from 'react-plotly.js';
+import { TabContainer, DescriptionSection, TableSection, CollapsibleSection, FormRow, FormField, ButtonGroup, ResponsiveTable } from '../../util/tabComponents';
+import { TextInputControl, TextAreaControl, SelectControl, FileUploadControl, MultiSelectControl, NumberInputControl } from '../../util/controlComponents';
+import { DataTableContainer, PlotContainer } from '../../util/plotComponents';
 
 
 
@@ -247,7 +250,7 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
     }, [selectedSeqIds, tableData]);
 
     return (
-        <div style={{ width: "auto", height: "auto", marginTop: "20px" }}>
+        <DataTableContainer>
             <ReactDataGrid
                 columns={columns}
                 rowGetter={i => tableData[i]}
@@ -264,7 +267,7 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
                     setSelectedSeqIds([row.seqId]);
                 }}
             />
-            <div style={{ marginTop: '10px', display: 'flex', gap: '10px' }}>
+            <ButtonGroup>
                 <button
                     className="uk-button uk-button-default"
                     onClick={() => copyMutationsToClipboard()}
@@ -274,8 +277,8 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
                 <button className="uk-button uk-button-primary" onClick={() => highlightResiduesOnModel()}>
                     Highlight residues on model
                 </button>
-            </div>
-        </div>
+            </ButtonGroup>
+        </DataTableContainer>
     );
 };
 
@@ -376,26 +379,10 @@ const renderDebugPlots = (debugData: any) => {
     const plotData = createPlotData(debugData);
 
     return (
-        <div style={{
-            marginTop: '30px',
-            backgroundColor: '#fff',
-            borderRadius: '8px',
-            border: '1px solid #e0e0e0',
-            padding: '20px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-        }}>
-            <h3 style={{
-                marginBottom: '20px',
-                color: '#333',
-                borderBottom: '1px solid #eee',
-                paddingBottom: '10px'
-            }}>
-                Training Metrics
-            </h3>
-
+        <PlotContainer title="Training Metrics">
             {/* Pretraining loss plot */}
             <div style={{
-                height: '450px', // Increased height for better visibility with multiple lines
+                height: '450px',
                 marginBottom: '30px',
                 backgroundColor: '#f9f9f9',
                 padding: '15px',
@@ -440,7 +427,7 @@ const renderDebugPlots = (debugData: any) => {
 
             {/* Finetuning loss plot */}
             <div style={{
-                height: '450px', // Increased height for better visibility with multiple lines
+                height: '450px',
                 backgroundColor: '#f9f9f9',
                 padding: '15px',
                 borderRadius: '4px'
@@ -481,7 +468,7 @@ const renderDebugPlots = (debugData: any) => {
                     }}
                 />
             </div>
-        </div>
+        </PlotContainer>
     );
 };
 
@@ -671,11 +658,9 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
 
 
     return (
-        <div style={{ padding: '20px', backgroundColor: '#f8f9fa', boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)', borderRadius: '8px' }}>
+        <TabContainer>
             {/* Description Section */}
-            <section style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                <h3 style={{ marginBottom: '10px' }}>Evolution Runs Overview</h3>
-                <div>
+            <DescriptionSection title="Evolution Runs Overview">
                     This section allows you to run a version of
                     <a href="https://www.biorxiv.org/content/10.1101/2024.07.17.604015v1"> EvolvePro </a>
                     on your protein. This tool facilitates low-N directed evolution of proteins,
@@ -701,13 +686,11 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                     <p>
                         <code>Estimated cost:</code>~$0.05 per evolution round.
                     </p>
-                </div>
-            </section>
+            </DescriptionSection>
 
             {/* Evolution Runs Table */}
-            <section style={{ marginBottom: '30px', padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflowX: 'scroll' }}>
-                <h3>Evolution Runs</h3>
-                <table className="uk-table uk-table-striped">
+            <TableSection title="Evolution Runs">
+                <ResponsiveTable>
                     <thead>
                         <tr>
                             <th>Name</th>
@@ -747,15 +730,15 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                             </tr>
                         ))}
                     </tbody>
-                </table>
-            </section>
+                </ResponsiveTable>
+            </TableSection>
 
 
             {
                 displayedEvolutionId ?
                     <>
 
-                        <section style={{ marginBottom: '30px', padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', overflowX: 'scroll' }}>
+                        <TableSection>
                             <div style={{
                                 display: "flex",
                                 justifyContent: "space-between",
@@ -781,45 +764,25 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                                 </button>
                             </div>
 
-                            <div>
-                                <label>
-                                    Beta (Upper Confidence Bound parameter):
-                                    <input
-                                        type="number"
-                                        className="uk-input"
-                                        value={beta}
-                                        onChange={(e) => setBeta(parseFloat(e.target.value))}
-                                        style={{ width: '100px', marginLeft: '10px' }}
-                                        min="0"
-                                    />
-                                </label>
-                            </div>
-                            <div>
-                                <label>
-                                    Max number of mutants per footprint:
-                                    <input
-                                        type="number"
-                                        className="uk-input"
-                                        value={maxMutationsPerFootprint}
-                                        onChange={(e) => setMaxMutationsPerFootprint(parseInt(e.target.value))}
-                                        style={{ width: '100px', marginLeft: '10px' }}
-                                        min="1"
-                                    />
-                                </label>
-                            </div>
-                            <div>
-                                <label>
-                                    Top mutants to display:
-                                    <input
-                                        type="number"
-                                        className="uk-input"
-                                        value={topPerformersToDisplay}
-                                        onChange={(e) => setTopPerformersToDisplay(parseInt(e.target.value))}
-                                        style={{ width: '100px', marginLeft: '10px' }}
-                                        min="1"
-                                    />
-                                </label>
-                            </div>
+                            <NumberInputControl
+                                label="Beta (Upper Confidence Bound parameter)"
+                                value={beta}
+                                onChange={setBeta}
+                                min={0}
+                                step={0.1}
+                            />
+                            <NumberInputControl
+                                label="Max number of mutants per footprint"
+                                value={maxMutationsPerFootprint}
+                                onChange={setMaxMutationsPerFootprint}
+                                min={1}
+                            />
+                            <NumberInputControl
+                                label="Top mutants to display"
+                                value={topPerformersToDisplay}
+                                onChange={setTopPerformersToDisplay}
+                                min={1}
+                            />
                             {/* Mutations table */}
                             <div style={{ marginBottom: '20px' }}>
                                 <h3 style={{ marginBottom: '15px', color: '#444' }}>Selected Mutants</h3>
@@ -835,180 +798,119 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
 
                             {/* Render plotly charts with the debug data */}
                             {renderDebugPlots(evolutionDebugData)}
-                        </section>
+                        </TableSection>
                     </>
                     : null
             }
 
             {/* Collapsible New Run Section */}
-            <div>
-                <div
-                    className='uk-margin-top uk-margin-bottom'
-                    style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "10px 15px",
-                        backgroundColor: "#f8f9fa",
-                        border: "1px solid #e0e0e0",
-                        borderRadius: "8px",
-                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                        cursor: "pointer",
-                        fontWeight: "bold",
+            <CollapsibleSection
+                title="New Evolution Run"
+                isOpen={showForm}
+                onToggle={() => setShowForm(!showForm)}
+            >
+                <h3>Start New Evolution Run</h3>
+                <FormRow>
+                    <FormField>
+                        <TextInputControl
+                            label="Name"
+                            value={evolutionName}
+                            onChange={setEvolutionName}
+                        />
+                    </FormField>
+
+                    <FormField>
+                        <FileUploadControl
+                            label="Upload Activity File"
+                            onChange={setActivityFile}
+                            accept=".xlsx,.xls"
+                            selectedFile={activityFile}
+                        />
+                    </FormField>
+
+                    <FormField>
+                        <SelectControl
+                            label="Mode"
+                            value={mode}
+                            onChange={setMode}
+                            options={[
+                                { value: "TorchMLPFewShotModel", label: "MLP Few Shot Model" },
+                                { value: "RandomForestFewShotModel", label: "RandomForestFewShotModel" },
+                                { value: "randomforest", label: "(old) Random Forest" },
+                                { value: "mlp", label: "(old) Multi-Layer Perceptron" },
+                                { value: "finetuning", label: "(old) Finetuning" }
+                            ]}
+                        />
+                    </FormField>
+
+                    {/* Conditional inputs based on mode */}
+                    {mode === 'finetuning' && (
+                        <FormField>
+                            <SelectControl
+                                label="Model Checkpoint"
+                                value={finetuningModelCheckpoint}
+                                onChange={setFinetuningModelCheckpoint}
+                                options={[
+                                    { value: "facebook/esm2_t6_8M_UR50D", label: "ESM2 (8M params)" },
+                                    { value: "facebook/esm2_t33_650M_UR50D", label: "ESM2 (650M params)" },
+                                    { value: "facebook/esm2_t48_15B_UR50D", label: "ESM2 (15B params)" }
+                                ]}
+                            />
+                        </FormField>
+                    )}
+                </FormRow>
+
+                <MultiSelectControl
+                    label="Select Embedding Files"
+                    options={availableEmbeddingFiles.map(file => ({
+                        key: file.key,
+                        label: file.key.split('/').pop() || file.key
+                    }))}
+                    selectedValues={selectedEmbeddingPaths}
+                    onChange={setSelectedEmbeddingPaths}
+                    style={{ width: '100%' }}
+                />
+
+                <MultiSelectControl
+                    label="Select Naturalness Files"
+                    options={availableNaturalnessFiles.map(file => ({
+                        key: file.key,
+                        label: file.key.split('/').pop() || file.key
+                    }))}
+                    selectedValues={selectedNaturalnessPaths}
+                    onChange={setSelectedNaturalnessPaths}
+                    style={{ width: '100%' }}
+                />
+
+                <TextAreaControl
+                    label="Few Shot Parameters (JSON format)"
+                    value={fewShotParams}
+                    onChange={(value) => {
+                        setFewShotParams(value);
                     }}
-                    onClick={() => setShowForm(!showForm)}
+                    placeholder='{"key": "value"}'
+                    rows={4}
+                    inputStyle={{ fontFamily: 'monospace' }}
+                    style={{ width: '100%' }}
+                />
+                <p className="uk-text-meta">
+                    Enter a valid JSON object. Border will turn green when valid, red when invalid.
+                </p>
+
+                <button
+                    className="uk-button uk-button-primary uk-margin-top"
+                    onClick={handleEvolve}
+                    disabled={
+                        evolutionName === '' ||
+                        !activityFile ||
+                        ((mode === 'randomforest' || mode === 'mlp') && selectedEmbeddingPaths.length === 0) ||
+                        (mode === 'finetuning' && !finetuningModelCheckpoint)
+                    }
                 >
-                    <span>New Evolution Run</span>
-                    <span>{showForm ? "▲" : "▼"}</span>
-                </div>
-                {showForm && (
-                    <section style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                        <h3>Start New Evolution Run</h3>
-                        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-
-                            {/* Name Input */}
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                <label className="uk-form-label">Name</label>
-                                <input
-                                    type="text"
-                                    className="uk-input"
-                                    value={evolutionName}
-                                    onChange={(e) => setEvolutionName(e.target.value)}
-                                />
-                            </div>
-
-                            {/* Activity File Upload */}
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                <label className="uk-form-label">Upload Activity File</label>
-                                <input
-                                    type="file"
-                                    accept=".xlsx,.xls"
-                                    onChange={handleActivityFileUpload}
-                                    className="uk-input"
-                                />
-                                {activityFile && (
-                                    <p className="uk-text-meta">Selected file: {activityFile.name}</p>
-                                )}
-                            </div>
-
-                            {/* Mode Selection */}
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                <label className="uk-form-label">Mode</label>
-                                <select
-                                    className="uk-select"
-                                    value={mode}
-                                    onChange={(e) => setMode(e.target.value)}
-                                >
-                                    <option value="TorchMLPFewShotModel">MLP Few Shot Model</option>
-                                    <option value="RandomForestFewShotModel">RandomForestFewShotModel</option>
-                                    <option value="randomforest">(old) Random Forest</option>
-                                    <option value="mlp">(old) Multi-Layer Perceptron</option>
-                                    <option value="finetuning">(old) Finetuning</option>
-                                </select>
-                            </div>
-
-                            {/* Conditional inputs based on mode */}
-                            {mode === 'finetuning' && (
-                                <div style={{ flex: 1, minWidth: '200px' }}>
-                                    <label className="uk-form-label">Model Checkpoint</label>
-                                    <select
-                                        className="uk-select"
-                                        value={finetuningModelCheckpoint}
-                                        onChange={(e) => setFinetuningModelCheckpoint(e.target.value)}
-                                    >
-                                        <option value="facebook/esm2_t6_8M_UR50D">ESM2 (8M params)</option>
-                                        <option value="facebook/esm2_t33_650M_UR50D">ESM2 (650M params)</option>
-                                        <option value="facebook/esm2_t48_15B_UR50D">ESM2 (15B params)</option>
-                                    </select>
-                                </div>
-                            )}
-
-                            <div style={{ flex: '0 0 auto', width: '100%' }}>
-                                <label className="uk-form-label">Select Embedding Files</label>
-                                <select
-                                    className="uk-select"
-                                    multiple
-                                    size={Math.min(10, availableEmbeddingFiles.length || 1)}
-                                    value={selectedEmbeddingPaths}
-                                    onChange={handleEmbeddingFileSelection}
-                                >
-                                    {availableEmbeddingFiles.map(file => (
-                                        <option key={file.key} value={file.key}>
-                                            {file.key.split('/').pop()}
-                                        </option>
-                                    ))}
-                                </select>
-                                <p className="uk-text-meta">
-                                    Selected {selectedEmbeddingPaths.length} embedding file(s)
-                                </p>
-                            </div>
-
-                            <div style={{ flex: '0 0 auto', width: '100%' }}>
-                                <label className="uk-form-label">Select Naturalness Files</label>
-                                <select
-                                    className="uk-select"
-                                    multiple
-                                    size={Math.min(10, availableNaturalnessFiles.length || 1)}
-                                    value={selectedNaturalnessPaths}
-                                    onChange={handleNaturalnessFileSelection}
-                                >
-                                    {availableNaturalnessFiles.map(file => (
-                                        <option key={file.key} value={file.key}>
-                                            {file.key.split('/').pop()}
-                                        </option>
-                                    ))}
-                                </select>
-                                <p className="uk-text-meta">
-                                    Selected {selectedNaturalnessPaths.length} naturalness file(s)
-                                </p>
-                            </div>
-
-                            {/* New Few Shot Parameters Input */}
-                            <div style={{ flex: '0 0 auto', width: '100%' }}>
-                                <label className="uk-form-label">Few Shot Parameters (JSON format)</label>
-                                <textarea
-                                    className="uk-textarea"
-                                    rows={4}
-                                    value={fewShotParams}
-                                    onChange={(e) => {
-                                        setFewShotParams(e.target.value);
-                                        // Try to validate JSON
-                                        try {
-                                            if (e.target.value) {
-                                                JSON.parse(e.target.value);
-                                                e.target.style.borderColor = '#32d296'; // Success color
-                                            } else {
-                                                e.target.style.borderColor = ''; // Default color
-                                            }
-                                        } catch (err) {
-                                            e.target.style.borderColor = '#f0506e'; // Error color
-                                        }
-                                    }}
-                                    placeholder='{"key": "value"}'
-                                    style={{ fontFamily: 'monospace' }}
-                                />
-                                <p className="uk-text-meta">
-                                    Enter a valid JSON object. Border will turn green when valid, red when invalid.
-                                </p>
-                            </div>
-                        </div>
-
-                        <button
-                            className="uk-button uk-button-primary uk-margin-top"
-                            onClick={handleEvolve}
-                            disabled={
-                                evolutionName === '' ||
-                                !activityFile ||
-                                ((mode === 'randomforest' || mode === 'mlp') && selectedEmbeddingPaths.length === 0) ||
-                                (mode === 'finetuning' && !finetuningModelCheckpoint)
-                            }
-                        >
-                            Start Evolution
-                        </button>
-                    </section>
-                )}
-            </div>
-        </div >
+                    Start Evolution
+                </button>
+            </CollapsibleSection>
+        </TabContainer>
     );
 };
 

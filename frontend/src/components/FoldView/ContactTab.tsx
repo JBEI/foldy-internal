@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { getFoldContactProb } from "../../api/foldApi";
 import { getResidueHeatmap } from "../../util/plots";
 import { FoldContactProb } from "../../types/types";
+import { TabContainer, DescriptionSection, SectionCard } from "../../util/tabComponents";
 
 interface ContactTabProps {
     foldId: number;
@@ -22,7 +23,7 @@ const ContactTab = React.memo(
                     if (!mountedRef.current) return null;
                     setContactProb(contact_prob);
                 },
-                (e) => {
+                () => {
                     if (!mountedRef.current) return null;
                     setErrorMessage("Failed to load contact probability map.");
                 }
@@ -57,17 +58,22 @@ const ContactTab = React.memo(
         };
 
         return (
-            <div className="uk-text-center" key="contact">
-                <h3>Contact Probabilities</h3>
-                If two domains or modules have a high relative contact probability, they
-                are likely to interact (
-                <a href="https://science.org/doi/full/10.1126/science.abm4805">
-                    Humphreys et al, 2021
-                </a>
-                ).
-                <br></br>
-                {getContactProbHeatmap()}
-            </div>
+            <TabContainer key="contact">
+                <DescriptionSection title="Contact Probabilities">
+                    <p>
+                        If two domains or modules have a high relative contact probability, they
+                        are likely to interact (
+                        <a href="https://science.org/doi/full/10.1126/science.abm4805">
+                            Humphreys et al, 2021
+                        </a>
+                        ).
+                    </p>
+                </DescriptionSection>
+                
+                <SectionCard style={{ textAlign: 'center' }}>
+                    {getContactProbHeatmap()}
+                </SectionCard>
+            </TabContainer>
         );
     },
     (prevProps: ContactTabProps, nextProps: ContactTabProps) => {

@@ -10,11 +10,11 @@ import {
     FaRedo,
     FaTrash,
 } from "react-icons/fa";
-import UIkit from "uikit";
 import { getDockSdf, postDock } from "../../api/dockApi";
 import { NewDockPrompt } from "../../util/newDockPrompt";
 import { Dock, Invokation, DockInput } from "../../types/types";
 import { notify } from "../../services/NotificationService";
+import { TabContainer, DescriptionSection, TableSection, CollapsibleSection, ResponsiveTable } from "../../util/tabComponents";
 
 interface DockTabProps {
     foldId: number;
@@ -138,19 +138,17 @@ const DockTab = React.memo((props: DockTabProps) => {
     };
 
     return (
-        <div style={{ padding: "20px", backgroundColor: "#f8f9fa", borderRadius: "8px", boxShadow: "0 2px 6px rgba(0, 0, 0, 0.1)" }}>
+        <TabContainer>
             {/* Description Section */}
-            <section style={{ marginBottom: "20px", padding: "15px", backgroundColor: "#ffffff", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)" }}>
-                <h3>Small Molecule Docking</h3>
+            <DescriptionSection title="Small Molecule Docking">
                 <p>
                     Use <a href="https://onlinelibrary.wiley.com/doi/pdf/10.1002/jcc.21334">Autodock Vina</a> or DiffDock to predict ligand poses. Sort and manage docking results or dock new ligands below.
                 </p>
-            </section>
+            </DescriptionSection>
 
             {/* Docking Results Table */}
-            <section className="table-container" style={{ marginBottom: "30px", backgroundColor: "#ffffff", padding: "15px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)" }}>
-                <h3>Docking Results</h3>
-                <table className="uk-table uk-table-striped">
+            <TableSection title="Docking Results">
+                <ResponsiveTable>
                     <thead>
                         <tr>
                             <th onClick={() => requestSort("ligand_name")}>
@@ -240,35 +238,23 @@ const DockTab = React.memo((props: DockTabProps) => {
                             </tr>
                         ))}
                     </tbody>
-                </table>
-            </section>
+                </ResponsiveTable>
+            </TableSection>
 
             {/* Collapsible Dock New Ligands Section */}
-            <div
-                onClick={() => setShowDockForm(!showDockForm)}
-                style={{
-                    cursor: "pointer",
-                    fontWeight: "bold",
-                    padding: "10px",
-                    backgroundColor: "#f8f9fa",
-                    borderRadius: "8px",
-                    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                    marginBottom: "10px",
-                }}
+            <CollapsibleSection
+                title="Dock New Ligands"
+                isOpen={showDockForm}
+                onToggle={() => setShowDockForm(!showDockForm)}
             >
-                Dock New Ligands {showDockForm ? "▲" : "▼"}
-            </div>
-            {showDockForm && (
-                <section style={{ backgroundColor: "#ffffff", padding: "15px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)" }}>
-                    <NewDockPrompt
-                        foldIds={[props.foldId]}
-                        existingLigands={{
-                            [props.foldId]: (props.docks || []).map((dock) => dock.ligand_name),
-                        }}
-                    />
-                </section>
-            )}
-        </div>
+                <NewDockPrompt
+                    foldIds={[props.foldId]}
+                    existingLigands={{
+                        [props.foldId]: (props.docks || []).map((dock) => dock.ligand_name),
+                    }}
+                />
+            </CollapsibleSection>
+        </TabContainer>
     );
 });
 

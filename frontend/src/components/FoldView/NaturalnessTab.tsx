@@ -17,6 +17,9 @@ import DataGrid from 'react-data-grid';
 import ReactDataGrid from 'react-data-grid';
 import { notify } from '../../services/NotificationService';
 import { BoltzYamlHelper } from '../../util/boltzYamlHelper';
+import { TabContainer, DescriptionSection, TableSection, CollapsibleSection, FormRow, FormField, ButtonGroup, ResponsiveTable } from '../../util/tabComponents';
+import { TextInputControl, CheckboxControl, NumberInputControl } from '../../util/controlComponents';
+import { DataTableContainer } from '../../util/plotComponents';
 // import 'react-data-grid/lib/styles.css';  // Don't forget the styles!
 
 
@@ -246,7 +249,7 @@ const LogitTable: React.FC<LogitTableProps> = ({
     ];
 
     return (
-        <div style={{ width: "auto", height: "auto", marginTop: "20px" }}>
+        <DataTableContainer>
             <ReactDataGrid
                 columns={columns}
                 rowGetter={i => tableData[i]}
@@ -257,7 +260,7 @@ const LogitTable: React.FC<LogitTableProps> = ({
                     setSortDirection(direction.toUpperCase() as 'ASC' | 'DESC');
                 }}
             />
-        </div>
+        </DataTableContainer>
     );
 };
 
@@ -480,11 +483,9 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
     }
 
     return (
-        <div style={{ padding: '20px', backgroundColor: '#f8f9fa', boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)', borderRadius: '8px' }}>
+        <TabContainer>
             {/* Description Section */}
-            <section style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                <h3 style={{ marginBottom: '10px' }}>Naturalness Overview</h3>
-                <div>
+            <DescriptionSection title="Naturalness Overview">
                     Naturalness (TODO: describe PLMs, naturalness, logits, etc)
                     <ul>
                         <li><code>logit model</code> which PLM you want to use to predict logits</li>
@@ -495,13 +496,11 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
                     <p>
                         <code>Estimated cost:</code>~$1 per run.
                     </p>
-                </div>
-            </section>
+            </DescriptionSection>
 
             {/* Evolution Runs Table */}
-            <section style={{ marginBottom: '30px', padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                <h3>Logit Runs</h3>
-                <table className="uk-table uk-table-striped">
+            <TableSection title="Logit Runs">
+                <ResponsiveTable>
                     <thead>
                         <tr>
                             <th>Name</th>
@@ -536,70 +535,41 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
                             </tr>
                         ))}
                     </tbody>
-                </table>
-            </section>
+                </ResponsiveTable>
+            </TableSection>
 
             {/* Display logit info, if requested. */}
             {
                 displayedLogitId ?
                     <>
-                        <div style={{ marginBottom: '10px' }}>
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    className="uk-checkbox"
-                                    checked={maskWildType}
-                                    onChange={(e) => setMaskWildType(e.target.checked)}
-                                /> Mask wild-type amino acids
-                            </label>
-                        </div>
-                        <div style={{ marginBottom: '10px' }}>
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    className="uk-checkbox"
-                                    checked={zeroWildType}
-                                    onChange={(e) => setZeroWildType(e.target.checked)}
-                                /> Zero out wild-type amino acids
-                            </label>
-                        </div>
-                        <div style={{ marginBottom: '10px' }}>
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    className="uk-checkbox"
-                                    checked={showWTMarginalLikelihood}
-                                    onChange={(e) => setShowWTMarginalLikelihood(e.target.checked)}
-                                /> Display Log(WT Marginal Likelihood)
-                            </label>
-                        </div>
+                        <CheckboxControl
+                            label="Mask wild-type amino acids"
+                            checked={maskWildType}
+                            onChange={setMaskWildType}
+                        />
+                        <CheckboxControl
+                            label="Zero out wild-type amino acids"
+                            checked={zeroWildType}
+                            onChange={setZeroWildType}
+                        />
+                        <CheckboxControl
+                            label="Display Log(WT Marginal Likelihood)"
+                            checked={showWTMarginalLikelihood}
+                            onChange={setShowWTMarginalLikelihood}
+                        />
                         {logitPlot}
-                        <div>
-                            <label>
-                                Max number of mutants per locus:
-                                <input
-                                    type="number"
-                                    className="uk-input"
-                                    value={maxMutationsPerLocus}
-                                    onChange={(e) => setMaxMutationsPerLocus(parseInt(e.target.value))}
-                                    style={{ width: '100px', marginLeft: '10px' }}
-                                    min="1"
-                                />
-                            </label>
-                        </div>
-                        <div>
-                            <label>
-                                Top mutants to display:
-                                <input
-                                    type="number"
-                                    className="uk-input"
-                                    value={topPerformersToDisplay}
-                                    onChange={(e) => setTopPerformersToDisplay(parseInt(e.target.value))}
-                                    style={{ width: '100px', marginLeft: '10px' }}
-                                    min="1"
-                                />
-                            </label>
-                        </div>
+                        <NumberInputControl
+                            label="Max number of mutants per locus"
+                            value={maxMutationsPerLocus}
+                            onChange={setMaxMutationsPerLocus}
+                            min={1}
+                        />
+                        <NumberInputControl
+                            label="Top mutants to display"
+                            value={topPerformersToDisplay}
+                            onChange={setTopPerformersToDisplay}
+                            min={1}
+                        />
                         <LogitTable
                             logitCsvData={logitCsvData}
                             useWtMarginalAsScore={showWTMarginalLikelihood}
@@ -607,7 +577,7 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
                             maxMutationsPerLocus={maxMutationsPerLocus}
                             topPerformersToDisplay={topPerformersToDisplay}
                         />
-                        <div style={{ marginTop: '10px', display: 'flex', gap: '10px' }}>
+                        <ButtonGroup>
                             <button
                                 className="uk-button uk-button-default"
                                 onClick={() => {
@@ -630,91 +600,60 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
                             <button className="uk-button uk-button-primary" onClick={() => highlightResiduesOnModel()}>
                                 Highlight residues on model
                             </button>
-                        </div>
+                        </ButtonGroup>
                     </>
                     : null
             }
 
             {/* Collapsible New Run Section */}
-            <div>
-                <div
-                    className='uk-margin-top uk-margin-bottom'
-                    style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "10px 15px",
-                        backgroundColor: "#f8f9fa",
-                        border: "1px solid #e0e0e0",
-                        borderRadius: "8px",
-                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                        cursor: "pointer",
-                        fontWeight: "bold",
-                    }}
-                    onClick={() => setShowForm(!showForm)}
+            <CollapsibleSection
+                title="New Logit Run"
+                isOpen={showForm}
+                onToggle={() => setShowForm(!showForm)}
+            >
+                <h3>Start New Logit Run</h3>
+                <FormRow>
+                    <FormField>
+                        <TextInputControl
+                            label="Name"
+                            value={runName}
+                            onChange={setRunName}
+                        />
+                    </FormField>
+
+                    <FormField>
+                        <ESMModelPicker
+                            value={logitModel}
+                            onChange={setLogitModel}
+                        />
+                    </FormField>
+
+                    <FormField>
+                        <CheckboxControl
+                            label="Use Structure (experimental)"
+                            checked={useStructure}
+                            onChange={setUseStructure}
+                        />
+                    </FormField>
+
+                    <FormField>
+                        <CheckboxControl
+                            label="Get Depth Two Logits (experimental)"
+                            checked={getDepthTwoLogits}
+                            onChange={setGetDepthTwoLogits}
+                        />
+                    </FormField>
+                </FormRow>
+
+                <button
+                    className="uk-button uk-button-primary uk-margin-top"
+                    onClick={handleStartLogit}
+                    disabled={runName === ''}
                 >
-                    <span>New Logit Run</span>
-                    <span>{showForm ? "▲" : "▼"}</span>
-                </div>
-                {showForm && (
-                    <section style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                        <h3>Start New Logit Run</h3>
-                        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-                            {/* Name Input */}
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                <label className="uk-form-label">Name</label>
-                                <input
-                                    type="text"
-                                    className="uk-input"
-                                    value={runName}
-                                    onChange={(e) => setRunName(e.target.value)}
-                                />
-                            </div>
-
-                            {/* Add Model Selection Dropdown */}
-                            <ESMModelPicker
-                                value={logitModel}
-                                onChange={setLogitModel}
-                            />
-
-                            {/* Use Structure Checkbox */}
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                <label className="uk-form-label">
-                                    <input
-                                        type="checkbox"
-                                        className="uk-checkbox uk-margin-small-right"
-                                        checked={useStructure}
-                                        onChange={(e) => setUseStructure(e.target.checked)}
-                                    />
-                                    Use Structure (experimental)
-                                </label>
-                            </div>
-
-                            {/* Get Depth Two Logits Checkbox */}
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                <label className="uk-form-label">
-                                    <input
-                                        type="checkbox"
-                                        className="uk-checkbox uk-margin-small-right"
-                                        checked={getDepthTwoLogits}
-                                        onChange={(e) => setGetDepthTwoLogits(e.target.checked)}
-                                    />
-                                    Get Depth Two Logits (experimental)
-                                </label>
-                            </div>
-                        </div>
-
-                        <button
-                            className="uk-button uk-button-primary uk-margin-top"
-                            onClick={handleStartLogit}
-                            disabled={runName === ''}
-                        >
-                            Start Logit Run
-                        </button>
-                    </section>
-                )}
-            </div>
-        </div >
+                    Start Logit Run
+                </button>
+            </CollapsibleSection>
+        </TabContainer>
     );
 };
 
