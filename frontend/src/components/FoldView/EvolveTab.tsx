@@ -256,13 +256,19 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
             name: "Sequence ID",
             sortable: true,
             resizable: true,
-            sortDescendingFirst: true
+            sortDescendingFirst: true,
+            formatter: ({ row }: { row: any }) => (
+                <div uk-tooltip={row.seqId}>{row.seqId}</div>
+            )
         },
         {
             key: 'relevantMeasuredMutants',
             name: "Measured",
             resizable: true,
             maxWidth: 200,
+            formatter: ({ row }: { row: any }) => (
+                <div uk-tooltip={row.relevantMeasuredMutants}>{row.relevantMeasuredMutants}</div>
+            )
         },
         {
             key: 'predictionMean',
@@ -364,72 +370,76 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
                 </button>
             </ButtonGroup>
 
-            {correlationData && (
-                <div style={{
-                    height: '600px', // Increased height for better visibility
-                    backgroundColor: '#f9f9f9',
-                    padding: '15px',
-                    borderRadius: '4px',
-                    marginTop: '20px',
-                    overflowX: 'auto', // Add horizontal scroll for many sequences
-                    overflowY: 'auto'  // Add vertical scroll too
-                }}>
-                    <Plot
-                        data={[{
-                            z: correlationData,
-                            x: tableData.map(row => row.seqId),
-                            y: tableData.map(row => row.seqId),
-                            type: 'heatmap',
-                            colorscale: 'RdBu',
-                            zmin: -1,
-                            zmax: 1,
-                            text: correlationData.map(row =>
-                                row.map(val => val.toFixed(2))
-                            ),
-                            hovertemplate: '%{x} vs %{y}<br>Correlation: %{text}<extra></extra>',
-                            showscale: true,
-                            colorbar: {
-                                title: 'Correlation',
-                                titleside: 'right'
-                            }
-                        }]}
-                        layout={{
-                            title: 'Sequence Prediction Correlation',
-                            autosize: true,
-                            // Increase margins to accommodate sequence IDs
-                            margin: { l: 150, r: 50, t: 60, b: 150 },
-                            xaxis: {
-                                title: 'Sequence ID',
-                                tickangle: 45,
-                                tickfont: { size: 10 }
-                            },
-                            yaxis: {
-                                title: 'Sequence ID',
-                                autorange: 'reversed',
-                                tickfont: { size: 10 }
-                            },
-                            plot_bgcolor: '#f9f9f9',
-                            paper_bgcolor: '#f9f9f9',
-                            font: { family: 'Arial, sans-serif' }
-                        }}
-                        style={{ width: '100%', height: '100%' }}
-                        useResizeHandler={true}
-                        config={{
-                            responsive: true,
-                            displayModeBar: true,
-                            displaylogo: false,
-                            modeBarButtonsToRemove: ['lasso2d', 'select2d'],
-                            toImageButtonOptions: {
-                                format: 'png',
-                                filename: 'sequence_correlation_heatmap',
-                                height: 800,
-                                width: 800,
-                                scale: 2
-                            }
-                        }}
-                    />
-                </div>
-            )}
+            {useMemo(() => {
+                if (!correlationData) return null;
+
+                return (
+                    <div style={{
+                        height: '600px', // Increased height for better visibility
+                        backgroundColor: '#f9f9f9',
+                        padding: '15px',
+                        borderRadius: '4px',
+                        marginTop: '20px',
+                        overflowX: 'auto', // Add horizontal scroll for many sequences
+                        overflowY: 'auto'  // Add vertical scroll too
+                    }}>
+                        <Plot
+                            data={[{
+                                z: correlationData,
+                                x: tableData.map(row => row.seqId),
+                                y: tableData.map(row => row.seqId),
+                                type: 'heatmap',
+                                colorscale: 'RdBu',
+                                zmin: -1,
+                                zmax: 1,
+                                text: correlationData.map(row =>
+                                    row.map(val => val.toFixed(2))
+                                ),
+                                hovertemplate: '%{x} vs %{y}<br>Correlation: %{text}<extra></extra>',
+                                showscale: true,
+                                colorbar: {
+                                    title: 'Correlation',
+                                    titleside: 'right'
+                                }
+                            }]}
+                            layout={{
+                                title: 'Sequence Prediction Correlation',
+                                autosize: true,
+                                // Increase margins to accommodate sequence IDs
+                                margin: { l: 150, r: 50, t: 60, b: 150 },
+                                xaxis: {
+                                    title: 'Sequence ID',
+                                    tickangle: 45,
+                                    tickfont: { size: 10 }
+                                },
+                                yaxis: {
+                                    title: 'Sequence ID',
+                                    autorange: 'reversed',
+                                    tickfont: { size: 10 }
+                                },
+                                plot_bgcolor: '#f9f9f9',
+                                paper_bgcolor: '#f9f9f9',
+                                font: { family: 'Arial, sans-serif' }
+                            }}
+                            style={{ width: '100%', height: '100%' }}
+                            useResizeHandler={true}
+                            config={{
+                                responsive: true,
+                                displayModeBar: true,
+                                displaylogo: false,
+                                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                                toImageButtonOptions: {
+                                    format: 'png',
+                                    filename: 'sequence_correlation_heatmap',
+                                    height: 800,
+                                    width: 800,
+                                    scale: 2
+                                }
+                            }}
+                        />
+                    </div>
+                );
+            }, [correlationData, tableData])}
         </DataTableContainer>
     );
 };
@@ -472,9 +482,10 @@ const createPlotData = (debugData: any) => {
                 type: 'scatter',
                 mode: 'lines',
                 line: {
-                    color: '#ff9800', // Orange for all val
-                    width: 2,
-                    dash: 'dash'
+                    color: '#e91e63', // Pink for all val
+                    width: 1,
+                    dash: 'solid',
+                    opacity: 0.5,
                 }
             });
         }
@@ -494,8 +505,9 @@ const createPlotData = (debugData: any) => {
                 mode: 'lines',
                 line: {
                     color: '#3e7bfa', // Blue for all train
-                    width: 2,
-                    dash: 'solid'
+                    width: 1,
+                    dash: 'solid',
+                    opacity: 0.5,
                 }
             });
         }
@@ -511,9 +523,10 @@ const createPlotData = (debugData: any) => {
                 type: 'scatter',
                 mode: 'lines',
                 line: {
-                    color: '#ff9800', // Orange for all val
-                    width: 2,
-                    dash: 'dash'
+                    color: '#e91e63', // Pink for all val
+                    width: 1,
+                    dash: 'solid',
+                    opacity: 0.5,
                 }
             });
         }
@@ -525,11 +538,71 @@ const createPlotData = (debugData: any) => {
     };
 };
 
-// 5. Create a function to render the plotly charts
-const renderDebugPlots = (debugData: any) => {
-    if (!debugData) return null;
+// 5. Create a memoized component to render the plotly charts
+const DebugPlots: React.FC<{ debugData: any }> = React.memo(({ debugData }) => {
+    const plotData = useMemo(() => createPlotData(debugData), [debugData]);
 
-    const plotData = createPlotData(debugData);
+    const pretrainPlot = useMemo(() => (
+        <Plot
+            data={plotData.pretrain}
+            layout={{
+                title: 'Pretraining Loss',
+                autosize: true,
+                margin: { l: 60, r: 25, t: 60, b: 60 },
+                xaxis: {
+                    title: 'Epoch',
+                    gridcolor: '#e1e1e1'
+                },
+                yaxis: {
+                    title: 'Loss',
+                    gridcolor: '#e1e1e1'
+                },
+                plot_bgcolor: '#f9f9f9',
+                paper_bgcolor: '#f9f9f9',
+                font: { family: 'Arial, sans-serif' }
+            }}
+            style={{ width: '100%', height: '100%' }}
+            useResizeHandler={true}
+            config={{
+                responsive: true,
+                displayModeBar: true,
+                displaylogo: false,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d']
+            }}
+        />
+    ), [plotData.pretrain]);
+
+    const finetunePlot = useMemo(() => (
+        <Plot
+            data={plotData.finetune}
+            layout={{
+                title: 'Finetuning Loss',
+                autosize: true,
+                margin: { l: 60, r: 25, t: 60, b: 60 },
+                xaxis: {
+                    title: 'Iteration',
+                    gridcolor: '#e1e1e1'
+                },
+                yaxis: {
+                    title: 'Loss',
+                    gridcolor: '#e1e1e1'
+                },
+                plot_bgcolor: '#f9f9f9',
+                paper_bgcolor: '#f9f9f9',
+                font: { family: 'Arial, sans-serif' }
+            }}
+            style={{ width: '100%', height: '100%' }}
+            useResizeHandler={true}
+            config={{
+                responsive: true,
+                displayModeBar: true,
+                displaylogo: false,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d']
+            }}
+        />
+    ), [plotData.finetune]);
+
+    if (!debugData) return null;
 
     return (
         <PlotContainer title="Training Metrics" height="700px">
@@ -540,41 +613,7 @@ const renderDebugPlots = (debugData: any) => {
                 padding: '15px',
                 borderRadius: '4px'
             }}>
-                <Plot
-                    data={plotData.pretrain}
-                    layout={{
-                        title: 'Pretraining Loss',
-                        autosize: true,
-                        margin: { l: 60, r: 25, t: 60, b: 60 },
-                        xaxis: {
-                            title: 'Epoch',
-                            gridcolor: '#e1e1e1'
-                        },
-                        yaxis: {
-                            title: 'Loss',
-                            gridcolor: '#e1e1e1'
-                        },
-                        // legend: {
-                        //     orientation: 'h',
-                        //     y: -0.2,
-                        //     xanchor: 'center',
-                        //     x: 0.5,
-                        //     font: { size: 10 },
-                        //     tracegroupgap: 0
-                        // },
-                        plot_bgcolor: '#f9f9f9',
-                        paper_bgcolor: '#f9f9f9',
-                        font: { family: 'Arial, sans-serif' }
-                    }}
-                    style={{ width: '100%', height: '100%' }}
-                    useResizeHandler={true}
-                    config={{
-                        responsive: true,
-                        displayModeBar: true,
-                        displaylogo: false,
-                        modeBarButtonsToRemove: ['lasso2d', 'select2d']
-                    }}
-                />
+                {pretrainPlot}
             </div>
 
             {/* Finetuning loss plot */}
@@ -584,45 +623,11 @@ const renderDebugPlots = (debugData: any) => {
                 padding: '15px',
                 borderRadius: '4px'
             }}>
-                <Plot
-                    data={plotData.finetune}
-                    layout={{
-                        title: 'Finetuning Loss',
-                        autosize: true,
-                        margin: { l: 60, r: 25, t: 60, b: 60 },
-                        xaxis: {
-                            title: 'Iteration',
-                            gridcolor: '#e1e1e1'
-                        },
-                        yaxis: {
-                            title: 'Loss',
-                            gridcolor: '#e1e1e1'
-                        },
-                        // legend: {
-                        //     orientation: 'h',
-                        //     y: -0.2,
-                        //     xanchor: 'center',
-                        //     x: 0.5,
-                        //     font: { size: 10 },
-                        //     tracegroupgap: 0
-                        // },
-                        plot_bgcolor: '#f9f9f9',
-                        paper_bgcolor: '#f9f9f9',
-                        font: { family: 'Arial, sans-serif' }
-                    }}
-                    style={{ width: '100%', height: '100%' }}
-                    useResizeHandler={true}
-                    config={{
-                        responsive: true,
-                        displayModeBar: true,
-                        displaylogo: false,
-                        modeBarButtonsToRemove: ['lasso2d', 'select2d']
-                    }}
-                />
+                {finetunePlot}
             </div>
         </PlotContainer>
     );
-};
+});
 
 interface EvolveTabProps {
     foldId: number;
@@ -835,7 +840,7 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                             <tr key={evolution.id}>
                                 <td style={{ overflowX: 'hidden' }}><p uk-tooltip={evolution.name}>{evolution.name}</p></td>
                                 <td>{getEvolutionStatus(evolution)}</td>
-                                <td style={{ width: '200px' }}>
+                                <td style={{ width: '200px', paddingLeft: '2px', paddingRight: '2px' }}>
 
                                     <FaFileCode
                                         uk-tooltip="View logs"
@@ -875,7 +880,7 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                             alignItems: "center",
                             marginBottom: "10px"
                         }}>
-                            <h3 style={{ margin: 0 }}>
+                            <h3 style={{ margin: 0, overflowWrap: 'anywhere' }}>
                                 {evolutions?.find(e => e.id === displayedEvolutionId)?.name || "Evolution Results"}
                             </h3>
                             <button
@@ -927,7 +932,7 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                         </div>
 
                         {/* Render plotly charts with the debug data */}
-                        {renderDebugPlots(evolutionDebugData)}
+                        <DebugPlots debugData={evolutionDebugData} />
                     </TableSection>
                     : null
             }

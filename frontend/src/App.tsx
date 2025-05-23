@@ -194,6 +194,9 @@ function RoutedApp({ token, setToken }: {
             style={{
                 background: "linear-gradient(to left, #28a5f5, #1e87f0)",
                 zIndex: 100,
+                position: "fixed",
+                top: 0,
+                width: "100%",
             }}
         >
             <div className="uk-navbar-left">
@@ -224,7 +227,7 @@ function RoutedApp({ token, setToken }: {
     return (
         <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
             <div className="uk-visible@m">{desktop_navbar}</div>
-            <div className="uk-hidden@m">{mobile_navbar}</div>
+            <div className="uk-hidden@m" style={{ paddingTop: "60px" }}>{mobile_navbar}</div>
 
             <CheckForErrorQueryString />
             <div id="off-canvas-navbar" uk-offcanvas={1}>
