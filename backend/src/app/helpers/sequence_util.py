@@ -118,6 +118,33 @@ def maybe_get_seq_id_error_message(wt_aa_seq: str, seq_id: Any) -> Optional[str]
     return None
 
 
+def sort_seq_id_list(wt_aa_seq: str, seq_id_list: List[str]) -> List[str]:
+    """Sort a list of sequence IDs deterministically.
+
+    Sort order is: (# of mutations, first mut locus, first mut allele, second mut locus, second mut allele...)
+    
+    Args:
+        seq_id_list: List of sequence IDs
+    
+    Returns:
+        Sorted list of sequence IDs
+    """
+    for seq_id in seq_id_list:
+        error_msg =  maybe_get_seq_id_error_message(wt_aa_seq, seq_id)
+        if error_msg:
+            raise ValueError(f"Invalid seq_id '{seq_id}': {error_msg}")
+
+    def get_sort_key(seq_id: str) -> tuple:
+        if seq_id == 'WT':
+            return (0, )
+        num_muts = seq_id.count('_')
+        allele_ids = seq_id.split('_')
+        mut_loci = [get_locus_from_allele_id(allele) for allele in allele_ids]
+        mut_alleles = [allele[-1] for allele in allele_ids]
+        flatten = lambda r: [a for b in r for a in b]
+        return tuple([num_muts] + flatten(zip(mut_loci, mut_alleles)))
+    return sorted(seq_id_list, key=get_sort_key)
+
 def get_seq_ids_for_deep_mutational_scan(
     wt_aa_seq: str, dms_starting_seq_ids: List[str], extra_seq_ids: List[str]
 ) -> List[str]:
@@ -154,18 +181,6 @@ def get_seq_ids_for_deep_mutational_scan(
         seq_id_error_msg = maybe_get_seq_id_error_message(wt_aa_seq, seq_id)
         if seq_id_error_msg:
             raise ValueError(f"Invalid seq_id '{seq_id}': {seq_id_error_msg}")
-
-    def allele_is_at_locus(allele_id: str, locus: int) -> bool:
-        """Returns true if the allele (1-based) is at that locus (1-based).
-
-        Args:
-            allele_id: The allele ID (e.g., "A12T")
-            locus: The 1-based locus index
-
-        Returns:
-            True if the allele is at the specified locus, False otherwise
-        """
-        return int(allele_id[1:-1]) == locus
 
     def seq_id_to_allele_list(seq_id: str) -> List[str]:
         """Converts the seq_id to an allele list (eg: "G3W_A12T"->["G3W", "A12T"]).

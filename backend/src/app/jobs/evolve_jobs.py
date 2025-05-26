@@ -29,6 +29,43 @@ from app.models import Evolution, Fold, Invokation
 from folde.few_shot_models import get_few_shot_model, is_valid_few_shot_model_name
 
 
+def get_embedding_df_from_file(fsm: FoldStorageManager, embedding_files: list[str]) -> pd.DataFrame:
+    logging.info(f"Reading {len(embedding_files)} embedding files")
+
+    embedding_dfs = []
+    chunk_size = 10000  # Adjust based on memory constraints
+
+    for path in embedding_files:
+        # Get the CSV content as a string
+        assert fsm.storage_manager is not None, "Storage manager not set up"
+        csv_blob = fsm.storage_manager.get_blob(evolve.fold_id, path)
+
+        with csv_blob.open("r") as csv_f:
+            # Create chunks iterator
+            chunks = pd.read_csv(csv_f, chunksize=chunk_size)
+
+            # Process each chunk
+            path_dfs = []
+            for chunk in chunks:
+                path_dfs.append(chunk)
+
+            # Combine chunks for this path
+            if path_dfs:
+                embedding_dfs.append(pd.concat(path_dfs, ignore_index=True))
+    raw_embedding_df = pd.concat(embedding_dfs, ignore_index=True)
+    return raw_embedding_df
+
+
+def get_naturalness_df_from_file(fsm: FoldStorageManager, naturalness_files: list[str]) -> pd.DataFrame:
+    logging.info(f"Reading {len(naturalness_files)} naturalness files")
+    naturalness_dfs = []
+
+    for path in naturalness_files:
+        assert fsm.storage_manager is not None, "Storage manager not set up"
+        csv_blob = fsm.storage_manager.get_blob(evolve.fold_id, path)
+        with csv_blob.open("r") as csv_f:
+            naturalness_dfs.append(pd.read_csv(csv_f))
+
 def run_evolvepro(evolve_id: int):
     """Run the evolvepro workflow."""
     evolve = Evolution.get_by_id(evolve_id)
@@ -43,105 +80,77 @@ def run_evolvepro(evolve_id: int):
 
     with LoggingRecorder(invokation):
         """Helper function to run evolvepro with a logger."""
+        # REQUIRED SETUP #######################################################
+        fsm = FoldStorageManager()
+        fsm.setup()
+
+        # INPUT VALIDATION #####################################################
         if not fold.yaml_config:
             raise ValueError("Fold does not have a YAML config!")
+        if not evolve.embedding_files or not evolve.naturalness_files:
+            raise ValueError(f"These days, evolve jobs must specify both embedding files (found {evolve.embedding_files}) and naturalness files (found {evolve.naturalness_files})")
+        if not evolve.few_shot_params:
+            raise ValueError(f"These days, few shot params are required, got {evolve.few_shot_params}")
+        if not evolve.mode or not is_valid_few_shot_model_name(evolve.mode):
+            raise BadRequest(f'Old modes such as {evolve.mode} are no longer supported.')
+        if evolve.num_mutants is None or evolve.num_mutants <= 0:
+            raise ValueError(f"Evolve job must specify a positive number of mutants, got {evolve.num_mutants}")
+
+        # LOAD INPUTS #########################################################
         boltz_yaml_helper = BoltzYamlHelper(fold.yaml_config)
         if len(boltz_yaml_helper.get_protein_sequences()) != 1:
             raise ValueError(
                 f"Fold has {len(boltz_yaml_helper.get_protein_sequences())} protein sequences, which is not supported for evolvepro yet."
             )
+
         wt_aa_seq = boltz_yaml_helper.get_protein_sequences()[0][1]
-
-        mode = evolve.mode or "randomforest"
-
-        fsm = FoldStorageManager()
-        fsm.setup()
-
-        # 1. Get the activity file.
         evolve_directory = Path("evolve") / evolve.name
-        activity_file_path = evolve_directory / "activity.xlsx"
-        logging.info(f"Getting the activity file {activity_file_path}")
-        activity_file = fsm.storage_manager.get_binary(evolve.fold_id, str(activity_file_path))
-        raw_activity_df = pd.read_excel(BytesIO(activity_file))
+        try:
+            few_shot_params = json.loads(evolve.few_shot_params)
+        except Exception as e:
+            raise BadRequest(f"Failed to parse few shot params: {e}")
 
         # 2. Read and merge all embedding CSVs
-        if not evolve.embedding_files or not evolve.naturalness_files:
-            raise ValueError(f"These days, evolve jobs must specify both embedding files (found {evolve.embedding_files}) and naturalness files (found {evolve.naturalness_files})")
+        activity_file_contents = fsm.storage_manager.get_binary(evolve.fold_id, str(evolve_directory / "activity.xlsx"))
 
-        if not evolve.few_shot_params:
-            raise ValueError(f"These days, few shot params are required, got {evolve.few_shot_params}")
+        raw_activity_df = pd.read_excel(BytesIO(activity_file_contents))
+        raw_embedding_df = get_embedding_df_from_file(fsm, evolve.embedding_files.split(','))
+        raw_naturalness_df = get_naturalness_df_from_file(fsm, evolve.naturalness_files.split(','))
 
-        embedding_files = evolve.embedding_files.split(",")
-        naturalness_files = evolve.naturalness_files.split(",")
-        logging.info(f"Reading {len(embedding_files)} embedding files and {len(naturalness_files)} naturalness files")
-        embedding_dfs = []
-        naturalness_dfs = []
-        chunk_size = 10000  # Adjust based on memory constraints
-
-        for path in embedding_files:
-            # Get the CSV content as a string
-            csv_blob = fsm.storage_manager.get_blob(evolve.fold_id, path)
-
-            with csv_blob.open("r") as csv_f:
-                # Create chunks iterator
-                chunks = pd.read_csv(csv_f, chunksize=chunk_size)
-
-                # Process each chunk
-                path_dfs = []
-                for chunk in chunks:
-                    path_dfs.append(chunk)
-
-                # Combine chunks for this path
-                if path_dfs:
-                    embedding_dfs.append(pd.concat(path_dfs, ignore_index=True))
-
-        for path in naturalness_files:
-            csv_blob = fsm.storage_manager.get_blob(evolve.fold_id, path)
-            with csv_blob.open("r") as csv_f:
-                naturalness_dfs.append(pd.read_csv(csv_f))
-
-        # Combine all embeddings
-        raw_embedding_df = pd.concat(embedding_dfs, ignore_index=True)
-        raw_naturalness_df = pd.concat(naturalness_dfs, ignore_index=True)
         logging.info(f"Found {raw_embedding_df.shape[0]} embeddings and {raw_naturalness_df.shape[0]} naturalness values")
 
-        # 3. Process the activity and embedding data.
-        activity_df, embedding_df, naturalness_df = process_and_validate_evolve_input_files(
+        # PROCESS INPUTS #######################################################
+        activity_df, embedding_df, incomplete_naturalness_df = process_and_validate_evolve_input_files(
             wt_aa_seq, raw_activity_df, raw_embedding_df, raw_naturalness_df
         )
         assert embedding_df is not None
-        assert naturalness_df is not None
+        assert incomplete_naturalness_df is not None
         logging.info(
             f"Found {activity_df.shape[0]} activity measurements among {activity_df.index.unique().shape[0]} mutants"
         )
 
-        if not is_valid_few_shot_model_name(mode):
-            raise BadRequest(f'Old modes such as {mode} are no longer supported.')
-
-        # Compute naturalness for all mutants, where possible.
+        # AUGMENT SINGLE MUTANT NATURALNESS FOR MULTI MUTANTS ##################
         def get_naturalness_of_multi_mutant(seq_id) -> float:
             if seq_id == 'WT':
                 return 1.0
             try:
-                return naturalness_df.wt_marginal.loc[seq_id.split('_')].prod()
+                return incomplete_naturalness_df.wt_marginal.loc[seq_id.split('_')].prod()
             except Exception as e:
                 raise BadRequest(f'Failure computing naturalness for {seq_id}: {e}')
-
         augmented_naturalness_series = pd.Series(
             embedding_df.index.map(get_naturalness_of_multi_mutant),
             index=embedding_df.index
         )
 
+        # VALIDATE FINAL INPUT SEQUENCES #######################################
         for seq_id in activity_df.index:
             if seq_id not in embedding_df.index:
                 raise ValueError(f"Activity seq id {seq_id} is missing either an embedding or naturalness value")
 
-        params = json.loads(evolve.few_shot_params)
-
         few_shot_model = get_few_shot_model(
-            mode,
+            evolve.mode,
             random_state=42,
-            **params,
+            **few_shot_params,
         )
 
         few_shot_model.pretrain(
@@ -156,7 +165,7 @@ def run_evolvepro(evolve_id: int):
         )
 
         top_seq_ids, predicted_activity_ensemble = few_shot_model.get_top_n(
-            24,
+            evolve.num_mutants,
             augmented_naturalness_series,
             embedding_df.embedding,
         )
@@ -165,6 +174,12 @@ def run_evolvepro(evolve_id: int):
             {f"model_{ii}": predicted_activity_ensemble[ii] for ii in range(len(predicted_activity_ensemble))},
             index=predicted_activity_ensemble[0].index,
         )
+        def get_selected_idx_or_none(seq_id):
+            try:
+                return top_seq_ids.index(seq_id)
+            except ValueError:
+                return None
+        predicted_activity_df['selected_idx'] = predicted_activity_df.reset_index().seq_id.apply(get_selected_idx_or_none)
         try:
             loci_to_measured_mutants = defaultdict(list)
             for measured_seq_id in activity_df.index.unique():

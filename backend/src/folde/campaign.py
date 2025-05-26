@@ -446,7 +446,7 @@ def simulate_campaign(
 
                 print(traceback.format_exc(), flush=True)
                 raise e
-        naturalness_df, embedding_df, activity_df = df_cache[cache_key]
+        wt_aa_seq, naturalness_df, embedding_df, activity_df = df_cache[cache_key]
         naturalness_series = naturalness_df[
             (
                 "wt_marginal"

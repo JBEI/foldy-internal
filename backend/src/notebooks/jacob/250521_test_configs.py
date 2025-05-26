@@ -11,7 +11,7 @@ from folde.util import apply_diff_list_to_config
 
 
 # Example configuration
-NAME = '250523-final-error'
+NAME = '250524-constantliar'
 
 base_config = FolDEModelConfig(
     name="FolDE",
@@ -37,6 +37,8 @@ base_config = FolDEModelConfig(
         "train_epochs": 200,
         "train_patience": 40,
         "val_frequency": 10,
+
+        "do_validation_with_pair_fraction": 0.2,
     },
 )
 
@@ -44,42 +46,37 @@ config_list = apply_diff_list_to_config(
     base_config,
     [
         ModelDiff(
-            name="pairHoldout",
-            diffs={
-                "few_shot_model_params.do_validation_with_pair_fraction": 0.2,
-            }
-        ),
-        ModelDiff(
-            name="noNormal",
-            diffs={
-                "few_shot_model_params.disable_ensemble_normalization": True,
-            }
-        ),
-        ModelDiff(
-            name="pairHoldout-liar",
-            diffs={
-                "few_shot_model_params.do_validation_with_pair_fraction": 0.2,
-                "few_shot_model_params.decision_mode": "constantliar",
-            }
-        ),
-        ModelDiff(
-            name="pairHoldout-krigingbeliever",
-            diffs={
-                "few_shot_model_params.do_validation_with_pair_fraction": 0.2,
-                "few_shot_model_params.decision_mode": "krigingbeliever",
-            }
-        ),
-        ModelDiff(
-            name="liar",
+            name="constantLiarMult4",
             diffs={
                 "few_shot_model_params.decision_mode": "constantliar",
+                "few_shot_model_params.lie_noise_stddev_multiplier": 4.0,
             }
         ),
         ModelDiff(
-            name="pairHoldout-nopatience",
+            name="constantLiarMult2",
             diffs={
-                "few_shot_model_params.do_validation_with_pair_fraction": 0.2,
-                "few_shot_model_params.train_patience": None,
+                "few_shot_model_params.decision_mode": "constantliar",
+                "few_shot_model_params.lie_noise_stddev_multiplier": 2.0,
+            }
+        ),
+        ModelDiff(
+            name="constantLiarMult8",
+            diffs={
+                "few_shot_model_params.decision_mode": "constantliar",
+                "few_shot_model_params.lie_noise_stddev_multiplier": 8.0,
+            }
+        ),
+        ModelDiff(
+            name="constantLiarMult1",
+            diffs={
+                "few_shot_model_params.decision_mode": "constantliar",
+                "few_shot_model_params.lie_noise_stddev_multiplier": 1.0,
+            }
+        ),
+        ModelDiff(
+            name="noHoldout",
+            diffs={
+                "few_shot_model_params.do_validation_with_pair_fraction": None,
             }
         ),
     ]
