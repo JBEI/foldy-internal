@@ -232,17 +232,16 @@ class Evolution(PkModel):
     fold_id = Column(db.Integer, db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE"))
     fold = relationship("Fold", back_populates="evolutions")
 
-    # Two options: "finetuning" on rank or "randomforest" on logits.
     mode = Column(db.String, nullable=True)
 
-    # If mode == randomforest, then this is the fixed embeddings to use.
     embedding_files = Column(db.String, nullable=True)  # A list of embedding file paths.
     naturalness_files = Column(db.String, nullable=True)  # A list of embedding file paths.
 
-    # If mode == finetuning, then this is the model checkpoint to use.
+    # NO LONGER USED.
     finetuning_model_checkpoint = Column(db.String, nullable=True)
 
     few_shot_params = Column(db.String, nullable=True)
+    num_mutants = Column(db.Integer, nullable=True)
 
     # State tracking.
     invokation_id = Column(

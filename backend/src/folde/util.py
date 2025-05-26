@@ -97,8 +97,7 @@ def constant_liar_sample(
     ensemble_preds: np.ndarray,
     seq_ids: np.ndarray,
     q_slate_size: int,
-    beta: float,
-    tau2=1e-3,
+    lie_noise_stddev_multiplier: float,
     choice_of_baseline: str = 'min') -> list[str]:
     """
     The "Constant Liar” approximation to the parallel EI acquisition function.
@@ -110,71 +109,74 @@ def constant_liar_sample(
         beta: float, beta parameter for UCB
         tau2: float, a model of sample variance, helps numerical stability
     """
+    MAX_POINTS_TO_CONSIDER = 5000
     if ensemble_preds.ndim != 2:
         raise ValueError(f"ensemble_preds must be a 2D array, got shape {ensemble_preds.shape}")
     if ensemble_preds.shape[0] != len(seq_ids):
-        raise ValueError(f"ensemble_preds must have the same number of rows as seq_ids, got {ensemble_preds.shape[1]} and {len(seq_ids)}")
-    if ensemble_preds.shape[0] > 10000:
-        raise ValueError(f"ensemble_preds must have at most 10000 rows, got {ensemble_preds.shape[1]}")
+        raise ValueError(f"ensemble_preds must have the same number of rows as seq_ids, got {ensemble_preds.shape[0]} and {len(seq_ids)}")
+    if ensemble_preds.shape[0] > MAX_POINTS_TO_CONSIDER:
+        raise ValueError(f"ensemble_preds must have at most {MAX_POINTS_TO_CONSIDER} rows, got {ensemble_preds.shape[0]}")
     if ensemble_preds.shape[0] < q_slate_size:
-        raise ValueError(f"ensemble_preds must have at least q_slate_size rows, got {ensemble_preds.shape[1]} vs {q_slate_size}")
+        raise ValueError(f"ensemble_preds must have at least q_slate_size rows, got {ensemble_preds.shape[0]} vs {q_slate_size}")
     if ensemble_preds.shape[1] < 3:
         raise ValueError(f'Calculating a good variance requires at least 3 models, got {ensemble_preds.shape[1]}')
 
-    pred_tensor  = torch.tensor(ensemble_preds.T, dtype=torch.float32)  # (S, N)
+    pred_tensor = torch.tensor(ensemble_preds.T, dtype=torch.float64)        # (S, N)
+
     S, N = pred_tensor.shape
+    lie_noise_variance = (lie_noise_stddev_multiplier * pred_tensor.std(dim=0).median().item()) ** 2
 
-    # means, deviations, and full covariance 
-    means = pred_tensor.mean(dim=0)          # (N,)
-    devs  = pred_tensor - means              # (S, N)
-    Cov   = (devs.T @ devs) / S              # (N, N)
-    vars  = Cov.diag().clamp_min(tau2)       # (N,)
-    sigmas = vars.sqrt()                     # (N,)
+    # ────────────────────── compute empirical prior mean/covariance ─────────────
+    prior_mean = pred_tensor.mean(dim=0)               # μ₀, shape (N,)
+    devs = pred_tensor - prior_mean                    # centred matrix (S, N)
+    Cov = (devs.T @ devs) / S                # empirical covariance, rank ≤ S
+    Cov += lie_noise_variance * torch.eye(N)           # ← “nugget” ensures PSD & noise floor
 
-    # constant liar setup: choose L as the ****minimum**** prior mean 
-    # very adversarial
     if choice_of_baseline == 'min':
-        L = means.min().item()
+        L = prior_mean.min().item()
     elif choice_of_baseline == 'mean':
-        L = means.mean().item()
+        L = prior_mean.mean().item()
+    elif choice_of_baseline == 'max':
+        L = prior_mean.max().item()
     else:
         raise ValueError(f"Invalid choice of baseline {choice_of_baseline}")
 
-    # greedy Constant Liar batch‐UCB selection 
-    selected = []
+    # Diagonal variance and standard deviation (already ≥ SIGMA_N2)
+    vars = Cov.diag()
+    sigmas = vars.sqrt()
+
+    # ───────────────────────────── constant-liar loop ───────────────────────────
+    selected = []                              # indices of chosen items
 
     for _ in range(q_slate_size):
-        # 1) compute marginal UCB scores with current means and variances
-        ucb = means + beta * sigmas
-        ucb[selected] = -float("inf")  # mask out already‐picked
 
-        # 2) select best candidate
-        idx = int(ucb.argmax().item())
+        # 1) Upper-confidence-bound score for every unpicked item
+        ucb                 = prior_mean
+        ucb[selected]       = -torch.inf                # mask already-selected indices
+
+        # 2) Greedily take the arg-max
+        idx                 = int(torch.argmax(ucb))
         selected.append(idx)
-        print(f'Selecting {seq_ids[idx]} with UCB: {ucb[idx]} = {means[idx]} + {beta} * {sigmas[idx]}')
+        # print(f"Picked {seq_ids[idx]}  with UCB={ucb[idx]:.3f}")
+        print(f'Selecting {seq_ids[idx]} (original rank {idx+1}), score: {ucb[idx]} = {prior_mean[idx]}')
 
-        # 3) "lie" by imagining a ***bad*** constant observation y = L at idx:
-        cov_i = Cov[:, idx].clone()        # (N,)
-        v_i   = vars[idx].item()           # Var at idx
+        # 3) Single-point GP update with *fake* observation y=L at index idx
+        k_i                 = Cov[:, idx].clone()       # column vector k(·, x_i)
+        v_i                 = vars[idx].item()          # marginal var at x_i  (≥ σ_n²)
 
-        # 4) update posterior means conditional on fake bad y=L
-        #     μ_new = μ + cov_i * (L - μ[idx]) / v_i
-        means = means + cov_i * (L - means[idx]) / (v_i + tau2)
-        # if any(means > 1000):
-        #     problem_indices = torch.where(means > 100)[0]
-        #     print(f'means: {means[problem_indices[0]]}')
-        #     print(f'cov_i: {cov_i[problem_indices[0]]}')
-        #     print(f'v_i: {v_i}')
-        #     print(f'L: {L}')
+        # Posterior mean:   μ ← μ + k_i (L − μ_i) / v_i
+        delta               = (L - prior_mean[idx]) / v_i
+        prior_mean          = prior_mean + k_i * delta
 
-        # 5) update covariance via Schur complement, same as KG believer
-        Cov   = Cov - torch.outer(cov_i, cov_i) / (v_i + tau2)
-        Cov    = 0.5 * (Cov + Cov.T)         # re-symmetrise
-        vars  = Cov.diag().clamp_min(tau2)
-        sigmas = vars.sqrt()                # update std devs
+        # Posterior covariance (rank-1 Downdate):  Σ ← Σ − k_i k_iᵀ / v_i
+        Cov                 = Cov - torch.outer(k_i, k_i) / v_i
+        Cov                 = 0.5 * (Cov + Cov.T)       # re-symmetrise to kill FP drift
 
-    # map back to sequence IDs 
-    constant_liar_chosen_seq_ids = seq_ids[selected]     # length Q
+        # Refresh variance/std-dev
+        vars                = Cov.diag()
+
+    # ─────────────────────────── map indices back to IDs ────────────────────────
+    constant_liar_chosen_seq_ids = seq_ids[selected]                  # final slate of length Q
     return constant_liar_chosen_seq_ids.tolist()
 
 

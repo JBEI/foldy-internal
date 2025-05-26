@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
+from app.helpers.sequence_util import sort_seq_id_list
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,7 @@ def get_available_proteingym_datasets(
 
 def get_proteingym_dataset(
     dms_id: str, embedding_model_id: str, naturalness_model_id: str
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> Tuple[str, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load ProteinGym activity data, embeddings, and naturalness scores.
 
     Args:
@@ -105,6 +106,16 @@ def get_proteingym_dataset(
     Raises:
         FileNotFoundError: If any required files are not found
     """
+    try:
+        dms_metadata = pd.read_csv(DMS_METADATA_FILE)
+        logger.info(f"Loaded metadata for {len(dms_metadata)} DMS datasets")
+    except Exception as e:
+        raise ValueError(f"Error loading DMS metadata: {e}")
+    dms_metadata = dms_metadata[dms_metadata["DMS_id"] == dms_id]
+    if len(dms_metadata) != 1:
+        raise ValueError(f"Did not find one row for DMS {dms_id} in metadata file at {DMS_METADATA_FILE}")
+    wt_aa_seq = dms_metadata["target_seq"].iloc[0]
+
     # Check that the DMS data exists
     dms_file_path = os.path.join(DMS_DIR, f"{dms_id}.csv")
     if not os.path.exists(dms_file_path):
@@ -163,11 +174,14 @@ def get_proteingym_dataset(
                     lambda x: np.array(json.loads(x)) if isinstance(x, str) else x
                 )
 
+    # We lose ordering with the set operations but recover it with a sort later.
     common_seq_ids = list(
         set(naturalness_df.seq_id) & set(embedding_df.seq_id) & set(activity_df.seq_id)
     )
+    common_seq_ids = sort_seq_id_list(wt_aa_seq, common_seq_ids)
 
     return (
+        wt_aa_seq,
         naturalness_df.loc[common_seq_ids],
         embedding_df.loc[common_seq_ids],
         activity_df.loc[common_seq_ids],

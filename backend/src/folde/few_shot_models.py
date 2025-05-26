@@ -30,10 +30,13 @@ class FewShotModel(ABC):
     """Abstract base class for few-shot protein property prediction models."""
 
     def __init__(
-        self, decision_mode: str = "median",
+        self,
+        lie_noise_stddev_multiplier: float,
+        decision_mode: str = "median",
         temperature: float = 0.0,
         epsilon: float = 0.0,
     ):
+        self.lie_noise_stddev_multiplier = lie_noise_stddev_multiplier
         self.decision_mode = decision_mode
         self.temperature = temperature
         self.epsilon = epsilon
@@ -93,20 +96,20 @@ class FewShotModel(ABC):
         ensemble_of_predictions = self.predict(naturalness_series, embedding_series)
 
         if self.decision_mode == 'constantliar' or self.decision_mode == 'krigingbeliever':
-            ensemble_scores = get_consensus_scores(ensemble_of_predictions, 'ucb')
+            ensemble_scores = get_consensus_scores(ensemble_of_predictions, 'mean')
             pred_df = {
                 f'model_{ii}': ensemble_of_predictions[ii]
                 for ii in range(len(ensemble_of_predictions))
             }
             pred_df['score'] = ensemble_scores
             pred_df = pd.DataFrame(pred_df, index=ensemble_of_predictions[0].index)\
-                .sort_values('score', ascending=False)\
-                .drop(columns=['score'])
+                .sort_values('score', ascending=False)
+            cl_considerations = pred_df.drop(columns=['score']).iloc[:5000]
             chosen_seq_ids = constant_liar_sample(
-                pred_df.to_numpy(),
-                pred_df.index.to_numpy(),
+                cl_considerations.to_numpy(),
+                cl_considerations.index.to_numpy(),
                 n,
-                beta=1.0,
+                lie_noise_stddev_multiplier=self.lie_noise_stddev_multiplier,
                 choice_of_baseline='min' if self.decision_mode == 'constantliar' else 'mean',
             )
         else:
@@ -151,6 +154,7 @@ class RandomFewShotModel(FewShotModel):
 
     def __init__(self, random_state: int, **kwargs):
         super().__init__(
+            lie_noise_stddev_multiplier=kwargs.pop("lie_noise_stddev_multiplier", 4.0),
             decision_mode=kwargs.pop("decision_mode", "median"),
             temperature=kwargs.pop("temperature", 0.0),
             epsilon=kwargs.pop("epsilon", 0.0),
@@ -195,6 +199,7 @@ class MLPFewShotModel(FewShotModel):
     def __init__(self, ensemble_size: int = 1, **kwargs):
         """Initialize the MLP regressor with any parameters supported by sklearn's MLPRegressor."""
         super().__init__(
+            lie_noise_stddev_multiplier=kwargs.pop("lie_noise_stddev_multiplier", 4.0),
             decision_mode=kwargs.pop("decision_mode", "median"),
             temperature=kwargs.pop("temperature", 0.0),
             epsilon=kwargs.pop("epsilon", 0.0),
@@ -329,6 +334,7 @@ class RandomForestFewShotModel(FewShotModel):
     def __init__(self, ensemble_size: int = 1, **kwargs):
         """Initialize the Random Forest regressor with any parameters supported by sklearn's RandomForestRegressor."""
         super().__init__(
+            lie_noise_stddev_multiplier=kwargs.pop("lie_noise_stddev_multiplier", 4.0),
             decision_mode=kwargs.pop("decision_mode", "median"),
             temperature=kwargs.pop("temperature", 0.0),
             epsilon=kwargs.pop("epsilon", 0.0),
@@ -495,6 +501,7 @@ class TorchMLPFewShotModel(FewShotModel):
     ):
         """Initialize the Random Forest regressor with any parameters supported by sklearn's RandomForestRegressor."""
         super().__init__(
+            lie_noise_stddev_multiplier=kwargs.pop("lie_noise_stddev_multiplier", 4.0),
             decision_mode=kwargs.pop("decision_mode", "median"),
             temperature=kwargs.pop("temperature", 0.0),
             epsilon=kwargs.pop("epsilon", 0.0),
