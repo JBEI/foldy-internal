@@ -136,6 +136,7 @@ evolution_fields = ns.model(
         "finetuning_model_checkpoint": fields.String(),
         "invokation_id": fields.Integer(),
         "few_shot_params": fields.String(),
+        "num_mutants": fields.Integer(required=False),
     },
 )
 

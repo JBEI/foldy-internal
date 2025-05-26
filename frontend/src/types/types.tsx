@@ -132,12 +132,13 @@ export interface Evolution {
     id: number;
     name: string;
     fold_id: number;
-    mode: "finetuning" | "randomforest";
+    invokation_id: number | null;
+    mode: string;
     embedding_files: string | null;
     naturalness_files: string | null;
     finetuning_model_checkpoint: string | null;
     few_shot_params: string | null;
-    invokation_id: number | null;
+    num_mutants: number;
 }
 
 export interface Invokation {

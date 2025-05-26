@@ -47,15 +47,15 @@ If any changes are made to the database models, execute the following commands t
 docker compose \
      --file deployment/development/docker-compose.yml \
      --project-directory . \
-     exec backend flask db stamp $CURRENT_REVISION_NUMBER
+     exec backend /opt/conda/envs/worker/bin/python -m flask db stamp $CURRENT_REVISION_NUMBER
 docker compose \
      --file deployment/development/docker-compose.yml \
      --project-directory . \
-     exec backend flask db migrate
+     exec backend /opt/conda/envs/worker/bin/python -m flask db migrate
 docker compose \
      --file deployment/development/docker-compose.yml \
      --project-directory . \
-     exec backend python -m flask db upgrade
+     exec backend /opt/conda/envs/worker/bin/python -m flask db upgrade
 ```
 
 ### Development Tasks

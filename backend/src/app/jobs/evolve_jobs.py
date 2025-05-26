@@ -29,7 +29,7 @@ from app.models import Evolution, Fold, Invokation
 from folde.few_shot_models import get_few_shot_model, is_valid_few_shot_model_name
 
 
-def get_embedding_df_from_file(fsm: FoldStorageManager, embedding_files: list[str]) -> pd.DataFrame:
+def get_embedding_df_from_file(fold_id: int, fsm: FoldStorageManager, embedding_files: list[str]) -> pd.DataFrame:
     logging.info(f"Reading {len(embedding_files)} embedding files")
 
     embedding_dfs = []
@@ -38,7 +38,7 @@ def get_embedding_df_from_file(fsm: FoldStorageManager, embedding_files: list[st
     for path in embedding_files:
         # Get the CSV content as a string
         assert fsm.storage_manager is not None, "Storage manager not set up"
-        csv_blob = fsm.storage_manager.get_blob(evolve.fold_id, path)
+        csv_blob = fsm.storage_manager.get_blob(fold_id, path)
 
         with csv_blob.open("r") as csv_f:
             # Create chunks iterator
@@ -56,13 +56,13 @@ def get_embedding_df_from_file(fsm: FoldStorageManager, embedding_files: list[st
     return raw_embedding_df
 
 
-def get_naturalness_df_from_file(fsm: FoldStorageManager, naturalness_files: list[str]) -> pd.DataFrame:
+def get_naturalness_df_from_file(fold_id: int, fsm: FoldStorageManager, naturalness_files: list[str]) -> pd.DataFrame:
     logging.info(f"Reading {len(naturalness_files)} naturalness files")
     naturalness_dfs = []
 
     for path in naturalness_files:
         assert fsm.storage_manager is not None, "Storage manager not set up"
-        csv_blob = fsm.storage_manager.get_blob(evolve.fold_id, path)
+        csv_blob = fsm.storage_manager.get_blob(fold_id, path)
         with csv_blob.open("r") as csv_f:
             naturalness_dfs.append(pd.read_csv(csv_f))
 
@@ -114,8 +114,8 @@ def run_evolvepro(evolve_id: int):
         activity_file_contents = fsm.storage_manager.get_binary(evolve.fold_id, str(evolve_directory / "activity.xlsx"))
 
         raw_activity_df = pd.read_excel(BytesIO(activity_file_contents))
-        raw_embedding_df = get_embedding_df_from_file(fsm, evolve.embedding_files.split(','))
-        raw_naturalness_df = get_naturalness_df_from_file(fsm, evolve.naturalness_files.split(','))
+        raw_embedding_df = get_embedding_df_from_file(evolve.fold_id, fsm, evolve.embedding_files.split(','))
+        raw_naturalness_df = get_naturalness_df_from_file(evolve.fold_id, fsm, evolve.naturalness_files.split(','))
 
         logging.info(f"Found {raw_embedding_df.shape[0]} embeddings and {raw_naturalness_df.shape[0]} naturalness values")
 

@@ -9,6 +9,10 @@ import { Selection } from "./StructurePane";
 import { notify } from "../../services/NotificationService";
 import { TabContainer, SectionCard, CollapsibleSection, FormRow, FormField } from "../../util/tabComponents";
 import { CheckboxControl } from "../../util/controlComponents";
+import { Alert, Modal, Button as AntButton, Typography, Form, Input, Switch, Tag } from 'antd';
+import { QuestionCircleOutlined, EditOutlined } from '@ant-design/icons';
+
+const { Text, Paragraph, Title } = Typography;
 
 export interface SubsequenceSelection {
     chainIdx: number;
@@ -178,6 +182,8 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
 
     const canEditYaml = props.userType !== "viewer";
 
+    const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+
     return (
         <TabContainer>
             {/* Sequence Viewer */}
@@ -212,119 +218,189 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
 
             {/* Form Section */}
             <SectionCard>
-                <FormRow>
-                    <FormField>
-                        <label className="uk-form-label">Name</label>
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                            <input
-                                className="uk-input"
+                {/* Help Alert */}
+                <Alert
+                    message="Protein Properties & Settings"
+                    description={
+                        <div>
+                            <Paragraph>
+                                Configure basic protein properties, tags, and folding parameters.
+                                Use the edit buttons to modify name and model preset settings.
+                            </Paragraph>
+                            <AntButton
+                                type="link"
+                                icon={<QuestionCircleOutlined />}
+                                onClick={() => setShowHelpModal(true)}
+                                style={{ padding: 0 }}
+                            >
+                                View detailed property guide
+                            </AntButton>
+                        </div>
+                    }
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: '20px' }}
+                />
+
+                {/* Detailed Help Modal */}
+                <Modal
+                    title="Protein Properties Guide"
+                    open={showHelpModal}
+                    onCancel={() => setShowHelpModal(false)}
+                    footer={[
+                        <AntButton key="close" onClick={() => setShowHelpModal(false)}>
+                            Close
+                        </AntButton>
+                    ]}
+                    width={700}
+                >
+                    <div>
+                        <Title level={4}>Basic Properties</Title>
+                        <ul>
+                            <li><Text strong>Name:</Text> Descriptive identifier for your protein</li>
+                            <li><Text strong>Owner:</Text> User who created this fold</li>
+                            <li><Text strong>Created:</Text> Timestamp of fold creation</li>
+                            <li><Text strong>Diffusion Samples:</Text> Number of samples used in structure generation</li>
+                        </ul>
+
+                        <Title level={4}>Visibility & Organization</Title>
+                        <ul>
+                            <li><Text strong>Public:</Text> Make this fold visible to other users</li>
+                            <li><Text strong>Tags:</Text> Add descriptive labels for organization and search</li>
+                        </ul>
+
+                        <Title level={4}>Folding Parameters</Title>
+                        <ul>
+                            <li><Text strong>Model Preset:</Text> Structure prediction algorithm configuration</li>
+                            <li><Text strong>Disable Relaxation:</Text> Skip energy minimization step (faster but less refined)</li>
+                        </ul>
+
+                        <Alert
+                            message="Parameter Changes"
+                            description="Changes to folding parameters require refolding the protein to take effect."
+                            type="warning"
+                            showIcon
+                            style={{ marginTop: '16px' }}
+                        />
+                    </div>
+                </Modal>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px', maxWidth: '800px' }}>
+                    {/* Row 1 */}
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Name</Text>
+                        <Input.Group compact>
+                            <Input
                                 value={props.foldName}
                                 disabled
-                                style={{ flex: 1 }}
+                                style={{ width: 'calc(100% - 40px)' }}
+                                size="small"
                             />
-                            <button
-                                className="uk-button uk-button-default uk-button-small"
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    props.setFoldName();
-                                }}
+                            <AntButton
+                                icon={<EditOutlined />}
+                                onClick={props.setFoldName}
                                 disabled={props.userType === "viewer"}
                                 title="Edit name"
-                            >
-                                <AiFillEdit />
-                            </button>
-                        </div>
-                    </FormField>
-                </FormRow>
+                                size="small"
+                            />
+                        </Input.Group>
+                    </div>
 
-                <FormRow>
-                    <FormField>
-                        <label className="uk-form-label">Diffusion Samples</label>
-                        <input
-                            className="uk-input"
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Diffusion Samples</Text>
+                        <Input
                             value={props.foldDiffusionSamples || ''}
                             disabled
+                            size="small"
                         />
-                    </FormField>
-                </FormRow>
+                    </div>
 
-                <FormRow>
-                    <FormField>
-                        <label className="uk-form-label">Owner</label>
-                        <input
-                            className="uk-input"
+                    {/* Row 2 */}
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Owner</Text>
+                        <Input
                             value={props.foldOwner}
                             disabled
+                            size="small"
                         />
-                    </FormField>
-                </FormRow>
+                    </div>
 
-                <FormRow>
-                    <FormField>
-                        <label className="uk-form-label">Created</label>
-                        <input
-                            className="uk-input"
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Created</Text>
+                        <Input
                             value={props.foldCreateDate}
                             disabled
+                            size="small"
                         />
-                    </FormField>
-                </FormRow>
+                    </div>
 
-                <FormRow>
-                    <FormField>
-                        <CheckboxControl
-                            label="Public"
+                    {/* Row 3 */}
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Public</Text>
+                        <Switch
                             checked={props.foldPublic || false}
                             onChange={(checked) => props.setPublic(checked)}
+                            checkedChildren="Public"
+                            unCheckedChildren="Private"
+                            size="small"
                         />
-                    </FormField>
-                </FormRow>
+                    </div>
 
-                <FormRow>
-                    <FormField style={{ width: '100%' }}>
-                        <label className="uk-form-label">Tags</label>
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Model Preset</Text>
+                        <Input.Group compact>
+                            <Input
+                                value={props.foldModelPreset || "unset"}
+                                disabled
+                                style={{ width: 'calc(100% - 40px)' }}
+                                size="small"
+                            />
+                            <AntButton
+                                icon={<EditOutlined />}
+                                onClick={props.setFoldModelPreset}
+                                title="Edit model preset"
+                                size="small"
+                            />
+                        </Input.Group>
+                    </div>
+
+                    {/* Row 4 - spans both columns */}
+                    <div style={{ gridColumn: '1 / -1' }}>
+                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Disable Relaxation</Text>
+                        <Switch
+                            checked={props.foldDisableRelaxation !== null ? props.foldDisableRelaxation : true}
+                            onChange={(checked) => props.setDisableRelaxation(checked)}
+                            checkedChildren="Disabled"
+                            unCheckedChildren="Enabled"
+                            size="small"
+                        />
+                    </div>
+
+                    {/* Tags section - spans both columns */}
+                    <div style={{ gridColumn: '1 / -1' }}>
+                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Tags</Text>
+                        <div style={{ marginBottom: '8px' }}>
+                            {(props.foldTags || []).map(tag => (
+                                <Tag
+                                    key={tag}
+                                    closable={props.userType !== "viewer"}
+                                    onClose={() => props.deleteTag(tag)}
+                                    onClick={() => props.handleTagClick(tag)}
+                                    style={{ cursor: 'pointer', marginBottom: '4px' }}
+                                    size="small"
+                                >
+                                    {tag}
+                                </Tag>
+                            ))}
+                        </div>
                         <EditableTagList
                             tags={props.foldTags || []}
                             addTag={props.addTag}
                             deleteTag={props.deleteTag}
                             handleTagClick={props.handleTagClick}
                         />
-                    </FormField>
-                </FormRow>
-
-                <FormRow>
-                    <FormField>
-                        <label className="uk-form-label">Model Preset</label>
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                            <input
-                                className="uk-input"
-                                value={props.foldModelPreset || "unset"}
-                                disabled
-                                style={{ flex: 1 }}
-                            />
-                            <button
-                                className="uk-button uk-button-default uk-button-small"
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    props.setFoldModelPreset();
-                                }}
-                                title="Edit model preset"
-                            >
-                                <AiFillEdit />
-                            </button>
-                        </div>
-                    </FormField>
-                </FormRow>
-
-                <FormRow>
-                    <FormField>
-                        <CheckboxControl
-                            label="Disable Relaxation"
-                            checked={props.foldDisableRelaxation !== null ? props.foldDisableRelaxation : true}
-                            onChange={(checked) => props.setDisableRelaxation(checked)}
-                        />
-                    </FormField>
-                </FormRow>
+                    </div>
+                </div>
             </SectionCard>
         </TabContainer>
     );

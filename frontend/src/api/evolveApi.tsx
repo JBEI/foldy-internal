@@ -12,6 +12,7 @@ export async function evolve(
     foldId: number,
     activityFile: File,
     mode: string,
+    numMutants: number,
     embeddingFiles?: string[],
     naturalnessFiles?: string[],
     finetuningModelCheckpoint?: string,
@@ -35,6 +36,7 @@ export async function evolve(
     if (fewShotParams) {
         formData.append('few_shot_params', fewShotParams);
     }
+    formData.append('num_mutants', numMutants.toString());
 
     const response = await axiosInstance.post<Evolution>('/api/evolve', formData, {
         headers: {

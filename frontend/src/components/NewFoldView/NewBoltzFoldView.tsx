@@ -1,11 +1,15 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import BoltzYamlBuilder from "../../util/boltzYamlBuilder";
-import { Row, Col, Form, Input, Switch, Alert, InputNumber } from "antd";
+import { Row, Col, Form, Input, Switch, Alert, InputNumber, Modal, Button as AntButton, Typography, Collapse, Card } from "antd";
+import { QuestionCircleOutlined, BookOutlined } from '@ant-design/icons';
 import { postFolds } from "../../api/foldApi";
 import { FoldInput } from "../../types/types";
 import UIkit from "uikit";
 import { notify } from "../../services/NotificationService";
+
+const { Text, Paragraph, Title } = Typography;
+const { Panel } = Collapse;
 
 interface NewBoltzFoldViewProps {
     userType: string | null;
@@ -56,6 +60,8 @@ const NewBoltzFoldView: React.FC<NewBoltzFoldViewProps> = ({ userType }) => {
     const navigate = useNavigate();
     const [foldName, setFoldName] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+    const [showCitationsModal, setShowCitationsModal] = useState<boolean>(false);
     const [advancedSettings, setAdvancedSettings] = useState<AdvancedSettings>({
         diffusionSamples: 1,
         startFoldJob: true,
@@ -123,40 +129,194 @@ sequences:
                     />
                 )}
 
-                <div>
-                    <p>
-                        Foldy is built on Boltz-1x for protein structure prediction (<a href="https://github.com/jwohlwend/boltz">Github</a>, <a href="https://www.biorxiv.org/content/10.1101/2024.11.19.624167v4">Paper</a>). Boltz-1x is an open-source model for predicting protein structures and has exceptional accuracy for many problem types including:
-                    </p>
-                    <ul style={{ marginLeft: "2rem", marginBottom: "1rem" }}>
-                        <li>Protein multimers</li>
-                        <li>Small molecule docking</li>
-                        <li>DNA/RNA docking</li>
-                        <li>Post translational modifications</li>
-                    </ul>
-                    <p>To predict a structure, supply:</p>
-                    <ul style={{ marginLeft: "2rem", marginBottom: "1rem" }}>
-                        <li>Fold Name: your fold name should be unique, and we recommend choosing something less than 80 characters and only using [0-9a-zA-Z_\- ]</li>
-                        <li>YAML version: There is only one version number, just leave as 1</li>
-                        <li>Chain IDs: Each molecule (protein, ligand, DNA, RNA) requires a chain ID, and a common convention is single upper case characters. If you want two copies of a molecule you can provide multiple chain names.</li>
-                    </ul>
-                    <p>If you use Boltz-1 or Boltz-1x structures in your work, please cite the Boltz paper:</p>
-                    <pre style={{ marginBottom: "1rem" }}>{`@article{wohlwend2024boltz1,
-    author = {Wohlwend, Jeremy and Corso, Gabriele and Passaro, Saro and Getz, Noah and Reveiz, Mateo and Leidal, Ken and Swiderski, Wojtek and Atkinson, Liam and Portnoi, Tally and Chinn, Itamar and Silterra, Jacob and Jaakkola, Tommi and Barzilay, Regina},
-    title = {Boltz-1: Democratizing Biomolecular Interaction Modeling},
-    year = {2024},
-    doi = {10.1101/2024.11.19.624167},
-    journal = {bioRxiv}
+                {/* Clean overview with help buttons */}
+                <Alert
+                    message="Create a new protein structure prediction"
+                    description={
+                        <div>
+                            <Paragraph>
+                                Foldy uses Boltz-1x to predict protein structures with exceptional accuracy for multimers,
+                                small molecule docking, DNA/RNA interactions, and post-translational modifications.
+                            </Paragraph>
+                            <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+                                <AntButton
+                                    type="link"
+                                    icon={<QuestionCircleOutlined />}
+                                    onClick={() => setShowHelpModal(true)}
+                                    style={{ padding: 0 }}
+                                >
+                                    View setup instructions
+                                </AntButton>
+                                <AntButton
+                                    type="link"
+                                    icon={<BookOutlined />}
+                                    onClick={() => setShowCitationsModal(true)}
+                                    style={{ padding: 0 }}
+                                >
+                                    View citations
+                                </AntButton>
+                            </div>
+                        </div>
+                    }
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: '20px' }}
+                />
+
+                {/* Setup Instructions Modal */}
+                <Modal
+                    title="Boltz Fold Setup Guide"
+                    open={showHelpModal}
+                    onCancel={() => setShowHelpModal(false)}
+                    footer={[
+                        <AntButton key="close" onClick={() => setShowHelpModal(false)}>
+                            Close
+                        </AntButton>
+                    ]}
+                    width={700}
+                >
+                    <div>
+                        <Title level={4}>What is Boltz-1x?</Title>
+                        <Paragraph>
+                            Boltz-1x is an open-source protein structure prediction model with exceptional accuracy for complex scenarios:
+                        </Paragraph>
+                        <ul>
+                            <li>Protein multimers (multi-chain complexes)</li>
+                            <li>Small molecule docking</li>
+                            <li>DNA/RNA interactions</li>
+                            <li>Post-translational modifications</li>
+                        </ul>
+                        <Paragraph>
+                            <a href="https://github.com/jwohlwend/boltz" target="_blank" rel="noopener noreferrer">GitHub Repository</a> |
+                            <a href="https://www.biorxiv.org/content/10.1101/2024.11.19.624167v4" target="_blank" rel="noopener noreferrer"> Research Paper</a>
+                        </Paragraph>
+
+                        <Title level={4}>Required Inputs</Title>
+                        <ul>
+                            <li>
+                                <Text strong>Fold Name:</Text> Unique identifier (max 80 characters, use only letters, numbers, underscores, hyphens, and spaces)
+                            </li>
+                            <li>
+                                <Text strong>YAML Configuration:</Text> Define sequences and structure
+                            </li>
+                            <li>
+                                <Text strong>Chain IDs:</Text> Single uppercase letters for each molecule (A, B, C, etc.)
+                            </li>
+                        </ul>
+
+                        <Title level={4}>YAML Structure</Title>
+                        <ul>
+                            <li><Text strong>Version:</Text> Always set to 1</li>
+                            <li><Text strong>Sequences:</Text> Define protein, DNA, RNA, and ligand sequences</li>
+                            <li><Text strong>Multiple copies:</Text> Use multiple chain IDs for the same sequence</li>
+                        </ul>
+
+                        <Alert
+                            message="Need help with YAML?"
+                            description="Use the interactive YAML builder below to construct your configuration step-by-step."
+                            type="success"
+                            showIcon
+                            style={{ marginTop: '16px' }}
+                        />
+                    </div>
+                </Modal>
+
+                {/* Citations Modal */}
+                <Modal
+                    title="Citations & References"
+                    open={showCitationsModal}
+                    onCancel={() => setShowCitationsModal(false)}
+                    footer={[
+                        <AntButton key="close" onClick={() => setShowCitationsModal(false)}>
+                            Close
+                        </AntButton>
+                    ]}
+                    width={800}
+                >
+                    <div>
+                        <Paragraph>
+                            If you use results from this platform in your research, please cite the appropriate papers:
+                        </Paragraph>
+
+                        <Collapse ghost>
+
+                            <Panel header={<Text strong>🧪 FolDE (If you used FolDE for structure prediction or directed evolution)</Text>} key="2">
+                                <Card size="small" style={{ backgroundColor: '#f9f9f9' }}>
+                                    <Text>Include this citation if you use FolDE (Foldy's directed evolution tools) in your research:</Text>
+                                    <Alert
+                                        message="Not Yet Published"
+                                        description="FolDE manuscript is currently in preparation. Please check back for citation details."
+                                        type="info"
+                                        showIcon
+                                        size="small"
+                                        style={{ marginTop: '8px' }}
+                                    />
+                                </Card>
+                            </Panel>
+
+                            <Panel header={<Text strong>📝 Boltz-1: Primary Citation (Required)</Text>} key="1">
+                                <Card size="small" style={{ backgroundColor: '#f9f9f9' }}>
+                                    <Text>Use this citation if you use Boltz-1 or Boltz-1x structure predictions:</Text>
+                                    <pre style={{
+                                        marginTop: '8px',
+                                        padding: '12px',
+                                        backgroundColor: '#fff',
+                                        border: '1px solid #d9d9d9',
+                                        borderRadius: '4px',
+                                        fontSize: '12px',
+                                        lineHeight: '1.4'
+                                    }}>
+                                        {`@article{wohlwend2024boltz1,
+  author = {Wohlwend, Jeremy and Corso, Gabriele and Passaro, Saro and
+            Getz, Noah and Reveiz, Mateo and Leidal, Ken and Swiderski, Wojtek and
+            Atkinson, Liam and Portnoi, Tally and Chinn, Itamar and Silterra, Jacob and
+            Jaakkola, Tommi and Barzilay, Regina},
+  title = {Boltz-1: Democratizing Biomolecular Interaction Modeling},
+  year = {2024},
+  doi = {10.1101/2024.11.19.624167},
+  journal = {bioRxiv}
 }`}
-                    </pre>
-                    <p>If you use Foldy to run Boltz with automatic Multiple Sequence Alignment (MSA) generation, please also cite:</p>
-                    <pre style={{ marginBottom: "1rem" }}>{`@article{mirdita2022colabfold,
-    title={ColabFold: making protein folding accessible to all},
-    author={Mirdita, Milot and Sch{\"u}tze, Konstantin and Moriwaki, Yoshitaka and Heo, Lim and Ovchinnikov, Sergey and Steinegger, Martin},
-    journal={Nature methods},
-    year={2022},
+                                    </pre>
+                                </Card>
+                            </Panel>
+
+                            <Panel header={<Text strong>🧬 ColabFold: MSA Generation (If Applicable)</Text>} key="3">
+                                <Card size="small" style={{ backgroundColor: '#f9f9f9' }}>
+                                    <Text>Include this citation if Foldy generated Multiple Sequence Alignments (MSAs) for your fold:</Text>
+                                    <pre style={{
+                                        marginTop: '8px',
+                                        padding: '12px',
+                                        backgroundColor: '#fff',
+                                        border: '1px solid #d9d9d9',
+                                        borderRadius: '4px',
+                                        fontSize: '12px',
+                                        lineHeight: '1.4'
+                                    }}>
+                                        {`@article{mirdita2022colabfold,
+  title = {ColabFold: making protein folding accessible to all},
+  author = {Mirdita, Milot and Sch{\"u}tze, Konstantin and Moriwaki, Yoshitaka and
+            Heo, Lim and Ovchinnikov, Sergey and Steinegger, Martin},
+  journal = {Nature Methods},
+  volume = {19},
+  number = {6},
+  pages = {679--682},
+  year = {2022},
+  publisher = {Nature Publishing Group}
 }`}
-                    </pre>
-                </div>
+                                    </pre>
+                                </Card>
+                            </Panel>
+                        </Collapse>
+
+                        <Alert
+                            message="Pro Tip"
+                            description="Most reference managers can import these citations directly from DOI or journal information."
+                            type="info"
+                            showIcon
+                            style={{ marginTop: '16px' }}
+                        />
+                    </div>
+                </Modal>
             </div>
 
             {/* Scrollable Content */}

@@ -43,6 +43,7 @@ upload_parser.add_argument("embedding_files", type=str, location="form", require
 upload_parser.add_argument("naturalness_files", type=str, location="form", required=False)
 upload_parser.add_argument("finetuning_model_checkpoint", type=str, location="form", required=False)
 upload_parser.add_argument("few_shot_params", type=str, location="form", required=False)
+upload_parser.add_argument("num_mutants", type=int, location="form", required=False)
 
 
 @ns.route("/evolve")
@@ -80,6 +81,7 @@ class EvolveResource(Resource):
             args["finetuning_model_checkpoint"] if args["finetuning_model_checkpoint"] else None
         )
         few_shot_params = args.get("few_shot_params", None)
+        num_mutants: int = args["num_mutants"]
 
         if mode == "randomforest" or mode == "mlp":
             if not embedding_files:
@@ -133,7 +135,8 @@ class EvolveResource(Resource):
             naturalness_files=",".join(naturalness_files) if naturalness_files else None,
             finetuning_model_checkpoint=finetuning_model_checkpoint,
             invokation_id=new_invokation_id,
-            few_shot_params=few_shot_params
+            few_shot_params=few_shot_params,
+            num_mutants=num_mutants
         )
 
         # 4. Start the job based on mode

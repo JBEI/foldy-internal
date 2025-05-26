@@ -1,26 +1,23 @@
-import React, { useState, ChangeEvent, useMemo } from 'react';
-import UIkit from 'uikit';
-import { FileInfo, Logit, Invokation } from 'src/types/types';
-import { evolve } from '../../api/evolveApi';
+import React, { useState, useMemo } from 'react';
+import { Logit, Invokation } from 'src/types/types';
 import { FaDownload, FaEye, FaFileCode, FaRedo } from 'react-icons/fa';
-import fileDownload from 'js-file-download';
-import { removeLeadingSlash } from '../../api/commonApi';
 import { downloadFileStraightToFilesystem, getFile } from '../../api/fileApi';
 import { startLogits } from '../../api/embedApi';
 import Plot from 'react-plotly.js';
 import { Data } from 'plotly.js';
 import Papa from 'papaparse';
-import { useTable, useGlobalFilter, useSortBy, TableInstance } from 'react-table';
 import { ESMModelPicker } from './ESMModelPicker';
 import { Selection } from './StructurePane';
-import DataGrid from 'react-data-grid';
 import ReactDataGrid from 'react-data-grid';
 import { notify } from '../../services/NotificationService';
 import { BoltzYamlHelper } from '../../util/boltzYamlHelper';
 import { TabContainer, DescriptionSection, TableSection, CollapsibleSection, FormRow, FormField, ButtonGroup, ResponsiveTable } from '../../util/tabComponents';
 import { TextInputControl, CheckboxControl, NumberInputControl } from '../../util/controlComponents';
 import { DataTableContainer } from '../../util/plotComponents';
-// import 'react-data-grid/lib/styles.css';  // Don't forget the styles!
+import { Alert, Modal, Button as AntButton, Typography } from 'antd';
+import { QuestionCircleOutlined } from '@ant-design/icons';
+
+const { Text, Paragraph, Title } = Typography;
 
 
 const NATURALNESS_COLUMN = 'probability';
@@ -482,6 +479,8 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
         });
     }
 
+    const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+
     return (
         <TabContainer>
             {/* Description Section */}
@@ -607,11 +606,86 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
 
             {/* Collapsible New Run Section */}
             <CollapsibleSection
-                title="New Logit Run"
+                title="New Naturalness Run"
                 isOpen={showForm}
                 onToggle={() => setShowForm(!showForm)}
             >
-                <h3>Start New Logit Run</h3>
+                {/* Help Alert */}
+                <Alert
+                    message="What is Naturalness?"
+                    description={
+                        <div>
+                            <Paragraph>
+                                Naturalness uses protein language models to score how "natural" each possible amino acid mutation looks.
+                                Higher scores indicate mutations that are more likely to maintain protein function.
+                            </Paragraph>
+                            <AntButton
+                                type="link"
+                                icon={<QuestionCircleOutlined />}
+                                onClick={() => setShowHelpModal(true)}
+                                style={{ padding: 0 }}
+                            >
+                                View detailed naturalness guide
+                            </AntButton>
+                        </div>
+                    }
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: '20px' }}
+                />
+
+                {/* Detailed Help Modal */}
+                <Modal
+                    title="Naturalness Analysis Guide"
+                    open={showHelpModal}
+                    onCancel={() => setShowHelpModal(false)}
+                    footer={[
+                        <AntButton key="close" onClick={() => setShowHelpModal(false)}>
+                            Close
+                        </AntButton>
+                    ]}
+                    width={700}
+                >
+                    <div>
+                        <Title level={4}>What is Naturalness?</Title>
+                        <Paragraph>
+                            Naturalness analysis uses protein language models (PLMs) to evaluate how "natural" or likely
+                            each possible amino acid substitution appears based on evolutionary patterns learned from
+                            millions of protein sequences.
+                        </Paragraph>
+
+                        <Title level={4}>How to Use</Title>
+                        <ul>
+                            <li><Text strong>Model Selection:</Text> Choose from different PLMs (ESM-C models recommended)</li>
+                            <li><Text strong>Structure Integration:</Text> Optionally include 3D structure information</li>
+                            <li><Text strong>Depth Two Logits:</Text> Advanced option for pair mutation analysis</li>
+                        </ul>
+
+                        <Title level={4}>Interpreting Results</Title>
+                        <Paragraph>
+                            The heatmap shows naturalness scores for each position-residue combination:
+                        </Paragraph>
+                        <ul>
+                            <li><Text strong>Higher scores:</Text> More "natural" mutations, likely to preserve function</li>
+                            <li><Text strong>Lower scores:</Text> Less natural mutations, may disrupt protein</li>
+                            <li><Text strong>Wild-type masking:</Text> Option to hide original residues for clearer visualization</li>
+                        </ul>
+
+                        <Alert
+                            message="Estimated Cost"
+                            description="~$1 per naturalness run"
+                            type="success"
+                            showIcon
+                            style={{ marginTop: '16px' }}
+                        />
+
+                        <Paragraph style={{ marginTop: '16px' }}>
+                            Results can be downloaded as CSV files containing naturalness scores for all single mutations.
+                        </Paragraph>
+                    </div>
+                </Modal>
+
+                <h3>Start New Naturalness Run</h3>
                 <FormRow>
                     <FormField>
                         <TextInputControl

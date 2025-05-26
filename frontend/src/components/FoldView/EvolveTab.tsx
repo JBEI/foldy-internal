@@ -15,8 +15,59 @@ import Plot from 'react-plotly.js';
 import { TabContainer, DescriptionSection, TableSection, CollapsibleSection, FormRow, FormField, ButtonGroup, ResponsiveTable } from '../../util/tabComponents';
 import { TextInputControl, TextAreaControl, SelectControl, FileUploadControl, MultiSelectControl, NumberInputControl } from '../../util/controlComponents';
 import { DataTableContainer, PlotContainer } from '../../util/plotComponents';
+import { Row, Col, Form, Input, Select, Upload, Button as AntButton, Card, Divider, InputNumber, Alert, Modal, Typography } from 'antd';
+import { UploadOutlined, PlayCircleOutlined, InfoCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 
+const { Text, Paragraph, Title } = Typography;
 
+const FEW_SHOT_PRESETS = {
+    'folde_default_mlp': {
+        mode: 'TorchMLPFewShotModel',
+        params: `{
+    "pretrain": true,
+    "pretrain_epochs": 50,
+    "ensemble_size": 5,
+    "decision_mode": "ucb",
+    "embedding_dim": 960,
+    "hidden_dims": [100, 50],
+    "dropout": 0.2,
+    "learning_rate": 0.0003,
+    "weight_decay": 0.00001,
+    "train_epochs": 200,
+    "train_patience": 40,
+    "val_frequency": 10,
+    "do_validation_with_pair_fraction": 0.2,
+    "decision_mode": "constantliar",
+    "lie_noise_stddev_multiplier": 4.0
+}`
+    },
+    'evolvepro': {
+        mode: 'RandomForestFewShotModel',
+        params: `{
+    "n_estimators": 100,
+    "criterion": "friedman_mse",
+    "max_depth": null,
+    "min_samples_split": 2,
+    "min_samples_leaf": 1,
+    "min_weight_fraction_leaf": 0.0,
+    "max_features": 1.0,
+    "max_leaf_nodes": null,
+    "min_impurity_decrease": 0.0,
+    "bootstrap": true,
+    "oob_score": false,
+    "n_jobs": null,
+    "random_state": 1,
+    "verbose": 0,
+    "warm_start": false,
+    "ccp_alpha": 0.0,
+    "max_samples": null
+}`
+    },
+    'custom': {
+        mode: null,
+        params: ''
+    }
+};
 
 type RowData = {
     seqId: string;
@@ -256,39 +307,75 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
             name: "Sequence ID",
             sortable: true,
             resizable: true,
+            // width: 200,
             sortDescendingFirst: true,
             formatter: ({ row }: { row: any }) => (
-                <div uk-tooltip={row.seqId}>{row.seqId}</div>
+                <div
+                    uk-tooltip={row.seqId}
+                    style={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        paddingLeft: '5px'
+                    }}
+                >
+                    {row.seqId}
+                </div>
             )
         },
         {
             key: 'relevantMeasuredMutants',
             name: "Measured",
             resizable: true,
-            maxWidth: 200,
+            // width: 200,
             formatter: ({ row }: { row: any }) => (
-                <div uk-tooltip={row.relevantMeasuredMutants}>{row.relevantMeasuredMutants}</div>
+                <div
+                    uk-tooltip={row.relevantMeasuredMutants}
+                    style={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                    }}
+                >
+                    {row.relevantMeasuredMutants}
+                </div>
             )
         },
         {
             key: 'predictionMean',
             name: "Mean",
             resizable: true,
-            formatter: ({ row }: { row: any }) => row.predictionMean.toFixed(2),
+            width: 70,
+            formatter: ({ row }: { row: any }) => (
+                <div uk-tooltip={row.predictionMean.toFixed(4)} style={{ textAlign: 'left' }}>
+                    {row.predictionMean.toFixed(2)}
+                </div>
+            )
         },
         {
             key: "predictionStddev",
             name: "STD",
             resizable: true,
-            formatter: ({ row }: { row: any }) => row.predictionStddev.toFixed(2),
+            width: 70,
+            formatter: ({ row }: { row: any }) => (
+                <div uk-tooltip={row.predictionStddev.toFixed(4)} style={{ textAlign: 'left' }}>
+                    {row.predictionStddev.toFixed(2)}
+                </div>
+            )
         },
         {
             key: "score",
             name: "Score",
             sortable: true,
             resizable: true,
-            formatter: ({ row }: { row: any }) => row.score.toFixed(2),
-            sortDescendingFirst: true
+            width: 70,
+            formatter: ({ row }: { row: any }) => (
+                <div uk-tooltip={row.score.toFixed(4)} style={{ textAlign: 'left' }}>
+                    {row.score.toFixed(2)}
+                </div>
+            ),
+            sortDescendingFirst: true,
+            style: { padding: 0 }
         }
     ];
 
@@ -353,6 +440,12 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
                 }}
                 onRowClick={(e, row) => {
                     setSelectedSeqIds([row.seqId]);
+                }}
+                minHeight={400}
+                style={{
+                    height: '100%',
+                    maxHeight: '500px',
+                    width: '100%'
                 }}
             />
             <ButtonGroup>
@@ -644,10 +737,12 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
     const [showForm, setShowForm] = useState<boolean>(false);
     const [activityFile, setActivityFile] = useState<File | null>(null);
     const [mode, setMode] = useState<string>('TorchMLPFewShotModel');
+    const [numMutants, setNumMutants] = useState<number>(24);
     const [selectedEmbeddingPaths, setSelectedEmbeddingPaths] = useState<string[]>([]);
     const [selectedNaturalnessPaths, setSelectedNaturalnessPaths] = useState<string[]>([]);
     const [finetuningModelCheckpoint, setFinetuningModelCheckpoint] = useState<string>('facebook/esm2_t6_8M_UR50D');
     const [fewShotParams, setFewShotParams] = useState<string>('');
+    const [selectedPreset, setSelectedPreset] = useState<string>('custom');
 
     const [displayedEvolutionId, setDisplayedEvolutionId] = useState<number | null>(null);
     const [evolutionCsvData, setEvolutionCsvData] = useState<string | null>(null);
@@ -656,6 +751,8 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
     const [maxMutationsPerFootprint, setMaxMutationsPerFootprint] = useState<number>(2);
     const [topPerformersToDisplay, setTopPerformersToDisplay] = useState<number>(24);
 
+    const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+
     const availableEmbeddingFiles = files?.filter(file =>
         file.key.includes('embed')
     ) || [];
@@ -663,29 +760,8 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
         file.key.includes('naturalness')
     ) || [];
 
-    const handleEmbeddingFileSelection = (event: ChangeEvent<HTMLSelectElement>) => {
-        const selectedOptions = Array.from(event.target.selectedOptions).map(option => option.value);
-        setSelectedEmbeddingPaths(selectedOptions);
-    };
-
-    const handleNaturalnessFileSelection = (event: ChangeEvent<HTMLSelectElement>) => {
-        const selectedOptions = Array.from(event.target.selectedOptions).map(option => option.value);
-        setSelectedNaturalnessPaths(selectedOptions);
-    };
-
-    const handleActivityFileUpload = (event: ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (file) {
-            if (!file.name.match(/\.(xlsx|xls)$/i)) {
-                notify.error('Please upload an Excel file (.xlsx or .xls)');
-                return;
-            }
-            setActivityFile(file);
-        }
-    };
-
     const handleEvolve = async () => {
-        if (!activityFile || (selectedEmbeddingPaths.length === 0)) {
+        if (!activityFile || (selectedEmbeddingPaths.length === 0) || (selectedNaturalnessPaths.length === 0)) {
             notify.warning('Please fill in all required fields');
             return;
         }
@@ -697,6 +773,7 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                 foldId,
                 activityFile,
                 mode,
+                numMutants,
                 selectedEmbeddingPaths,
                 selectedNaturalnessPaths,
                 mode === 'finetuning' ? finetuningModelCheckpoint : undefined,
@@ -716,7 +793,7 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
     const downloadPredictedActivity = (evolution: Evolution) => {
         const predictedActivityPath = `evolve/${evolution.name}/predicted_activity.csv`;
         console.log(`Downloading predicted activity for evolution ${evolution.id} at path ${predictedActivityPath}`);
-        getFile(evolution.fold_id, predictedActivityPath).then(
+        getFile(foldId, predictedActivityPath).then(
             (fileBlob: Blob) => {
                 const newFname = `${evolution.name}_predicted_activity.csv`;
                 notify.info(`Downloading ${predictedActivityPath} with file name ${newFname}!`);
@@ -812,7 +889,22 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
         )
     }
 
+    // Add this helper function after the FEW_SHOT_PRESETS dictionary
+    const isValidJson = (jsonString: string): boolean => {
+        if (!jsonString.trim()) return true; // Empty string is considered valid
+        try {
+            JSON.parse(jsonString);
+            return true;
+        } catch {
+            return false;
+        }
+    };
 
+    // Add this after the isValidJson function and before the return statement:
+    const jsonValidationStatus = useMemo(() => {
+        if (fewShotParams.trim() === '') return '';
+        return isValidJson(fewShotParams) ? 'success' : 'error';
+    }, [fewShotParams]);
 
     return (
         <TabContainer>
@@ -943,127 +1035,311 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                 isOpen={showForm}
                 onToggle={() => setShowForm(!showForm)}
             >
-                <h3>Start New Evolution Run</h3>
-                Each run takes in an
-                <ul>
-                    <li><code>activity excel file</code> with columns seq_id and activity</li>
-                    <li><code>embedding files</code> embeddings run in the excel tab, containing embeddings for both the mutants with activity measurements as well as all mutants you wish to screen.</li>
-                </ul>
-                <p>
-                    Once complete, you can download the predicted activities for all mutants from the Files tab.
-                </p>
-                <h4>
-                    Example activity file
-                </h4>
-                <img
-                    style={{
-                        width: "200px",
-                    }}
-                    src={`/evolve_activity_excel_example.png`}
-                    alt=""
-                />
-                <p>
-                    <code>Estimated cost:</code>~$0.05 per evolution round.
-                </p>
-                <FormRow>
-                    <FormField>
-                        <TextInputControl
-                            label="Name"
-                            value={evolutionName}
-                            onChange={setEvolutionName}
-                        />
-                    </FormField>
+                {/* Help Alert */}
+                <Alert
+                    message="What is an Evolve Run?"
+                    description={
+                        <div>
+                            <Paragraph>
+                                In an Evolve run, a machine learning model is trained on your protein activity measurements, and that model is used to predict the activity of many other possible mutations. Then a slate of mutants is recommended for screening in the next round.
 
-                    <FormField>
-                        <FileUploadControl
-                            label="Upload Activity File"
-                            onChange={setActivityFile}
-                            accept=".xlsx,.xls"
-                            selectedFile={activityFile}
-                        />
-                    </FormField>
-
-                    <FormField>
-                        <SelectControl
-                            label="Mode"
-                            value={mode}
-                            onChange={setMode}
-                            options={[
-                                { value: "TorchMLPFewShotModel", label: "MLP Few Shot Model" },
-                                { value: "RandomForestFewShotModel", label: "RandomForestFewShotModel" },
-                                { value: "randomforest", label: "(old) Random Forest" },
-                                { value: "mlp", label: "(old) Multi-Layer Perceptron" },
-                                { value: "finetuning", label: "(old) Finetuning" }
-                            ]}
-                        />
-                    </FormField>
-
-                    {/* Conditional inputs based on mode */}
-                    {mode === 'finetuning' && (
-                        <FormField>
-                            <SelectControl
-                                label="Model Checkpoint"
-                                value={finetuningModelCheckpoint}
-                                onChange={setFinetuningModelCheckpoint}
-                                options={[
-                                    { value: "facebook/esm2_t6_8M_UR50D", label: "ESM2 (8M params)" },
-                                    { value: "facebook/esm2_t33_650M_UR50D", label: "ESM2 (650M params)" },
-                                    { value: "facebook/esm2_t48_15B_UR50D", label: "ESM2 (15B params)" }
-                                ]}
-                            />
-                        </FormField>
-                    )}
-                </FormRow>
-
-                <MultiSelectControl
-                    label="Select Embedding Files"
-                    options={availableEmbeddingFiles.map(file => ({
-                        key: file.key,
-                        label: file.key.split('/').pop() || file.key
-                    }))}
-                    selectedValues={selectedEmbeddingPaths}
-                    onChange={setSelectedEmbeddingPaths}
-                    style={{ width: '100%' }}
-                />
-
-                <MultiSelectControl
-                    label="Select Naturalness Files"
-                    options={availableNaturalnessFiles.map(file => ({
-                        key: file.key,
-                        label: file.key.split('/').pop() || file.key
-                    }))}
-                    selectedValues={selectedNaturalnessPaths}
-                    onChange={setSelectedNaturalnessPaths}
-                    style={{ width: '100%' }}
-                />
-
-                <TextAreaControl
-                    label="Few Shot Parameters (JSON format)"
-                    value={fewShotParams}
-                    onChange={(value) => {
-                        setFewShotParams(value);
-                    }}
-                    placeholder='{"key": "value"}'
-                    rows={4}
-                    inputStyle={{ fontFamily: 'monospace' }}
-                    style={{ width: '100%' }}
-                />
-                <p className="uk-text-meta">
-                    Enter a valid JSON object. Border will turn green when valid, red when invalid.
-                </p>
-
-                <button
-                    className="uk-button uk-button-primary uk-margin-top"
-                    onClick={handleEvolve}
-                    disabled={
-                        evolutionName === '' ||
-                        !activityFile ||
-                        ((mode === 'randomforest' || mode === 'mlp') && selectedEmbeddingPaths.length === 0) ||
-                        (mode === 'finetuning' && !finetuningModelCheckpoint)
+                                This tool facilitates low-N directed evolution of proteins,
+                                with as little as 16 screened mutants per round.
+                            </Paragraph>
+                            <AntButton
+                                type="link"
+                                icon={<QuestionCircleOutlined />}
+                                onClick={() => setShowHelpModal(true)}
+                                style={{ padding: 0 }}
+                            >
+                                View detailed setup instructions
+                            </AntButton>
+                        </div>
                     }
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: '20px' }}
+                />
+
+                {/* Detailed Help Modal */}
+                <Modal
+                    title="Evolution Run Setup Guide"
+                    open={showHelpModal}
+                    onCancel={() => setShowHelpModal(false)}
+                    footer={[
+                        <AntButton key="close" onClick={() => setShowHelpModal(false)}>
+                            Close
+                        </AntButton>
+                    ]}
+                    width={700}
                 >
-                    Start Evolution
-                </button>
+                    <div>
+                        <Title level={4}>Required Inputs</Title>
+                        <Paragraph>
+                            Each evolution run requires:
+                        </Paragraph>
+                        <ul>
+                            <li>
+                                <Text strong>Activity Excel File:</Text> A file with columns 'seq_id' and 'activity' containing
+                                your measured mutant activities
+                            </li>
+                            <li>
+                                <Text strong>Embedding Files:</Text> Embeddings generated in the Embed tab, containing
+                                embeddings for both measured mutants and all mutants you wish to screen
+                            </li>
+                            <li>
+                                <Text strong>Naturalness Files:</Text> Naturalness scores for single mutants of the protein. We recommend using ESM-C 600M
+                            </li>
+                        </ul>
+
+                        <Title level={4}>Example Activity File Format</Title>
+                        <div style={{ textAlign: 'center', margin: '20px 0' }}>
+                            <img
+                                style={{ width: "300px", border: '1px solid #d9d9d9', borderRadius: '4px' }}
+                                src={`/evolve_activity_excel_example.png`}
+                                alt="Example activity file format showing seq_id and activity columns"
+                            />
+                        </div>
+
+                        <Title level={4}>Mode Selection Guide</Title>
+                        <ul>
+                            <li><Text strong>MLP Few Shot Model:</Text> Recommended for most use cases</li>
+                            <li><Text strong>Random Forest Few Shot Model:</Text> Alternative ML approach</li>
+                            <li><Text strong>Legacy modes:</Text> Older implementations, use new modes when possible</li>
+                        </ul>
+
+                        <Title level={4}>Parameters</Title>
+                        <Paragraph>
+                            <Text strong>Few Shot Parameters:</Text> JSON configuration for the ML model.
+                            Use presets for common configurations or customize with your own JSON.
+                        </Paragraph>
+
+                        <Alert
+                            message="Estimated Cost"
+                            description="~$0.05 per evolution round"
+                            type="success"
+                            showIcon
+                            style={{ marginTop: '16px' }}
+                        />
+
+                        <Paragraph style={{ marginTop: '16px' }}>
+                            Once complete, you can download the predicted activities for all mutants from the Files tab.
+                        </Paragraph>
+                    </div>
+                </Modal>
+
+                <Card>
+                    <Form layout="vertical" style={{ maxWidth: '800px' }}>
+                        <Row gutter={16}>
+                            <Col span={12}>
+                                <Form.Item
+                                    label="Evolution Name"
+                                    required
+                                    help="Give your evolution run a descriptive name"
+                                >
+                                    <Input
+                                        value={evolutionName}
+                                        onChange={(e) => setEvolutionName(e.target.value)}
+                                        placeholder="e.g., round1_high_activity"
+                                    />
+                                </Form.Item>
+                            </Col>
+                            <Col span={12}>
+                                <Form.Item
+                                    label="Number of Mutants"
+                                    required
+                                    help="How many top mutants to recommend"
+                                >
+                                    <InputNumber
+                                        value={numMutants}
+                                        onChange={(value) => setNumMutants(value || 24)}
+                                        min={1}
+                                        style={{ width: '100%' }}
+                                    />
+                                </Form.Item>
+                            </Col>
+                        </Row>
+
+                        <Divider>File Selection</Divider>
+
+                        <Form.Item
+                            label="Activity File"
+                            required
+                            help="Excel file with seq_id and activity columns"
+                        >
+                            <Upload
+                                beforeUpload={(file) => {
+                                    setActivityFile(file);
+                                    return false; // Prevent auto upload
+                                }}
+                                accept=".xlsx,.xls"
+                                maxCount={1}
+                                fileList={activityFile ? [{
+                                    uid: '1',
+                                    name: activityFile.name,
+                                    status: 'done'
+                                }] : []}
+                                onRemove={() => setActivityFile(null)}
+                            >
+                                <AntButton icon={<UploadOutlined />}>
+                                    Select Activity File (.xlsx/.xls)
+                                </AntButton>
+                            </Upload>
+                        </Form.Item>
+
+                        <Form.Item
+                            label="Multi-Mutant Embedding Files"
+                            required
+                            help="Select embedding files generated in the Embed tab. This defines the pool of mutants that will be evaluated."
+                        >
+                            <Select
+                                mode="multiple"
+                                value={selectedEmbeddingPaths}
+                                onChange={setSelectedEmbeddingPaths}
+                                style={{ width: '100%' }}
+                                placeholder="Select embedding files"
+                            >
+                                {availableEmbeddingFiles.map(file => (
+                                    <Select.Option key={file.key} value={file.key}>
+                                        {file.key.split('/').pop() || file.key}
+                                    </Select.Option>
+                                ))}
+                            </Select>
+                        </Form.Item>
+
+                        <Form.Item
+                            label="Single Mutant Naturalness Files"
+                            help="Select naturalness files. We recommend using ESM-C 600M."
+                        >
+                            <Select
+                                mode="multiple"
+                                value={selectedNaturalnessPaths}
+                                onChange={setSelectedNaturalnessPaths}
+                                style={{ width: '100%' }}
+                                placeholder="Select naturalness files"
+                            >
+                                {availableNaturalnessFiles.map(file => (
+                                    <Select.Option key={file.key} value={file.key}>
+                                        {file.key.split('/').pop() || file.key}
+                                    </Select.Option>
+                                ))}
+                            </Select>
+                        </Form.Item>
+
+                        <Divider>Model Parameters</Divider>
+
+                        <Form.Item
+                            label="Presets"
+                            help="Choose a preset configuration or select 'Custom' to define your own"
+                        >
+                            <Select
+                                value={selectedPreset}
+                                onChange={(preset) => {
+                                    setSelectedPreset(preset);
+                                    if (preset !== 'custom') {
+                                        const presetConfig = FEW_SHOT_PRESETS[preset as keyof typeof FEW_SHOT_PRESETS];
+                                        setFewShotParams(presetConfig.params);
+                                        if (presetConfig.mode) {
+                                            setMode(presetConfig.mode);
+                                        }
+                                    }
+                                }}
+                                style={{ width: '100%' }}
+                            >
+                                <Select.Option value="folde_default_mlp">FolDE Default MLP</Select.Option>
+                                <Select.Option value="evolvepro">EvolvePro</Select.Option>
+                                <Select.Option value="custom">Custom</Select.Option>
+                            </Select>
+                        </Form.Item>
+
+                        <Form.Item
+                            label="Model Choice"
+                            required
+                            help="ML algorithm to use for predictions"
+                        >
+                            <Select
+                                value={mode}
+                                onChange={(newMode) => {
+                                    setMode(newMode);
+                                    // If user manually changes model choice, switch to custom preset
+                                    if (selectedPreset !== 'custom') {
+                                        setSelectedPreset('custom');
+                                    }
+                                }}
+                                style={{ width: '100%' }}
+                            >
+                                <Select.Option value="TorchMLPFewShotModel">MLP Few Shot Model (Recommended)</Select.Option>
+                                <Select.Option value="RandomForestFewShotModel">Random Forest Few Shot Model</Select.Option>
+                                <Select.Option value="randomforest">(Legacy) Random Forest</Select.Option>
+                                <Select.Option value="mlp">(Legacy) Multi-Layer Perceptron</Select.Option>
+                                <Select.Option value="finetuning">(Legacy) Finetuning</Select.Option>
+                            </Select>
+                        </Form.Item>
+
+                        {mode === 'finetuning' && (
+                            <Form.Item
+                                label="Model Checkpoint"
+                                help="Pre-trained model to fine-tune (legacy mode only)"
+                            >
+                                <Select
+                                    value={finetuningModelCheckpoint}
+                                    onChange={setFinetuningModelCheckpoint}
+                                    style={{ width: '100%' }}
+                                >
+                                    <Select.Option value="facebook/esm2_t6_8M_UR50D">ESM2 (8M params)</Select.Option>
+                                    <Select.Option value="facebook/esm2_t33_650M_UR50D">ESM2 (650M params)</Select.Option>
+                                    <Select.Option value="facebook/esm2_t48_15B_UR50D">ESM2 (15B params)</Select.Option>
+                                </Select>
+                            </Form.Item>
+                        )}
+
+                        <Form.Item
+                            label="Few Shot Parameters (JSON format)"
+                            help="Model-specific parameters in JSON format. Border color indicates validity."
+                            validateStatus={jsonValidationStatus}
+                        >
+                            <Input.TextArea
+                                value={fewShotParams}
+                                onChange={(e) => {
+                                    const value = e.target.value;
+                                    setFewShotParams(value);
+                                    // If user manually edits, switch to custom
+                                    if (selectedPreset !== 'custom') {
+                                        const presetConfig = FEW_SHOT_PRESETS[selectedPreset as keyof typeof FEW_SHOT_PRESETS];
+                                        if (value !== presetConfig.params) {
+                                            setSelectedPreset('custom');
+                                        }
+                                    }
+                                }}
+                                placeholder='{"key": "value"}'
+                                rows={4}
+                                style={{
+                                    fontFamily: 'monospace',
+                                    borderColor: jsonValidationStatus === 'success' ? '#52c41a' :
+                                        jsonValidationStatus === 'error' ? '#ff4d4f' : undefined,
+                                    borderWidth: jsonValidationStatus ? '2px' : undefined
+                                }}
+                            />
+                        </Form.Item>
+
+                        <Form.Item>
+                            <AntButton
+                                type="primary"
+                                icon={<PlayCircleOutlined />}
+                                onClick={handleEvolve}
+                                disabled={
+                                    evolutionName === '' ||
+                                    !activityFile ||
+                                    ((mode === 'randomforest' || mode === 'mlp') && selectedEmbeddingPaths.length === 0) ||
+                                    (mode === 'finetuning' && !finetuningModelCheckpoint)
+                                }
+                                size="large"
+                            >
+                                Start Evolution
+                            </AntButton>
+                        </Form.Item>
+                    </Form>
+                </Card>
             </CollapsibleSection>
         </TabContainer>
     );
