@@ -4,7 +4,7 @@ import { CSVLink } from "react-csv";
 import { useParams } from "react-router-dom";
 import UIkit from "uikit";
 import { queueJob } from "./api/commonApi";
-import { getFoldFileZip, getJobStatus } from "./api/foldApi";
+import { getFoldFileZip, getFoldsWithPagination, getJobStatus } from "./api/foldApi";
 import { makeFoldTable } from "./util/foldTable";
 import { NewDockPrompt } from "./util/newDockPrompt";
 import { getFolds, updateFold } from "./api/foldApi";
@@ -25,9 +25,12 @@ function TagView() {
     }
 
     useEffect(() => {
-        getFolds(null, tagString, null, null).then(setFolds, (e) => {
-            notify.error(e.toString());
-        });
+        getFoldsWithPagination(null, tagString, null, null).then(
+            (v) => {
+                setFolds(v.data);
+            }, (e) => {
+                notify.error(e.toString());
+            });
     }, [tagString]);
 
     const refoldAnyFailedFolds = () => {

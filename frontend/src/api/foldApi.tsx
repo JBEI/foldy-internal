@@ -16,20 +16,48 @@ function enhanceFoldWithYamlHelper(fold: Fold): Fold {
     return fold;
 }
 
-export const getFolds = async (
+interface PaginatedFoldsResponse {
+    data: Fold[];
+    pagination: {
+        page: number | null;
+        per_page: number | null;
+        total: number | null;
+        pages: number | null;
+        has_prev: boolean | null;
+        has_next: boolean | null;
+    };
+}
+
+export const getFoldsWithPagination = async (
     filter: string | null,
     tagString: string | null,
     page: number | null,
     per_page: number | null
-): Promise<Fold[]> => {
+): Promise<PaginatedFoldsResponse> => {
     const params: Record<string, string | number> = {};
     if (filter) params.filter = filter;
     if (tagString) params.tag = tagString;
     if (page !== null) params.page = page;
     if (per_page !== null) params.per_page = per_page;
 
-    const response = await axiosInstance.get<Fold[]>('/api/fold', { params });
-    return response.data.map(enhanceFoldWithYamlHelper);
+    // const response = await axiosInstance.get<Fold[]>('/api/fold', { params });
+    // return {
+    //     data: response.data.map(enhanceFoldWithYamlHelper),
+    //     pagination: {
+
+    //         page: null,
+    //         per_page: null,
+    //         total: null,
+    //         pages: null,
+    //         has_prev: null,
+    //         has_next: null,
+    //     }
+    // };
+    const response = await axiosInstance.get<PaginatedFoldsResponse>('/api/paginated_fold', { params });
+    return {
+        data: response.data.data.map(enhanceFoldWithYamlHelper),
+        pagination: response.data.pagination
+    };
 };
 
 export const getFold = async (foldId: number): Promise<Fold> => {

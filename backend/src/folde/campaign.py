@@ -7,11 +7,11 @@ and evaluating different model configurations.
 
 import json
 import logging
-from pathlib import Path
 import random
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from typing import Any, Dict, List, Optional, Tuple, Union
 import re
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -117,6 +117,7 @@ def _run_single_simulation(
     round_size: int,
     config: FolDEModelConfig,
     random_seed: int,
+    wt_aa_seq: str,
     max_rounds: int = 10,
 ) -> SimulationResult:
     """Run a single campaign simulation.
@@ -179,6 +180,7 @@ def _run_single_simulation(
         few_shot_model = get_few_shot_model(
             config.few_shot_model_name,
             random_state=random_seed,
+            wt_aa_seq=wt_aa_seq,
             **config.few_shot_model_params,
         )
 
@@ -308,7 +310,7 @@ def _run_single_simulation(
 
         def get_held_out_stats_for_percentile(percentile):
             """Returns some stats on the held out predictions for a percentile, zero to 100 (eg 1.0 for top 1 percent)."""
-            
+
 
             assert held_out_activity_series.index.equals(consensus_held_out_predictions.index)
             held_out_stat_recall = get_top_percentile_recall_score(
@@ -493,6 +495,7 @@ def simulate_campaign(
                         round_size=round_size,
                         config=model_config,
                         max_rounds=max_rounds,
+                        wt_aa_seq=wt_aa_seq,
                     )
                 )
             single_model_campaign_results = [f.result() for f in futures]

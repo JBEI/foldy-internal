@@ -1,15 +1,19 @@
 import logging
-from pandas.core.frame import DataFrame
 from typing import Any, List, Tuple, Union, cast
 
 import numpy as np
 import pandas as pd
-from folde.types import ModelEvaluation, FolDEModelConfig, ModelDiff
+import torch
 from numpy.typing import NDArray
 from pandas import DataFrame
+from pandas.core.frame import DataFrame
+from scipy.cluster.hierarchy import leaves_list, linkage
+from scipy.spatial.distance import squareform
 from scipy.special import softmax
 from sklearn.metrics import recall_score
-import torch
+
+from folde.types import FolDEModelConfig, ModelDiff, ModelEvaluation
+
 
 def get_consensus_scores(pred_list: List[pd.Series], decision_mode: str) -> pd.Series:
     """Get the prediction of an ensemble using deicision mode (often max or median)."""
@@ -196,7 +200,7 @@ def get_top_percentile_recall_score(target: np.ndarray, pred: np.ndarray, pct: f
     n = target.size
     k = max(1, int(np.ceil(n * pct / 100)))
     assert k <= n, f'k must be less than or equal to n, got k={k} and n={n}. target shape {target.shape}, pred shape {pred.shape} pct {pct}'
-        
+
 
     top_tgt = np.argpartition(target, n - k)[n - k:]
     top_prd = np.argpartition(pred,   n - k)[n - k:]
@@ -282,7 +286,7 @@ def get_training_loss_df(results: ModelEvaluation, round_idx: int) -> pd.DataFra
                     finetune_train_loss_list = few_shot_info['finetune_metrics'][model_idx]['train_loss']
                     finetune_val_loss_list = few_shot_info['finetune_metrics'][model_idx]['val_loss']
                     finetune_test_recall_1pct_list = few_shot_info['finetune_metrics'][model_idx]['test_recall_1pct']
-                    model_train_df = pd.concat([pd.DataFrame({  
+                    model_train_df = pd.concat([pd.DataFrame({
                         'loss_type': 'pretrain_train',
                         'log_step': list(range(len(pretrain_train_loss_list))),
                         'loss': pretrain_train_loss_list,
@@ -293,7 +297,7 @@ def get_training_loss_df(results: ModelEvaluation, round_idx: int) -> pd.DataFra
                     }), pd.DataFrame({
                         'loss_type': 'finetune_train',
                         'log_step': list(range(len(finetune_train_loss_list))),
-                        'loss': finetune_train_loss_list,   
+                        'loss': finetune_train_loss_list,
                     }), pd.DataFrame({
                         'loss_type': 'finetune_val',
                         'log_step': list(range(len(finetune_val_loss_list))),
@@ -303,7 +307,7 @@ def get_training_loss_df(results: ModelEvaluation, round_idx: int) -> pd.DataFra
                         'log_step': list(range(len(finetune_test_recall_1pct_list))),
                         'loss': finetune_test_recall_1pct_list,
                     })], ignore_index=True)
-                    
+
                     model_train_df['model_idx'] = model_idx
                     model_train_df['sim_idx'] = sim_idx
                     model_train_df['dms_id'] = campaign_results.dms_id
@@ -348,3 +352,43 @@ def apply_diff_list_to_config(
         folde_model_config.name = f"{folde_model_config_base.name}-{model_diff.name}"
         config_list.append(folde_model_config)
     return config_list
+
+
+def cluster_sort_seq_ids(
+    chosen_pred_df: pd.DataFrame,
+    method: str = "average",
+) -> list[str]:
+    """
+    Sort the rows of a prediction DataFrame by hierarchical clustering on the
+    pair-wise Pearson correlation between mutants.
+
+    Parameters
+    ----------
+    chosen_pred_df : pd.DataFrame
+        One row per mutant (index = seq_id) and columns ``model_0 … model_N``
+        containing the ensemble’s activity predictions.
+    method : str, optional
+        Linkage method passed straight through to
+        ``scipy.cluster.hierarchy.linkage`` (default ``"average"``).
+
+    Returns
+    -------
+    list[str]
+        The seq_ids ordered according to the dendrogram’s leaf order.
+    """
+    # Trivial cases ─ nothing to cluster
+    if len(chosen_pred_df) <= 1:
+        return chosen_pred_df.index.tolist()
+
+    # 1. Pair-wise Pearson r between mutants (rows)
+    corr = chosen_pred_df.T.corr()          # (n_mutants × n_mutants)
+
+    # 2. Convert to condensed distance vector: d = 1 − r
+    dist_condensed = squareform(1.0 - corr.values, checks=False)
+
+    # 3. Hierarchical clustering with optimal leaf ordering
+    Z = linkage(dist_condensed, method=method, optimal_ordering=True)
+
+    # 4. Leaf order → index positions → seq_id list
+    leaf_order = leaves_list(Z)             # ndarray of row indices
+    return chosen_pred_df.index[leaf_order].tolist()

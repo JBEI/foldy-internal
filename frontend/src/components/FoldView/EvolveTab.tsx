@@ -71,7 +71,7 @@ const FEW_SHOT_PRESETS = {
 
 type RowData = {
     seqId: string;
-    footprint: string;
+    selectedIdx: number | null;
     relevantMeasuredMutants: string;
     predictionMean: number;
     predictionStddev: number;
@@ -79,19 +79,8 @@ type RowData = {
     modelPredictions?: number[];
 }
 
-const seqIdToFootprint = (seqId: string): string => {
-    // Convert seqIds like A3C_G56Y_Y79T into fooprints like 3_56_79
 
-    // First split by underscore.
-    const alleleIds = seqId.split('_');
-    const loci = alleleIds.map((alleleId) => {
-        // alleleId[1:-1];
-        return alleleId.slice(1, -1);
-    });
-    return loci.join('_');
-}
-
-const parseCsvDataIntoRowData = (predictedMutantCsvDataString: string, beta: number, maxPerFootprint: number, topPerformersToDisplay: number | undefined): RowData[] | null => {
+const parseCsvDataIntoRowData = (predictedMutantCsvDataString: string): RowData[] | null => {
     const { data, errors } = Papa.parse<Record<string, string>>(predictedMutantCsvDataString, {
         header: true,
         delimiter: ',',
@@ -104,7 +93,7 @@ const parseCsvDataIntoRowData = (predictedMutantCsvDataString: string, beta: num
         return null;
     }
 
-    const interiorTableRows = data.map((row) => {
+    const allRows = data.map((row) => {
         // Iterate over columns from model_0 upward until none is found, adding scores to a list.
         const predictions: number[] = [];
         for (let i = 0; i < 100; i++) {
@@ -120,14 +109,22 @@ const parseCsvDataIntoRowData = (predictedMutantCsvDataString: string, beta: num
         // Compute score mean and stddev.
         const mean = predictions.reduce((a, b) => a + b, 0.0) / predictions.length;
         const stddev = Math.sqrt(predictions.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / predictions.length);
-        const score = mean + beta * stddev;
+        const score = mean;
 
-        const footprint = seqIdToFootprint(row['seq_id']);
+        // Parse selected_idx from the CSV
+        const selectedIdxStr = row['selected_idx'];
+        let selectedIdx: number | null = null;
+        if (selectedIdxStr && selectedIdxStr !== 'null' && selectedIdxStr !== '') {
+            const parsed = parseInt(selectedIdxStr);
+            if (!isNaN(parsed)) {
+                selectedIdx = parsed;
+            }
+        }
 
         return {
             seqId: row['seq_id'],
             relevantMeasuredMutants: row['relevant_measured_mutants'],
-            footprint: footprint,
+            selectedIdx: selectedIdx,
             predictionMean: mean,
             predictionStddev: stddev,
             score: score,
@@ -135,23 +132,9 @@ const parseCsvDataIntoRowData = (predictedMutantCsvDataString: string, beta: num
         };
     });
 
-    const allRows = interiorTableRows.sort((a, b) => b.score - a.score);
-
-    // Filter out mutations where we've already seen that locus N times.
-    const footprintCounts: { [key: string]: number } = {};
-    const relevantRows = [];
-    for (const row of allRows) {
-        footprintCounts[row.footprint] = (footprintCounts[row.footprint] || 0) + 1;
-
-        if (maxPerFootprint && footprintCounts[row.footprint] > maxPerFootprint) {
-            continue;
-        }
-        relevantRows.push(row);
-        if (topPerformersToDisplay && relevantRows.length >= topPerformersToDisplay) {
-            break;
-        }
-    }
-    return relevantRows;
+    // Filter to only include rows with selected_idx set, then sort by selected_idx
+    const selectedRows = allRows.filter(row => row.selectedIdx !== null);
+    return selectedRows.sort((a, b) => a.selectedIdx! - b.selectedIdx!);
 }
 
 const seqIdListToLociList = (seqIdList: string[]): number[] => {
@@ -174,39 +157,11 @@ const seqIdListToLociList = (seqIdList: string[]): number[] => {
 }
 
 
-// Add a utility function to calculate Pearson correlation
-function calculateCorrelation(x: number[], y: number[]): number {
-    const n = x.length;
-    if (n === 0 || n !== y.length) return 0;
-
-    // Calculate means
-    const xMean = x.reduce((sum, val) => sum + val, 0) / n;
-    const yMean = y.reduce((sum, val) => sum + val, 0) / n;
-
-    // Calculate correlation
-    let numerator = 0;
-    let xDenominator = 0;
-    let yDenominator = 0;
-
-    for (let i = 0; i < n; i++) {
-        const xDiff = x[i] - xMean;
-        const yDiff = y[i] - yMean;
-        numerator += xDiff * yDiff;
-        xDenominator += xDiff * xDiff;
-        yDenominator += yDiff * yDiff;
-    }
-
-    const denominator = Math.sqrt(xDenominator * yDenominator);
-    return denominator === 0 ? 0 : numerator / denominator;
-}
 
 
 interface PredictedMutantTableProps {
     yamlConfig: string | null;
     predictedMutantCsvData: string | null;
-    beta: number;
-    maxPerFootprint: number;
-    topPerformersToDisplay: number;
     setSelectedSubsequence: (selection: Selection | null) => void;
 }
 
@@ -215,9 +170,6 @@ interface PredictedMutantTableProps {
 const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
     yamlConfig,
     predictedMutantCsvData,
-    beta,
-    maxPerFootprint,
-    topPerformersToDisplay,
     setSelectedSubsequence,
 }) => {
     if (!predictedMutantCsvData) {
@@ -231,22 +183,22 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
     const [selectedSeqIds, setSelectedSeqIds] = useState<string[]>([]);
 
     const tableData: RowData[] | null = useMemo(() => {
-        const data = parseCsvDataIntoRowData(predictedMutantCsvData, beta, maxPerFootprint, topPerformersToDisplay);
+        const data = parseCsvDataIntoRowData(predictedMutantCsvData);
         if (!data) return null;
 
         if (data && sortColumn) {
             return [...data].sort((a, b) => {
                 const aValue = a[sortColumn as keyof RowData];
                 const bValue = b[sortColumn as keyof RowData];
-                if (aValue === null) return 1;
-                if (bValue === null) return -1;
+                if (aValue === null || aValue === undefined) return 1;
+                if (bValue === null || bValue === undefined) return -1;
                 return sortDirection === 'ASC'
                     ? (aValue < bValue ? -1 : 1)
                     : (aValue > bValue ? -1 : 1);
             });
         }
         return data;
-    }, [predictedMutantCsvData, beta, maxPerFootprint, topPerformersToDisplay, sortColumn, sortDirection]);
+    }, [predictedMutantCsvData, sortColumn, sortDirection]);
 
     const correlationData = useMemo(() => {
         if (!tableData || tableData.length === 0 || !tableData[0].modelPredictions) {
@@ -303,6 +255,19 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
     if (!tableData) return null;
     const columns = [
         {
+            key: "selectedIdx",
+            name: "Selected",
+            sortable: true,
+            resizable: true,
+            width: 80,
+            sortDescendingFirst: false,
+            formatter: ({ row }: { row: any }) => (
+                <div style={{ textAlign: 'center' }}>
+                    {row.selectedIdx !== null ? row.selectedIdx : ''}
+                </div>
+            )
+        },
+        {
             key: "seqId",
             name: "Sequence ID",
             sortable: true,
@@ -344,6 +309,7 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
         {
             key: 'predictionMean',
             name: "Mean",
+            sortable: true,
             resizable: true,
             width: 70,
             formatter: ({ row }: { row: any }) => (
@@ -355,6 +321,7 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
         {
             key: "predictionStddev",
             name: "STD",
+            sortable: true,
             resizable: true,
             width: 70,
             formatter: ({ row }: { row: any }) => (
@@ -362,20 +329,6 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
                     {row.predictionStddev.toFixed(2)}
                 </div>
             )
-        },
-        {
-            key: "score",
-            name: "Score",
-            sortable: true,
-            resizable: true,
-            width: 70,
-            formatter: ({ row }: { row: any }) => (
-                <div uk-tooltip={row.score.toFixed(4)} style={{ textAlign: 'left' }}>
-                    {row.score.toFixed(2)}
-                </div>
-            ),
-            sortDescendingFirst: true,
-            style: { padding: 0 }
         }
     ];
 
@@ -438,15 +391,10 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
                 onRowSelect={(rows) => {
                     setSelectedSeqIds(rows.map(row => row.seqId));
                 }}
-                onRowClick={(e, row) => {
+                onRowClick={(_, row) => {
                     setSelectedSeqIds([row.seqId]);
                 }}
                 minHeight={400}
-                style={{
-                    height: '100%',
-                    maxHeight: '500px',
-                    width: '100%'
-                }}
             />
             <ButtonGroup>
                 <button
@@ -485,10 +433,7 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
                                 colorscale: 'RdBu',
                                 zmin: -1,
                                 zmax: 1,
-                                text: correlationData.map(row =>
-                                    row.map(val => val.toFixed(2))
-                                ),
-                                hovertemplate: '%{x} vs %{y}<br>Correlation: %{text}<extra></extra>',
+                                hovertemplate: '%{x} vs %{y}<br>Correlation: %{z:.2f}<extra></extra>',
                                 showscale: true,
                                 colorbar: {
                                     title: 'Correlation',
@@ -586,9 +531,9 @@ const createPlotData = (debugData: any) => {
 
     // Inside the finetune metrics loop:
     debugData.finetune_metrics.forEach((model: any, index: number) => {
-        if (model.train_loss && model.train_loss.some(val => val !== 0 && val !== null)) {
+        if (model.train_loss && model.train_loss.some((val: number) => val !== 0 && val !== null)) {
             // Filter out zeros which appear to be placeholders
-            const nonZeroTrainLoss = model.train_loss.map(val => val === 0 ? null : val);
+            const nonZeroTrainLoss = model.train_loss.map((val: number) => val === 0 ? null : val);
 
             finetuneData.push({
                 x: Array.from({ length: model.train_loss.length }, (_, i) => i + 1),
@@ -605,9 +550,9 @@ const createPlotData = (debugData: any) => {
             });
         }
 
-        if (model.val_loss && model.val_loss.some(val => val !== 0 && val !== null)) {
+        if (model.val_loss && model.val_loss.some((val: number) => val !== 0 && val !== null)) {
             // Filter out zeros which appear to be placeholders
-            const nonZeroValLoss = model.val_loss.map(val => val === 0 ? null : val);
+            const nonZeroValLoss = model.val_loss.map((val: number) => val === 0 ? null : val);
 
             finetuneData.push({
                 x: Array.from({ length: model.val_loss.length }, (_, i) => i + 1),
@@ -747,9 +692,6 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
     const [displayedEvolutionId, setDisplayedEvolutionId] = useState<number | null>(null);
     const [evolutionCsvData, setEvolutionCsvData] = useState<string | null>(null);
     const [evolutionDebugData, setEvolutionDebugData] = useState<any>(null);
-    const [beta, setBeta] = useState<number>(1.0);
-    const [maxMutationsPerFootprint, setMaxMutationsPerFootprint] = useState<number>(2);
-    const [topPerformersToDisplay, setTopPerformersToDisplay] = useState<number>(24);
 
     const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
 
@@ -880,7 +822,7 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
         await UIkit.modal.confirm('Are you sure you want to delete this evolution? This action is irreversible.');
         console.log(`Deleting evolution ${evolutionId}...`);
         deleteEvolution(evolutionId).then(
-            (e) => {
+            () => {
                 notify.success(`Evolution ${evolutionId} deleted.`);
             },
             (e) => {
@@ -910,11 +852,7 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
         <TabContainer>
             {/* Description Section */}
             <DescriptionSection title="Evolution Runs Overview">
-                This section allows you to run a version of
-                <a href="https://www.biorxiv.org/content/10.1101/2024.07.17.604015v1"> EvolvePro </a>
-                on your protein. This tool facilitates low-N directed evolution of proteins,
-                with as little as 16 screened mutants per round. Please see the paper for more
-                details.
+                This section accepts measurements of protein activity and suggests a slate of mutants for the next round of screening.
             </DescriptionSection>
 
             {/* Evolution Runs Table */}
@@ -991,34 +929,11 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                             </button>
                         </div>
 
-                        <NumberInputControl
-                            label="Beta (Upper Confidence Bound parameter)"
-                            value={beta}
-                            onChange={setBeta}
-                            min={0}
-                            step={0.1}
-                        />
-                        <NumberInputControl
-                            label="Max number of mutants per footprint"
-                            value={maxMutationsPerFootprint}
-                            onChange={setMaxMutationsPerFootprint}
-                            min={1}
-                        />
-                        <NumberInputControl
-                            label="Top mutants to display"
-                            value={topPerformersToDisplay}
-                            onChange={setTopPerformersToDisplay}
-                            min={1}
-                        />
                         {/* Mutations table */}
                         <div style={{ marginBottom: '20px' }}>
-                            <h3 style={{ marginBottom: '15px', color: '#444' }}>Selected Mutants</h3>
                             <PredictedMutantTable
                                 yamlConfig={yamlConfig}
                                 predictedMutantCsvData={evolutionCsvData}
-                                beta={beta}
-                                maxPerFootprint={maxMutationsPerFootprint}
-                                topPerformersToDisplay={topPerformersToDisplay}
                                 setSelectedSubsequence={setSelectedSubsequence}
                             />
                         </div>
@@ -1037,11 +952,11 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
             >
                 {/* Help Alert */}
                 <Alert
-                    message="What is an Evolve Run?"
+                    message="What is an Evolution Run?"
                     description={
                         <div>
                             <Paragraph>
-                                In an Evolve run, a machine learning model is trained on your protein activity measurements, and that model is used to predict the activity of many other possible mutations. Then a slate of mutants is recommended for screening in the next round.
+                                In an Evolution run, a machine learning model is trained on your protein activity measurements, and that model is used to predict the activity of many other possible mutations. Then a slate of mutants is recommended for screening in the next round.
 
                                 This tool facilitates low-N directed evolution of proteins,
                                 with as little as 16 screened mutants per round.
@@ -1146,7 +1061,7 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                             </Col>
                             <Col span={12}>
                                 <Form.Item
-                                    label="Number of Mutants"
+                                    label="Slate Size"
                                     required
                                     help="How many top mutants to recommend"
                                 >

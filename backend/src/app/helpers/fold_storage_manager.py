@@ -510,6 +510,81 @@ class FoldStorageManager:
 
         return folds
 
+
+    def get_folds_with_pagination(
+        self,
+        filter: Optional[str],
+        tag: Optional[str],
+        only_public: bool,
+        page: Optional[int],
+        per_page: Optional[int],
+    ) -> Dict[str, Any]:
+        """Returns a dictionary with fold data and pagination metadata."""
+
+        def get_tag_regex(term):
+            """Convert the tag into a regex for searching the tagstring CSV."""
+            return "(^|,)" + term + "(,|$)"
+
+        query = (
+            db.session.query(Fold).join(Fold.user)
+            .options(joinedload(Fold.jobs), joinedload(Fold.docks))
+        )
+
+        if tag:
+            query = query.filter(Fold.tagstring.op("~")(get_tag_regex(tag)))
+
+        if filter:
+            for term in filter.split(" "):
+                if not term:
+                    continue
+                formatted_term = f"%{term}%"
+                query = query.filter(
+                    or_(
+                        Fold.name.ilike(formatted_term),
+                        User.email.ilike(formatted_term),
+                        Fold.tagstring.op("~")(get_tag_regex(term)),
+                    )
+                )
+
+        if only_public:
+            query = query.filter(Fold.public)
+
+        query = query.order_by(Fold.id.desc())
+
+        # Use pagination if page and per_page are provided
+        if page and per_page:
+            logging.error(f"DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page}")
+            pagination = query.paginate(page=page, per_page=per_page, error_out=True, count=False)
+            folds = [fold for fold in pagination.items if fold is not None]
+
+            return {
+                'data': folds,
+                'pagination': {
+                    'page': pagination.page,
+                    'per_page': pagination.per_page,
+                    'total': pagination.total,
+                    'pages': pagination.pages,
+                    'has_prev': pagination.has_prev,
+                    'has_next': pagination.has_next
+                }
+            }
+        else:
+            logging.error(f"NOT DOING PAGINATION {page} {per_page} NOT DOING PAGINATION {page} {per_page} NOT DOING PAGINATION {page} {per_page} NOT DOING PAGINATION {page} {per_page}")
+            # If no pagination requested, return all results with basic pagination info
+            all_folds = [fold for fold in query.all() if fold is not None]
+            return {
+                'data': all_folds,
+                'pagination': {
+                    'page': 1,
+                    'per_page': len(all_folds),
+                    'total': len(all_folds),
+                    'pages': 1,
+                    'has_prev': False,
+                    'has_next': False
+                }
+            }
+
+
     def write_fastas(self, id: int, yaml_config_str: str) -> None:
         """Raises an exception if writing fails."""
         config = BoltzYamlHelper(yaml_config_str)
@@ -592,7 +667,7 @@ class FoldStorageManager:
             raise BadRequest("Storage manager not initialized")
 
         bytes_str = self.storage_manager.get_binary(
-            fold_id, f"ranked_{model_number}/predicted_aligned_error.npy"
+            fold_id, f"boltz/boltz_results_input/predictions/input/pae_input_model_{model_number}.npz"
         )
         try:
             result = np.load(io.BytesIO(bytes_str), allow_pickle=True)

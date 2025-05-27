@@ -135,7 +135,7 @@ def register_extensions(app: Flask) -> None:
         }
 
     class InvokationModelView(VerifiedModelView):
-        column_searchable_list = ["id", "fold_id", "type", "state", "log", "command"]
+        column_searchable_list = ["id", "fold_id", "type", "state", "command"]
         column_editable_list = ["state"]
 
     class DockModelView(VerifiedModelView):

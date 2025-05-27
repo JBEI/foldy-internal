@@ -142,6 +142,12 @@ evolution_fields = ns.model(
 
 get_folds_fields = ns.model("GetFolds", {"filter": fields.String(required=False)})
 
+
+def log_getattr(a, field, default, debuginfo):
+    returnval = getattr(a, field, default)
+    logging.error(f"Got {returnval} for {field} ({debuginfo})")
+    return returnval
+
 fold_fields = ns.model(
     "Fold",
     {
@@ -159,22 +165,22 @@ fold_fields = ns.model(
         "jobs": fields.List(fields.Nested(simple_invokation_fields)),
         "docks": fields.List(
             fields.Nested(dock_fields),
-            attribute=lambda x: ([] if getattr(x, "_skip_embedded_fields", False) else x.docks),
+            attribute=lambda x: ([] if log_getattr(x, "_skip_embedded_fields", False, 'docks') else x.docks),
         ),
         "logits": fields.List(
             fields.Nested(logit_fields),
-            attribute=lambda x: ([] if getattr(x, "_skip_embedded_fields", False) else x.logits),
+            attribute=lambda x: ([] if log_getattr(x, "_skip_embedded_fields", False, 'logits') else x.logits),
         ),
         "embeddings": fields.List(
             fields.Nested(embedding_fields),
             attribute=lambda x: (
-                [] if getattr(x, "_skip_embedded_fields", False) else x.embeddings
+                [] if log_getattr(x, "_skip_embedded_fields", False, 'embeddings') else x.embeddings
             ),
         ),
         "evolutions": fields.List(
             fields.Nested(evolution_fields),
             attribute=lambda x: (
-                [] if getattr(x, "_skip_embedded_fields", False) else x.evolutions
+                [] if log_getattr(x, "_skip_embedded_fields", False, 'evolutions') else x.evolutions
             ),
         ),
         # Old AF2 inputs.
@@ -191,6 +197,28 @@ new_folds_fields = ns.model(
         "email_on_completion": fields.Boolean(required=False),
         "skip_duplicate_entries": fields.Boolean(required=False),
     },
+)
+
+# Pagination metadata model
+pagination_fields = ns.model(
+    "Pagination",
+    {
+        "page": fields.Integer(),
+        "per_page": fields.Integer(),
+        "total": fields.Integer(required=False),
+        "pages": fields.Integer(required=False),
+        "has_prev": fields.Boolean(required=False),
+        "has_next": fields.Boolean(required=False),
+    }
+)
+
+# Pagination response model
+paginated_folds_fields = ns.model(
+    "PaginatedFolds",
+    {
+        "data": fields.List(fields.Nested(fold_fields, skip_none=True)),
+        "pagination": fields.Nested(pagination_fields)
+    }
 )
 
 
@@ -273,6 +301,32 @@ class FoldsResource(Resource):
             skip_duplicate_entries,
         )
 
+@ns.route("/paginated_fold")
+class PaginatedFoldsResource(Resource):
+    @ns.expect(get_folds_parser)
+    @ns.marshal_with(paginated_folds_fields, skip_none=True)
+    def get(self):
+        start_time = time.time()
+        args = get_folds_parser.parse_args()
+        print(args, flush=True)
+
+        filter = args.get("filter", None)
+        tag = args.get("tag", None)
+        page = args.get("page", None)
+        per_page = args.get("per_page", None)
+
+        only_public = not user_jwt_grants_edit_access(get_jwt()["user_claims"])
+
+        manager = FoldStorageManager()
+        manager.setup()
+
+        folds = manager.get_folds_with_pagination(filter, tag, only_public, page, per_page)
+        logging.error(
+            f"Returning {len(folds['data'])} folds in {time.time() - start_time} seconds",
+        )
+        for fold in folds['data']:
+            fold._skip_embedded_fields = True
+        return folds
 
 @ns.route("/fold/<int:fold_id>")
 class FoldResource(Resource):

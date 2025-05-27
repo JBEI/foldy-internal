@@ -65,6 +65,8 @@ def get_naturalness_df_from_file(fold_id: int, fsm: FoldStorageManager, naturaln
         csv_blob = fsm.storage_manager.get_blob(fold_id, path)
         with csv_blob.open("r") as csv_f:
             naturalness_dfs.append(pd.read_csv(csv_f))
+    raw_naturalness_df = pd.concat(naturalness_dfs, ignore_index=True)
+    return raw_naturalness_df
 
 def run_evolvepro(evolve_id: int):
     """Run the evolvepro workflow."""
@@ -150,6 +152,7 @@ def run_evolvepro(evolve_id: int):
         few_shot_model = get_few_shot_model(
             evolve.mode,
             random_state=42,
+            wt_aa_seq=wt_aa_seq,
             **few_shot_params,
         )
 
@@ -174,12 +177,18 @@ def run_evolvepro(evolve_id: int):
             {f"model_{ii}": predicted_activity_ensemble[ii] for ii in range(len(predicted_activity_ensemble))},
             index=predicted_activity_ensemble[0].index,
         )
+
+        logging.info(f"Top seq ids: {top_seq_ids}")
+
         def get_selected_idx_or_none(seq_id):
             try:
                 return top_seq_ids.index(seq_id)
-            except ValueError:
+            except ValueError as e:
                 return None
-        predicted_activity_df['selected_idx'] = predicted_activity_df.reset_index().seq_id.apply(get_selected_idx_or_none)
+        predicted_activity_df['selected_idx'] = predicted_activity_df.index.map(get_selected_idx_or_none)
+
+        # predicted_activity_df[~predicted_activity_df.selected_idx.isna()]
+
         try:
             loci_to_measured_mutants = defaultdict(list)
             for measured_seq_id in activity_df.index.unique():
@@ -193,7 +202,7 @@ def run_evolvepro(evolve_id: int):
             )
         except Exception as e:
             logging.error(f"Error computing relevant measured mutants: {e}")
-        
+
         # Save debug info to file
         try:
             fsm.storage_manager.write_file(

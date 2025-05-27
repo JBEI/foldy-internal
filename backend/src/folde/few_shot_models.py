@@ -6,21 +6,32 @@ protein properties from embeddings. Models are thin wrappers around
 scikit-learn implementations with additional protein-specific functionality.
 """
 
+import logging
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
 
-import logging
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import KFold
-from app.helpers.preference_ranking import BradleyTerryMLP, PreferenceTrainer, create_preference_model
-from folde.util import constant_liar_sample, get_consensus_scores, internal_sample_n_indices
 from numpy.typing import NDArray
 from pandas import DataFrame, Series
 from sklearn.ensemble import RandomForestRegressor as SklearnRandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import KFold
 from sklearn.neural_network import MLPRegressor as SklearnMLPRegressor
-from concurrent.futures import ThreadPoolExecutor
+
+from app.helpers.preference_ranking import (
+    BradleyTerryMLP,
+    PreferenceTrainer,
+    create_preference_model,
+)
+from app.helpers.sequence_util import sort_seq_id_list
+from folde.util import (
+    cluster_sort_seq_ids,
+    constant_liar_sample,
+    get_consensus_scores,
+    internal_sample_n_indices,
+)
 
 # Registry of available models
 _FEW_SHOT_MODELS = {}
@@ -31,16 +42,19 @@ class FewShotModel(ABC):
 
     def __init__(
         self,
+        wt_aa_seq: str,
         lie_noise_stddev_multiplier: float,
         decision_mode: str = "median",
         temperature: float = 0.0,
         epsilon: float = 0.0,
     ):
+        self.wt_aa_seq = wt_aa_seq
         self.lie_noise_stddev_multiplier = lie_noise_stddev_multiplier
         self.decision_mode = decision_mode
         self.temperature = temperature
         self.epsilon = epsilon
-    
+        self.selection_debug_info: dict[str, Any] = {}
+
     def pretrain(
         self,
         naturalness_series: pd.Series,
@@ -95,6 +109,10 @@ class FewShotModel(ABC):
         # Convert list of embeddings to numpy array
         ensemble_of_predictions = self.predict(naturalness_series, embedding_series)
 
+        self.selection_debug_info = {
+            'sorts': {}
+        }
+
         if self.decision_mode == 'constantliar' or self.decision_mode == 'krigingbeliever':
             ensemble_scores = get_consensus_scores(ensemble_of_predictions, 'mean')
             pred_df = {
@@ -112,6 +130,10 @@ class FewShotModel(ABC):
                 lie_noise_stddev_multiplier=self.lie_noise_stddev_multiplier,
                 choice_of_baseline='min' if self.decision_mode == 'constantliar' else 'mean',
             )
+
+            self.selection_debug_info['sorts']['by_selection'] = chosen_seq_ids
+            self.selection_debug_info['sorts']['by_cluster'] = cluster_sort_seq_ids(pred_df.loc[chosen_seq_ids])
+            self.selection_debug_info['sorts']['by_seq_id'] = sort_seq_id_list(self.wt_aa_seq, chosen_seq_ids)
         else:
             ensemble_scores = get_consensus_scores(ensemble_of_predictions, self.decision_mode)
             chosen_indices = internal_sample_n_indices(
@@ -121,6 +143,7 @@ class FewShotModel(ABC):
                 epsilon=self.epsilon,
             )
             chosen_seq_ids = naturalness_series.index[chosen_indices].tolist()
+            self.selection_debug_info['sorts']['selection_order'] = chosen_seq_ids
 
         return (
             chosen_seq_ids,
@@ -153,12 +176,7 @@ class RandomFewShotModel(FewShotModel):
     """Just guess random activity."""
 
     def __init__(self, random_state: int, **kwargs):
-        super().__init__(
-            lie_noise_stddev_multiplier=kwargs.pop("lie_noise_stddev_multiplier", 4.0),
-            decision_mode=kwargs.pop("decision_mode", "median"),
-            temperature=kwargs.pop("temperature", 0.0),
-            epsilon=kwargs.pop("epsilon", 0.0),
-        )
+        super().__init__(**kwargs)
         self.random_state = random_state
 
     def fit(
@@ -199,6 +217,7 @@ class MLPFewShotModel(FewShotModel):
     def __init__(self, ensemble_size: int = 1, **kwargs):
         """Initialize the MLP regressor with any parameters supported by sklearn's MLPRegressor."""
         super().__init__(
+            wt_aa_seq=kwargs.pop("wt_aa_seq"),
             lie_noise_stddev_multiplier=kwargs.pop("lie_noise_stddev_multiplier", 4.0),
             decision_mode=kwargs.pop("decision_mode", "median"),
             temperature=kwargs.pop("temperature", 0.0),
@@ -334,6 +353,7 @@ class RandomForestFewShotModel(FewShotModel):
     def __init__(self, ensemble_size: int = 1, **kwargs):
         """Initialize the Random Forest regressor with any parameters supported by sklearn's RandomForestRegressor."""
         super().__init__(
+            wt_aa_seq=kwargs.pop("wt_aa_seq"),
             lie_noise_stddev_multiplier=kwargs.pop("lie_noise_stddev_multiplier", 4.0),
             decision_mode=kwargs.pop("decision_mode", "median"),
             temperature=kwargs.pop("temperature", 0.0),
@@ -475,6 +495,7 @@ class TorchMLPFewShotModel(FewShotModel):
 
     def __init__(
         self,
+        wt_aa_seq: str,
         embedding_dim: int,
         random_state: int,
         hidden_dims: list[int] = [100, 50],
@@ -501,6 +522,7 @@ class TorchMLPFewShotModel(FewShotModel):
     ):
         """Initialize the Random Forest regressor with any parameters supported by sklearn's RandomForestRegressor."""
         super().__init__(
+            wt_aa_seq,
             lie_noise_stddev_multiplier=kwargs.pop("lie_noise_stddev_multiplier", 4.0),
             decision_mode=kwargs.pop("decision_mode", "median"),
             temperature=kwargs.pop("temperature", 0.0),
@@ -551,7 +573,7 @@ class TorchMLPFewShotModel(FewShotModel):
             )
             for ii in range(self.ensemble_size)
         ]
-    
+
     def pretrain(
         self,
         naturalness_series: pd.Series,
@@ -606,15 +628,15 @@ class TorchMLPFewShotModel(FewShotModel):
                 use_plateau_learning_rate_decay=False,
             ))
             self.pretrained_model_state_dicts.append(model.state_dict())
-        
+
         # def train_single_model(idx):
         # Use ThreadPoolExecutor to run in parallel
         # with ThreadPoolExecutor(max_workers=min(self.ensemble_size, 5)) as executor:
         #     self.pretrain_metrics = list(executor.map(
-        #         train_single_model, 
+        #         train_single_model,
         #         range(self.ensemble_size)
         #     ))
-        
+
         self.is_pretrained = True
 
         train_loss_start = np.mean([m["train_loss"][0] for m in self.pretrain_metrics])
@@ -659,7 +681,7 @@ class TorchMLPFewShotModel(FewShotModel):
                 raise ValueError(f"Number of pretrained models does not match ensemble size {len(self.pretrained_model_state_dicts)} != {self.ensemble_size}.")
             for idx, (model, trainer) in enumerate(self.finetuned_model_and_trainer_list):
                 model.load_state_dict(self.pretrained_model_state_dicts[idx])
-        
+
         kf_splits = None
         if self.do_holdout_validation:
             kf = KFold(n_splits=self.ensemble_size, shuffle=True, random_state=self.base_random_state)

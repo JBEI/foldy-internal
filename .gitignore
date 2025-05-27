@@ -154,3 +154,5 @@ CLAUDE.md
 CLAUDE_NOTES.md
 
 **/.claude/settings.local.json
+
+frontend/stats.html

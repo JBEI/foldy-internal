@@ -145,7 +145,7 @@ sequences:
                                     onClick={() => setShowHelpModal(true)}
                                     style={{ padding: 0 }}
                                 >
-                                    View setup instructions
+                                    View new fold guide
                                 </AntButton>
                                 <AntButton
                                     type="link"
@@ -165,7 +165,7 @@ sequences:
 
                 {/* Setup Instructions Modal */}
                 <Modal
-                    title="Boltz Fold Setup Guide"
+                    title="Boltz Fold Guide"
                     open={showHelpModal}
                     onCancel={() => setShowHelpModal(false)}
                     footer={[
@@ -242,7 +242,7 @@ sequences:
 
                             <Panel header={<Text strong>🧪 FolDE (If you used FolDE for structure prediction or directed evolution)</Text>} key="2">
                                 <Card size="small" style={{ backgroundColor: '#f9f9f9' }}>
-                                    <Text>Include this citation if you use FolDE (Foldy's directed evolution tools) in your research:</Text>
+                                    <Text>Include this citation if you use the FolDE website, for structure prediction or directed evolution, in your research:</Text>
                                     <Alert
                                         message="Not Yet Published"
                                         description="FolDE manuscript is currently in preparation. Please check back for citation details."

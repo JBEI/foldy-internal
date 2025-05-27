@@ -148,8 +148,8 @@ class EvolveResource(Resource):
                 evolve_record.id,
                 job_timeout="12h",
                 result_ttl=48 * 60 * 60,  # 2 days
-                on_success=Callback(send_success_email, timeout='5s'),
-                on_failure=Callback(send_failure_email, timeout='5s'),
+                on_success=Callback(send_success_email, timeout='10s'),
+                on_failure=Callback(send_failure_email, timeout='10s'),
             )
             add_meta_to_job(enqueued_job, fold, "evolve", evolve_record.id)
 
@@ -161,8 +161,8 @@ class EvolveResource(Resource):
                 evolve_jobs.run_evolvepro,
                 evolve_record.id,
                 job_timeout="6h",
-                on_success=Callback(send_success_email, timeout='5s'),
-                on_failure=Callback(send_failure_email, timeout='5s'),
+                on_success=Callback(send_success_email, timeout='10s'),
+                on_failure=Callback(send_failure_email, timeout='10s'),
             )
             add_meta_to_job(enqueued_job, fold, "evolve", evolve_record.id)
 
