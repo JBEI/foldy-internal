@@ -7,14 +7,16 @@ import shutil
 import tempfile
 import time
 import zipfile
+from abc import abstractmethod
 from datetime import UTC, datetime, timezone
 from pathlib import Path, PurePosixPath
 from re import fullmatch
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 
 import numpy as np
 from dnachisel import biotools
 from flask import abort, current_app
+from google.cloud.storage import Blob
 from google.cloud.storage.client import Client
 from redis import Redis
 from rq.job import Retry
@@ -26,29 +28,6 @@ from app.extensions import compress, db
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.sequence_util import back_translate
 from app.models import Dock, Fold, Invokation, User
-
-
-class StorageAccessor:
-    def list_files(self, fold_id: int, subfolder: Optional[str] = None) -> List[Dict[str, Any]]:
-        raise NotImplementedError
-
-    def write_file(self, fold_id: int, file_path: str, contents: Any, binary: bool = False) -> None:
-        """Write contents to a file under the specified fold directory."""
-        raise NotImplementedError
-
-    def get_binary(self, fold_id: int, file_path: str) -> bytes:
-        raise NotImplementedError
-
-    def get_blob(self, fold_id: int, file_path: str) -> Any:
-        raise NotImplementedError
-
-    def upload_folder(
-        self, fold_id: int, local_absolute_folder_path: str, relative_folder_path: str
-    ) -> None:
-        raise NotImplementedError
-
-    def delete_folder(self, fold_id: int, relative_folder_path: str) -> None:
-        raise NotImplementedError
 
 
 class LocalBlob:
@@ -63,7 +42,7 @@ class LocalBlob:
         """
         self.file_path = file_path
 
-    def open(self, mode="rb"):
+    def open(self, mode="r"):
         """
         Opens the local file in the specified mode.
 
@@ -92,6 +71,35 @@ class LocalBlob:
             int: Size of the file in bytes.
         """
         return os.path.getsize(self.file_path)
+
+class StorageAccessor:
+    @abstractmethod
+    def list_files(self, fold_id: int, subfolder: Optional[str] = None) -> List[Dict[str, Any]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def write_file(self, fold_id: int, file_path: str, contents: Any, binary: bool = False) -> None:
+        """Write contents to a file under the specified fold directory."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_binary(self, fold_id: int, file_path: str) -> bytes:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_blob(self, fold_id: int, relative_path: str) -> LocalBlob | Blob:
+        raise NotImplementedError
+
+    @abstractmethod
+    def upload_folder(
+        self, fold_id: int, local_absolute_folder_path: str, relative_folder_path: str
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete_folder(self, fold_id: int, relative_folder_path: str, allow_list_suffixes: Optional[List[str]] = None) -> None:
+        raise NotImplementedError
+
 
 
 class LocalStorageAccessor(StorageAccessor):
@@ -160,7 +168,7 @@ class LocalStorageAccessor(StorageAccessor):
         )
         return blob_bytes
 
-    def get_blob(self, fold_id: int, file_path: str) -> LocalBlob:
+    def get_blob(self, fold_id: int, relative_path: str) -> LocalBlob:
         """Gets a Blob object from local storage based on fold_id and relative_path.
 
         Retrieves a LocalBlob object for the specified file.
@@ -179,7 +187,7 @@ class LocalStorageAccessor(StorageAccessor):
             raise BadRequest("Local directory not initialized")
 
         padded_fold_id = f"{fold_id:06d}"
-        fpath = self.local_directory / padded_fold_id / file_path
+        fpath = self.local_directory / padded_fold_id / relative_path
 
         blob = LocalBlob(fpath)
 
@@ -213,15 +221,18 @@ class LocalStorageAccessor(StorageAccessor):
                 shutil.copy(local_file_path, out_file_path)
 
 
-    def delete_folder(self, fold_id: int, relative_folder_path: str) -> None:
+    def delete_folder(self, fold_id: int, relative_folder_path: str, allow_list_suffixes: Optional[List[str]] = None) -> None:
         """Deletes a whole folder, like rm -r."""
         if self.local_directory is None:
             raise BadRequest("Local directory not initialized")
 
         padded_fold_id = f"{fold_id:06d}"
         dir = self.local_directory / padded_fold_id / relative_folder_path
+
         if os.path.exists(dir):
-            shutil.rmtree(dir)
+            for file in dir.glob("**/*"):
+                if allow_list_suffixes is None or not any(str(file).endswith(suffix) for suffix in allow_list_suffixes):
+                    file.unlink()
 
 
 class GcloudStorageAccessor(StorageAccessor):
@@ -333,7 +344,7 @@ class GcloudStorageAccessor(StorageAccessor):
         )
         return blob_bytes
 
-    def get_blob(self, fold_id: int, relative_path: str) -> Any:
+    def get_blob(self, fold_id: int, relative_path: str) -> Blob:
         """Gets a Blob object from GCS based on fold_id and relative_path."""
         if self.client is None or self.bucket_name is None:
             raise BadRequest("GCloud client not initialized")
@@ -379,7 +390,7 @@ class GcloudStorageAccessor(StorageAccessor):
                 blob = bucket.blob(gcloud_path)
                 blob.upload_from_filename(local_file_path)
 
-    def delete_folder(self, fold_id: int, relative_folder_path: str) -> None:
+    def delete_folder(self, fold_id: int, relative_folder_path: str, allow_list_suffixes: Optional[List[str]] = None) -> None:
         """Deletes a whole folder, like rm -r."""
         if self.client is None or self.bucket_name is None:
             raise BadRequest("GCloud client not initialized")
@@ -392,9 +403,10 @@ class GcloudStorageAccessor(StorageAccessor):
             gcloud_path = f"{padded_fold_id}/{relative_folder_path}"
 
         bucket = self.client.bucket(self.bucket_name)
-        blobs = list(bucket.list_blobs(prefix=gcloud_path))
+        blobs: Iterable[Blob] = bucket.list_blobs(prefix=gcloud_path)
         for blob in blobs:
-            blob.delete()
+            if allow_list_suffixes is None or not any(str(blob.name).endswith(suffix) for suffix in allow_list_suffixes):
+                blob.delete()
 
 
 class FoldStorageManager:

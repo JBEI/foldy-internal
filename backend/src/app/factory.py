@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import rq_dashboard
 import werkzeug
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask.helpers import make_response
 from flask_admin.contrib.sqla import ModelView
 from flask_admin.form.fields import JSONField
@@ -137,6 +137,15 @@ def register_extensions(app: Flask) -> None:
     class InvokationModelView(VerifiedModelView):
         column_searchable_list = ["id", "fold_id", "type", "state", "command"]
         column_editable_list = ["state"]
+        column_list = [
+            "id",
+            "fold_id",
+            "type",
+            "state",
+            "starttime",
+            "timedelta",
+            "command",
+        ]
 
     class DockModelView(VerifiedModelView):
         can_export = True
@@ -218,6 +227,10 @@ def register_extensions(app: Flask) -> None:
     # rq.init_app(app)
     compress.init_app(app)
 
+    # @app.before_request
+    # def dbg():
+    #     raw = request.get_data(cache=True, as_text=True)
+    #     print("LEN", len(raw), "START", raw[:80], flush=True)
 
 def create_app(config_object: str = "settings") -> Flask:
     """Creates and configures a Flask application instance.

@@ -1,6 +1,7 @@
 import { authHeader } from '../util/authHeader';
 import axiosInstance from '../services/axiosInstance';
 import { Evolution } from '../types/types';
+import { assert } from 'console';
 
 export const getEvolution = async (evolutionId: number): Promise<Evolution> => {
     const response = await axiosInstance.get<Evolution>(`/api/evolve/${evolutionId}`);
@@ -10,7 +11,9 @@ export const getEvolution = async (evolutionId: number): Promise<Evolution> => {
 export async function evolve(
     evolutionName: string,
     foldId: number,
-    activityFile: File,
+    activityFile: File | null,
+    activityFilePath: string | null,
+    activityFileFromEvolutionId: number | null,
     mode: string,
     numMutants: number,
     embeddingFiles?: string[],
@@ -21,29 +24,50 @@ export async function evolve(
     const formData = new FormData();
     formData.append('name', evolutionName);
     formData.append('fold_id', foldId.toString());
-    formData.append('activity_file', activityFile);
+    if (activityFile) {
+        formData.append('activity_file_bytes', activityFile);
+    }
+    if (activityFilePath) {
+        formData.append('activity_file_path', activityFilePath);
+    }
+    if (activityFileFromEvolutionId) {
+        formData.append('activity_file_from_evolution_id', activityFileFromEvolutionId.toString());
+    }
 
-    formData.append('mode', mode);
-    if (embeddingFiles) {
-        formData.append('embedding_files', JSON.stringify(embeddingFiles));
-    }
-    if (naturalnessFiles) {
-        formData.append('naturalness_files', JSON.stringify(naturalnessFiles));
-    }
-    if (finetuningModelCheckpoint) {
-        formData.append('finetuning_model_checkpoint', finetuningModelCheckpoint);
-    }
-    if (fewShotParams) {
-        formData.append('few_shot_params', fewShotParams);
-    }
-    formData.append('num_mutants', numMutants.toString());
-
-    const response = await axiosInstance.post<Evolution>('/api/evolve', formData, {
+    const createDirResponse = await axiosInstance.post<Evolution>('/api/evolve/create_evolve_directory', formData, {
         headers: {
             ...authHeader(),  // Keep auth headers
             'Content-Type': 'multipart/form-data',  // Override content type for this request
         }
     });
+    if (createDirResponse.status !== 200) {
+        throw new Error(`Failed to create evolve directory: ${createDirResponse.statusText}`);
+    }
+
+    const startEvolutionBody: Evolution = {
+        id: undefined,
+        invokation_id: undefined,
+        name: evolutionName,
+        fold_id: foldId,
+        mode: mode,
+        num_mutants: numMutants,
+        embedding_files: embeddingFiles?.join(',') ?? undefined,
+        naturalness_files: naturalnessFiles?.join(',') ?? undefined,
+        finetuning_model_checkpoint: finetuningModelCheckpoint ?? undefined,
+        few_shot_params: fewShotParams ?? undefined,
+    };
+    // if (fewShotParams) {
+    //     startEvolutionBody.few_shot_params = JSON.stringify(fewShotParams);
+    // }
+
+    const response = await axiosInstance.post<Evolution>(
+        `/api/evolve`, startEvolutionBody,
+        // {
+        //     headers: {
+        //         'Content-Type': 'application/json',
+        //     },
+        // }
+    );
     return response.data;
 }
 

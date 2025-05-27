@@ -131,9 +131,9 @@ class FewShotModel(ABC):
                 choice_of_baseline='min' if self.decision_mode == 'constantliar' else 'mean',
             )
 
-            self.selection_debug_info['sorts']['by_selection'] = chosen_seq_ids
-            self.selection_debug_info['sorts']['by_cluster'] = cluster_sort_seq_ids(pred_df.loc[chosen_seq_ids])
-            self.selection_debug_info['sorts']['by_seq_id'] = sort_seq_id_list(self.wt_aa_seq, chosen_seq_ids)
+            self.selection_debug_info['sorts']['selection_order'] = chosen_seq_ids
+            self.selection_debug_info['sorts']['cluster_order'] = cluster_sort_seq_ids(pred_df.loc[chosen_seq_ids])
+            self.selection_debug_info['sorts']['seq_id_order'] = sort_seq_id_list(self.wt_aa_seq, chosen_seq_ids)
         else:
             ensemble_scores = get_consensus_scores(ensemble_of_predictions, self.decision_mode)
             chosen_indices = internal_sample_n_indices(
@@ -153,7 +153,7 @@ class FewShotModel(ABC):
     @abstractmethod
     def get_debug_info(self) -> Dict[str, Any]:
         """Get model-specific debug information."""
-        pass
+        return self.selection_debug_info
 
 
 def register_few_shot_model(model_class: Type[FewShotModel]) -> Type[FewShotModel]:
@@ -447,9 +447,8 @@ class RandomForestFewShotModel(FewShotModel):
         if not self.is_fitted:
             raise ValueError("Model has not been trained yet. Call fit() first.")
 
-        debug_info: Dict[str, Any] = {
-            "metrics": self.metrics_,
-        }
+        debug_info: Dict[str, Any] = super().get_debug_info()
+        debug_info["metrics"] = self.metrics_
 
         # Get properties from the first model in the ensemble
         if len(self.models) > 0:
@@ -762,12 +761,12 @@ class TorchMLPFewShotModel(FewShotModel):
         """Get debug information for the Random Forest."""
         if not self.is_fitted:
             raise ValueError("Model has not been trained yet. Call fit() first.")
-        return {
-            "pretrain_metrics": self.pretrain_metrics,
-            'pretrain_val_frequency': self.pretrain_val_frequency,
-            "finetune_metrics": self.finetune_metrics,
-            'finetune_val_frequency': self.val_frequency,
-        }
+        debug_info = super().get_debug_info()
+        debug_info["pretrain_metrics"] = self.pretrain_metrics
+        debug_info["pretrain_val_frequency"] = self.pretrain_val_frequency
+        debug_info["finetune_metrics"] = self.finetune_metrics
+        debug_info["finetune_val_frequency"] = self.val_frequency
+        return debug_info
 
 
 def is_valid_few_shot_model_name(model_name: str) -> bool:

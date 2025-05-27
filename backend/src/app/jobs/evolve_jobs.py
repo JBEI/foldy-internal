@@ -180,12 +180,12 @@ def run_evolvepro(evolve_id: int):
 
         logging.info(f"Top seq ids: {top_seq_ids}")
 
-        def get_selected_idx_or_none(seq_id):
-            try:
-                return top_seq_ids.index(seq_id)
-            except ValueError as e:
-                return None
-        predicted_activity_df['selected_idx'] = predicted_activity_df.index.map(get_selected_idx_or_none)
+        # def get_selected_idx_or_none(seq_id):
+        #     try:
+        #         return top_seq_ids.index(seq_id)
+        #     except ValueError as e:
+        #         return None
+        predicted_activity_df['selected'] = predicted_activity_df.index.isin(top_seq_ids)
 
         # predicted_activity_df[~predicted_activity_df.selected_idx.isna()]
 

@@ -27,7 +27,6 @@ const FEW_SHOT_PRESETS = {
     "pretrain": true,
     "pretrain_epochs": 50,
     "ensemble_size": 5,
-    "decision_mode": "ucb",
     "embedding_dim": 960,
     "hidden_dims": [100, 50],
     "dropout": 0.2,
@@ -71,7 +70,8 @@ const FEW_SHOT_PRESETS = {
 
 type RowData = {
     seqId: string;
-    selectedIdx: number | null;
+    selected: boolean | null;
+    order: number | null;
     relevantMeasuredMutants: string;
     predictionMean: number;
     predictionStddev: number;
@@ -80,7 +80,10 @@ type RowData = {
 }
 
 
-const parseCsvDataIntoRowData = (predictedMutantCsvDataString: string): RowData[] | null => {
+const parseCsvDataIntoRowData = (
+    predictedMutantCsvDataString: string,
+    seqIdOrder: string[] | null
+): RowData[] | null => {
     const { data, errors } = Papa.parse<Record<string, string>>(predictedMutantCsvDataString, {
         header: true,
         delimiter: ',',
@@ -111,20 +114,21 @@ const parseCsvDataIntoRowData = (predictedMutantCsvDataString: string): RowData[
         const stddev = Math.sqrt(predictions.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / predictions.length);
         const score = mean;
 
-        // Parse selected_idx from the CSV
-        const selectedIdxStr = row['selected_idx'];
-        let selectedIdx: number | null = null;
-        if (selectedIdxStr && selectedIdxStr !== 'null' && selectedIdxStr !== '') {
-            const parsed = parseInt(selectedIdxStr);
-            if (!isNaN(parsed)) {
-                selectedIdx = parsed;
-            }
-        }
+        // // Parse selected_idx from the CSV
+        // const selectedIdxStr = row['selected_idx'];
+        // let selectedIdx: number | null = null;
+        // if (selectedIdxStr && selectedIdxStr !== 'null' && selectedIdxStr !== '') {
+        //     const parsed = parseInt(selectedIdxStr);
+        //     if (!isNaN(parsed)) {
+        //         selectedIdx = parsed;
+        //     }
+        // }
 
         return {
             seqId: row['seq_id'],
             relevantMeasuredMutants: row['relevant_measured_mutants'],
-            selectedIdx: selectedIdx,
+            selected: row['selected'] == 'True',
+            order: seqIdOrder ? seqIdOrder.indexOf(row['seq_id']) : null,
             predictionMean: mean,
             predictionStddev: stddev,
             score: score,
@@ -133,8 +137,9 @@ const parseCsvDataIntoRowData = (predictedMutantCsvDataString: string): RowData[
     });
 
     // Filter to only include rows with selected_idx set, then sort by selected_idx
-    const selectedRows = allRows.filter(row => row.selectedIdx !== null);
-    return selectedRows.sort((a, b) => a.selectedIdx! - b.selectedIdx!);
+    // const selectedRows = allRows.filter(row => row.selectedIdx !== null);
+    // return selectedRows.sort((a, b) => a.selectedIdx! - b.selectedIdx!);
+    return allRows.filter(rows => rows.selected).sort((a, b) => a.order! - b.order!);
 }
 
 const seqIdListToLociList = (seqIdList: string[]): number[] => {
@@ -163,14 +168,15 @@ interface PredictedMutantTableProps {
     yamlConfig: string | null;
     predictedMutantCsvData: string | null;
     setSelectedSubsequence: (selection: Selection | null) => void;
+    sortOptions: { [key: string]: string[] } | null;
 }
 
 
-// Now modify the PredictedMutantTable component to include the heatmap
 const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
     yamlConfig,
     predictedMutantCsvData,
     setSelectedSubsequence,
+    sortOptions,
 }) => {
     if (!predictedMutantCsvData) {
         return <div className="uk-text-center">
@@ -181,9 +187,13 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
     const [sortColumn, setSortColumn] = useState<string | null>(null);
     const [sortDirection, setSortDirection] = useState<'ASC' | 'DESC'>('DESC');
     const [selectedSeqIds, setSelectedSeqIds] = useState<string[]>([]);
+    const [seqIdOrderChoice, setSeqIdOrderChoice] = useState<string | null>(null);
 
     const tableData: RowData[] | null = useMemo(() => {
-        const data = parseCsvDataIntoRowData(predictedMutantCsvData);
+        const data = parseCsvDataIntoRowData(
+            predictedMutantCsvData,
+            (seqIdOrderChoice && sortOptions) ? sortOptions[seqIdOrderChoice] : null
+        );
         if (!data) return null;
 
         if (data && sortColumn) {
@@ -198,7 +208,7 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
             });
         }
         return data;
-    }, [predictedMutantCsvData, sortColumn, sortDirection]);
+    }, [predictedMutantCsvData, sortColumn, sortDirection, seqIdOrderChoice]);
 
     const correlationData = useMemo(() => {
         if (!tableData || tableData.length === 0 || !tableData[0].modelPredictions) {
@@ -255,15 +265,15 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
     if (!tableData) return null;
     const columns = [
         {
-            key: "selectedIdx",
-            name: "Selected",
+            key: "order",
+            name: "Order",
             sortable: true,
             resizable: true,
             width: 80,
             sortDescendingFirst: false,
             formatter: ({ row }: { row: any }) => (
                 <div style={{ textAlign: 'center' }}>
-                    {row.selectedIdx !== null ? row.selectedIdx : ''}
+                    {row.order !== null ? row.order : ''}
                 </div>
             )
         },
@@ -380,6 +390,21 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
 
     return (
         <DataTableContainer>
+            <div style={{ marginBottom: '10px' }}>
+                <Select
+                    value={seqIdOrderChoice}
+                    onChange={setSeqIdOrderChoice}
+                    placeholder="Select sequence order"
+                    style={{ width: '200px' }}
+                    allowClear
+                >
+                    {Object.keys(sortOptions || {}).map(key => (
+                        <Select.Option key={key} value={key}>
+                            {key}
+                        </Select.Option>
+                    ))}
+                </Select>
+            </div>
             <ReactDataGrid
                 columns={columns}
                 rowGetter={i => tableData[i]}
@@ -681,6 +706,8 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
     const [evolutionName, setEvolutionName] = useState<string>('');
     const [showForm, setShowForm] = useState<boolean>(false);
     const [activityFile, setActivityFile] = useState<File | null>(null);
+    const [activityFileSource, setActivityFileSource] = useState<'upload' | 'evolution'>('upload');
+    const [selectedEvolutionForActivity, setSelectedEvolutionForActivity] = useState<number | null>(null);
     const [mode, setMode] = useState<string>('TorchMLPFewShotModel');
     const [numMutants, setNumMutants] = useState<number>(24);
     const [selectedEmbeddingPaths, setSelectedEmbeddingPaths] = useState<string[]>([]);
@@ -692,6 +719,7 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
     const [displayedEvolutionId, setDisplayedEvolutionId] = useState<number | null>(null);
     const [evolutionCsvData, setEvolutionCsvData] = useState<string | null>(null);
     const [evolutionDebugData, setEvolutionDebugData] = useState<any>(null);
+    const [sortOptions, setSortOptions] = useState<{ [key: string]: string[] }>({});
 
     const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
 
@@ -699,11 +727,14 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
         file.key.includes('embed')
     ) || [];
     const availableNaturalnessFiles = files?.filter(file =>
-        file.key.includes('naturalness')
+        file.key.includes('naturalness') && file.key.endsWith('.csv')
     ) || [];
 
     const handleEvolve = async () => {
-        if (!activityFile || (selectedEmbeddingPaths.length === 0) || (selectedNaturalnessPaths.length === 0)) {
+        // Update validation logic
+        const hasActivitySource = activityFileSource === 'upload' ? activityFile : selectedEvolutionForActivity;
+
+        if (!hasActivitySource || (selectedEmbeddingPaths.length === 0) || (selectedNaturalnessPaths.length === 0)) {
             notify.warning('Please fill in all required fields');
             return;
         }
@@ -713,7 +744,9 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
             const foldEvolution = await evolve(
                 evolutionName,
                 foldId,
-                activityFile,
+                activityFileSource === 'upload' ? activityFile : null,
+                null,
+                activityFileSource === 'evolution' ? selectedEvolutionForActivity : null,
                 mode,
                 numMutants,
                 selectedEmbeddingPaths,
@@ -722,6 +755,8 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                 fewShotParams
             );
             notify.success(`Evolution process started with id ${foldEvolution.id} and name ${foldEvolution.name}`);
+
+            setShowForm(false);
         } catch (error) {
             notify.error(`Failed to start evolution process: ${error}`);
         }
@@ -752,6 +787,8 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
         notify.info(`Repopulating "New Evolution Run" with parameters from ${evolution.name}. Make sure to add the activity file, you can download the previous one from Files tab.`);
         setEvolutionName(evolution.name);
         setMode(evolution.mode);
+        setActivityFileSource('evolution');
+        setSelectedEvolutionForActivity(evolution.id || null);
         if (evolution.embedding_files) {
             setSelectedEmbeddingPaths(evolution.embedding_files.split(','));
         }
@@ -803,6 +840,7 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                         const cleanedString = fileString.replace(/NaN/g, 'null');
                         const jsonData = JSON.parse(cleanedString);
                         setEvolutionDebugData(jsonData);
+                        setSortOptions(jsonData.sorts);
                     } catch (err) {
                         console.error("Error parsing debug.json:", err);
                         notify.error(`Failed to parse debug.json: ${err}`);
@@ -935,6 +973,7 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                                 yamlConfig={yamlConfig}
                                 predictedMutantCsvData={evolutionCsvData}
                                 setSelectedSubsequence={setSelectedSubsequence}
+                                sortOptions={sortOptions}
                             />
                         </div>
 
@@ -1078,29 +1117,112 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                         <Divider>File Selection</Divider>
 
                         <Form.Item
-                            label="Activity File"
+                            label="Activity File Source"
                             required
-                            help="Excel file with seq_id and activity columns"
+                            help="Choose whether to upload a new activity file or use data from an existing evolution"
                         >
-                            <Upload
-                                beforeUpload={(file) => {
-                                    setActivityFile(file);
-                                    return false; // Prevent auto upload
-                                }}
-                                accept=".xlsx,.xls"
-                                maxCount={1}
-                                fileList={activityFile ? [{
-                                    uid: '1',
-                                    name: activityFile.name,
-                                    status: 'done'
-                                }] : []}
-                                onRemove={() => setActivityFile(null)}
-                            >
-                                <AntButton icon={<UploadOutlined />}>
-                                    Select Activity File (.xlsx/.xls)
-                                </AntButton>
-                            </Upload>
+                            <Row gutter={16}>
+                                <Col span={12}>
+                                    <Card
+                                        size="small"
+                                        style={{
+                                            cursor: 'pointer',
+                                            border: activityFileSource === 'upload' ? '2px solid #1890ff' : '1px solid #d9d9d9'
+                                        }}
+                                        onClick={() => {
+                                            setActivityFileSource('upload');
+                                            setSelectedEvolutionForActivity(null);
+                                        }}
+                                    >
+                                        <div style={{ textAlign: 'center' }}>
+                                            <UploadOutlined style={{ fontSize: '24px', marginBottom: '8px' }} />
+                                            <div><strong>Upload New File</strong></div>
+                                            <div style={{ fontSize: '12px', color: '#666' }}>
+                                                Upload an Excel file with activity data
+                                            </div>
+                                        </div>
+                                    </Card>
+                                </Col>
+                                <Col span={12}>
+                                    <Card
+                                        size="small"
+                                        style={{
+                                            cursor: 'pointer',
+                                            border: activityFileSource === 'evolution' ? '2px solid #1890ff' : '1px solid #d9d9d9'
+                                        }}
+                                        onClick={() => {
+                                            setActivityFileSource('evolution');
+                                            setActivityFile(null);
+                                        }}
+                                    >
+                                        <div style={{ textAlign: 'center' }}>
+                                            <FaRedo style={{ fontSize: '24px', marginBottom: '8px' }} />
+                                            <div><strong>Use Existing Evolution</strong></div>
+                                            <div style={{ fontSize: '12px', color: '#666' }}>
+                                                Reuse activity data from a previous evolution
+                                            </div>
+                                        </div>
+                                    </Card>
+                                </Col>
+                            </Row>
                         </Form.Item>
+
+                        {activityFileSource === 'upload' && (
+                            <Form.Item
+                                label="Upload Activity File"
+                                required
+                                help="Excel file with seq_id and activity columns"
+                            >
+                                <Upload
+                                    beforeUpload={(file) => {
+                                        setActivityFile(file);
+                                        return false; // Prevent auto upload
+                                    }}
+                                    accept=".xlsx,.xls"
+                                    maxCount={1}
+                                    fileList={activityFile ? [{
+                                        uid: '1',
+                                        name: activityFile.name,
+                                        status: 'done'
+                                    }] : []}
+                                    onRemove={() => setActivityFile(null)}
+                                >
+                                    <AntButton icon={<UploadOutlined />}>
+                                        Select Activity File (.xlsx/.xls)
+                                    </AntButton>
+                                </Upload>
+                            </Form.Item>
+                        )}
+
+                        {activityFileSource === 'evolution' && (
+                            <Form.Item
+                                label="Select Evolution for Activity Data"
+                                required
+                                help="Choose a finished evolution to reuse its activity data"
+                            >
+                                <Select
+                                    value={selectedEvolutionForActivity}
+                                    onChange={setSelectedEvolutionForActivity}
+                                    style={{ width: '100%' }}
+                                    placeholder="Select an evolution"
+                                >
+                                    {evolutions?.map(evolution => (
+                                        <Select.Option key={evolution.id} value={evolution.id}>
+                                            {evolution.name}
+                                        </Select.Option>
+                                    ))}
+                                </Select>
+                                {evolutions?.length === 0 && (
+                                    <Alert
+                                        message="No finished evolutions available"
+                                        description="You need at least one completed evolution to use this option."
+                                        type="info"
+                                        showIcon
+                                        style={{ marginTop: '8px' }}
+                                    />
+                                )}
+                            </Form.Item>
+                        )}
 
                         <Form.Item
                             label="Multi-Mutant Embedding Files"
@@ -1244,7 +1366,8 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                                 onClick={handleEvolve}
                                 disabled={
                                     evolutionName === '' ||
-                                    !activityFile ||
+                                    (activityFileSource === 'upload' && !activityFile) ||
+                                    (activityFileSource === 'evolution' && !selectedEvolutionForActivity) ||
                                     ((mode === 'randomforest' || mode === 'mlp') && selectedEmbeddingPaths.length === 0) ||
                                     (mode === 'finetuning' && !finetuningModelCheckpoint)
                                 }

@@ -129,15 +129,15 @@ export interface Embedding {
 }
 
 export interface Evolution {
-    id: number;
+    id: number | undefined;
     name: string;
     fold_id: number;
-    invokation_id: number | null;
+    invokation_id: number | undefined;
     mode: string;
-    embedding_files: string | null;
-    naturalness_files: string | null;
-    finetuning_model_checkpoint: string | null;
-    few_shot_params: string | null;
+    embedding_files: string | undefined;
+    naturalness_files: string | undefined;
+    finetuning_model_checkpoint: string | undefined;
+    few_shot_params: string | undefined;
     num_mutants: number;
 }
 
