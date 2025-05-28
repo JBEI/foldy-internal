@@ -150,17 +150,32 @@ def get_proteingym_dataset(
     embedding_df = embedding_df.set_index("seq_id", drop=False)
 
     # Load naturalness scores
-    naturalness_df = pd.read_csv(naturalness_file_path)
-    logger.info(f"Loaded naturalness scores for {dms_id} with {len(naturalness_df)} rows")
-    naturalness_df["seq_id"] = naturalness_df["seq_id"].apply(
+    incomplete_naturalness_df = pd.read_csv(naturalness_file_path)
+    logger.info(f"Loaded naturalness scores for {dms_id} with {len(incomplete_naturalness_df)} rows")
+    incomplete_naturalness_df["seq_id"] = incomplete_naturalness_df["seq_id"].apply(
         lambda x: maybe_modify_seq_id(dms_id, x)
     )
-    naturalness_df = naturalness_df.set_index("seq_id", drop=False)
+    incomplete_naturalness_df = incomplete_naturalness_df.set_index("seq_id", drop=False)
+
+    # AUGMENT SINGLE MUTANT NATURALNESS FOR MULTI MUTANTS ##################
+    def get_naturalness_of_multi_mutant(seq_id) -> float:
+        if seq_id == 'WT':
+            return 1.0
+        try:
+            return incomplete_naturalness_df.wt_marginal.loc[seq_id.split('_')].prod()
+        except Exception as e:
+            raise ValueError(f'Failure computing naturalness for {seq_id}: {e}')
+    augmented_naturalness_df = pd.DataFrame(
+        {
+            'wt_marginal': embedding_df.index.map(get_naturalness_of_multi_mutant),
+        },
+        index=embedding_df.index
+    )
 
     # Ensure the naturalness file has the required column
-    if "wt_marginal" not in naturalness_df.columns:
+    if "wt_marginal" not in augmented_naturalness_df.columns:
         raise ValueError(
-            f"Naturalness file missing 'wt_marginal' column. Available columns: {naturalness_df.columns.tolist()}"
+            f"Naturalness file missing 'wt_marginal' column. Available columns: {augmented_naturalness_df.columns.tolist()}"
         )
 
     # Convert embedding column from string to numpy array if needed
@@ -176,13 +191,17 @@ def get_proteingym_dataset(
 
     # We lose ordering with the set operations but recover it with a sort later.
     common_seq_ids = list(
-        set(naturalness_df.seq_id) & set(embedding_df.seq_id) & set(activity_df.seq_id)
+        set(augmented_naturalness_df.seq_id) & set(embedding_df.seq_id) & set(activity_df.seq_id)
     )
     common_seq_ids = sort_seq_id_list(wt_aa_seq, common_seq_ids)
 
+    logging.info(f'Going foward with {len(common_seq_ids)} common seq ids')
+    if activity_df.shape[0] > len(common_seq_ids):
+        logging.warning(f'Dropping seq ids from activity df such as {activity_df[~activity_df.index.isin(common_seq_ids)].index[:3].tolist()}')
+
     return (
         wt_aa_seq,
-        naturalness_df.loc[common_seq_ids],
+        augmented_naturalness_df.loc[common_seq_ids],
         embedding_df.loc[common_seq_ids],
         activity_df.loc[common_seq_ids],
     )

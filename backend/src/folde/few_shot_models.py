@@ -506,6 +506,7 @@ class TorchMLPFewShotModel(FewShotModel):
         weight_decay: float = 1e-5,
         pretrain: bool = False,
         pretrain_epochs: int = 10,
+        pretrain_patience: int = 20,
         pretrain_val_frequency: int = 5,
         train_epochs: int = 50,
         train_patience: int | None = None,
@@ -540,6 +541,7 @@ class TorchMLPFewShotModel(FewShotModel):
         self.weight_decay = weight_decay
         self.should_pretrain = pretrain
         self.pretrain_epochs = pretrain_epochs
+        self.pretrain_patience = pretrain_patience
         self.pretrain_val_frequency = pretrain_val_frequency
         self.train_epochs = train_epochs
         self.train_patience = train_patience
@@ -616,7 +618,7 @@ class TorchMLPFewShotModel(FewShotModel):
                 val_activity_labels=y_val,
                 batch_size=256,  # Increased batch size 32->256, speeding up training quite a bit.
                 epochs=self.pretrain_epochs,
-                patience=20,
+                patience=self.pretrain_patience,
                 use_mse_loss=self.use_mse_loss,
                 val_frequency=self.pretrain_val_frequency,
                 learning_rate=1e-4 * 8,  # Increased LR to compensate for larger batches.

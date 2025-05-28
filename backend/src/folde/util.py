@@ -162,7 +162,7 @@ def constant_liar_sample(
         idx                 = int(torch.argmax(ucb))
         selected.append(idx)
         # print(f"Picked {seq_ids[idx]}  with UCB={ucb[idx]:.3f}")
-        print(f'Selecting {seq_ids[idx]} (original rank {idx+1}), score: {ucb[idx]} = {prior_mean[idx]}')
+        logging.info(f'Selecting {seq_ids[idx]} (original rank {idx+1}), score: {ucb[idx]} = {prior_mean[idx]}')
 
         # 3) Single-point GP update with *fake* observation y=L at index idx
         k_i                 = Cov[:, idx].clone()       # column vector k(·, x_i)
