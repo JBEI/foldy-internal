@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from app.helpers.sequence_util import sort_seq_id_list
+from app.helpers.sequence_util import allele_set_to_seq_id, sort_seq_id_list
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +140,7 @@ def get_proteingym_dataset(
     logger.info(f"Loaded activity data for {dms_id} with {len(activity_df)} rows")
 
     # Convert 'mutant' column to 'seq_id' by replacing ':' with '_'
-    activity_df["seq_id"] = activity_df["mutant"].str.replace(":", "_")
+    activity_df["seq_id"] = activity_df["mutant"].apply(lambda x: allele_set_to_seq_id(set(x.split(':'))))
     activity_df = activity_df.set_index("seq_id", drop=False)
 
     # Load embeddings
@@ -168,9 +168,9 @@ def get_proteingym_dataset(
     augmented_naturalness_df = pd.DataFrame(
         {
             'wt_marginal': embedding_df.index.map(get_naturalness_of_multi_mutant),
-        },
-        index=embedding_df.index
-    )
+            'seq_id': embedding_df.index,
+        }
+    ).set_index('seq_id', drop=False)
 
     # Ensure the naturalness file has the required column
     if "wt_marginal" not in augmented_naturalness_df.columns:

@@ -43,14 +43,18 @@ class FewShotModel(ABC):
     def __init__(
         self,
         wt_aa_seq: str,
-        lie_noise_stddev_multiplier: float,
+        lie_noise_stddev_multiplier: float | None = None,
+        lie_noise_stddev_multiplier_schedule: list[float] | None = None,
         decision_mode: str = "median",
+        ucb_beta: float | None = None,
         temperature: float = 0.0,
         epsilon: float = 0.0,
     ):
         self.wt_aa_seq = wt_aa_seq
         self.lie_noise_stddev_multiplier = lie_noise_stddev_multiplier
+        self.lie_noise_stddev_multiplier_schedule = lie_noise_stddev_multiplier_schedule
         self.decision_mode = decision_mode
+        self.ucb_beta = ucb_beta
         self.temperature = temperature
         self.epsilon = epsilon
         self.selection_debug_info: dict[str, Any] = {}
@@ -114,6 +118,15 @@ class FewShotModel(ABC):
         }
 
         if self.decision_mode == 'constantliar' or self.decision_mode == 'krigingbeliever':
+            if self.lie_noise_stddev_multiplier is not None:
+                lie_noise_stddev_multiplier = self.lie_noise_stddev_multiplier
+            elif self.lie_noise_stddev_multiplier_schedule is not None:
+                lie_noise_stddev_multiplier = self.lie_noise_stddev_multiplier_schedule[0]
+                self.lie_noise_stddev_multiplier_schedule = self.lie_noise_stddev_multiplier_schedule[1:]
+                logging.info(f'Using lie_noise_stddev_multiplier {lie_noise_stddev_multiplier} for this round and {self.lie_noise_stddev_multiplier_schedule} remaining.')
+            else:
+                raise ValueError('Either lie_noise_stddev_multiplier or lie_noise_stddev_multiplier_schedule must be set.')
+
             ensemble_scores = get_consensus_scores(ensemble_of_predictions, 'mean')
             pred_df = {
                 f'model_{ii}': ensemble_of_predictions[ii]
@@ -127,8 +140,9 @@ class FewShotModel(ABC):
                 cl_considerations.to_numpy(),
                 cl_considerations.index.to_numpy(),
                 n,
-                lie_noise_stddev_multiplier=self.lie_noise_stddev_multiplier,
+                lie_noise_stddev_multiplier=lie_noise_stddev_multiplier,
                 choice_of_baseline='min' if self.decision_mode == 'constantliar' else 'mean',
+                ucb_beta=self.ucb_beta if self.ucb_beta is not None else 0.0,
             )
 
             self.selection_debug_info['sorts']['selection_order'] = chosen_seq_ids
@@ -523,10 +537,7 @@ class TorchMLPFewShotModel(FewShotModel):
         """Initialize the Random Forest regressor with any parameters supported by sklearn's RandomForestRegressor."""
         super().__init__(
             wt_aa_seq,
-            lie_noise_stddev_multiplier=kwargs.pop("lie_noise_stddev_multiplier", 4.0),
-            decision_mode=kwargs.pop("decision_mode", "median"),
-            temperature=kwargs.pop("temperature", 0.0),
-            epsilon=kwargs.pop("epsilon", 0.0),
+            **kwargs
         )
 
         self.embedding_dim = embedding_dim

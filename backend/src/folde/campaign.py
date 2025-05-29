@@ -391,6 +391,7 @@ def simulate_campaign(
     activity_column: str = "DMS_score",
     max_rounds: int = 10,
     random_seed: int = 42,
+    num_workers: int = 10,
 ) -> CampaignResult:
     """Simulate protein engineering campaigns with different model configurations.
 
@@ -473,7 +474,7 @@ def simulate_campaign(
         campaign_result.max_activity = activity_df[activity_column].max()
 
         single_model_campaign_results = None
-        with ProcessPoolExecutor(max_workers=10) as executor:
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
         # with ThreadPoolExecutor() as executor:
             futures = []
             for sim_idx in range(number_of_simulations):

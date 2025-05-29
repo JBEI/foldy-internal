@@ -11,13 +11,13 @@ from folde.util import apply_diff_list_to_config
 
 
 # Example configuration
-NAME = '250524-constantliar'
+NAME = '250527-spg1-more'
 
 base_config = FolDEModelConfig(
     name="FolDE",
     # Required parameters
     naturalness_model_id="600m",  # ESM-2 650M model
-    embedding_model_id="300m_extras",  # Same model for embeddings
+    embedding_model_id="300m",  # Same model for embeddings
     zero_shot_model_name="NaturalnessZeroShotModel",
     zero_shot_model_params={},
     # Few-shot model configuration (used after first round)
@@ -46,44 +46,63 @@ config_list = apply_diff_list_to_config(
     base_config,
     [
         ModelDiff(
-            name="constantLiarMult4",
+            name="constantliarS05",
             diffs={
                 "few_shot_model_params.decision_mode": "constantliar",
-                "few_shot_model_params.lie_noise_stddev_multiplier": 4.0,
+                "few_shot_model_params.lie_noise_stddev_multiplier": 0.5,
             }
         ),
         ModelDiff(
-            name="constantLiarMult2",
+            name="constantliarS05-schedule",
             diffs={
                 "few_shot_model_params.decision_mode": "constantliar",
-                "few_shot_model_params.lie_noise_stddev_multiplier": 2.0,
+                "few_shot_model_params.lie_noise_stddev_multiplier_schedule": [0.5] + [1000.0] * 20,
             }
         ),
         ModelDiff(
-            name="constantLiarMult8",
-            diffs={
-                "few_shot_model_params.decision_mode": "constantliar",
-                "few_shot_model_params.lie_noise_stddev_multiplier": 8.0,
-            }
-        ),
-        ModelDiff(
-            name="constantLiarMult1",
+            name="constantliarS1",
             diffs={
                 "few_shot_model_params.decision_mode": "constantliar",
                 "few_shot_model_params.lie_noise_stddev_multiplier": 1.0,
             }
         ),
         ModelDiff(
-            name="noHoldout",
+            name="constantliarS2",
             diffs={
-                "few_shot_model_params.do_validation_with_pair_fraction": None,
+                "few_shot_model_params.decision_mode": "constantliar",
+                "few_shot_model_params.lie_noise_stddev_multiplier": 2.0,
+            }
+        ),
+        ModelDiff(
+            name="constantliarS4",
+            diffs={
+                "few_shot_model_params.decision_mode": "constantliar",
+                "few_shot_model_params.lie_noise_stddev_multiplier": 4.0,
+            }
+        ),
+        ModelDiff(
+            name="constantliarS2-ucb1",
+            diffs={
+                "few_shot_model_params.decision_mode": "constantliar",
+                "few_shot_model_params.lie_noise_stddev_multiplier": 2.0,
+                "few_shot_model_params.ucb_beta": 2.0,
+            }
+        ),
+        ModelDiff(
+            name="constantliarS2-reweightmin",
+            diffs={
+                "few_shot_model_params.decision_mode": "constantliar",
+                "few_shot_model_params.lie_noise_stddev_multiplier": 2.0,
+                "few_shot_model_params.importance_sampling_reweighting_strat": 'min',
+                "few_shot_model_params.importance_sampling_temperature": 10.0,
             }
         ),
     ]
 )
 
 
-EMBEDDING_MODEL_ID = '300m_extras'
+# EMBEDDING_MODEL_ID = '300m_extras'
+EMBEDDING_MODEL_ID = '300m'
 NATURALNESS_MODEL_ID = '600m'
 
 print(f"Testing with embedding model: {EMBEDDING_MODEL_ID} and naturalness model: {NATURALNESS_MODEL_ID}")
@@ -102,12 +121,13 @@ VIRUS_IDS = [
 ]
 results = simulate_campaigns_with_config_checkpoints(
   eval_prefix=NAME,
-  dms_ids=[v for v in available_datasets['DMS_id'].values if v not in VIRUS_IDS],
+  dms_ids=['SPG1_STRSG_Olson_2014'],# [v for v in available_datasets['DMS_id'].values if v not in VIRUS_IDS],
   config_list=config_list,
   checkpoint_dir="notebooks/jacob/model_evals",
   round_size=16,
-  number_of_simulations=10,
+  number_of_simulations=15,
   activity_column="DMS_score",
-  max_rounds=6,
+  max_rounds=10,
   random_seed=42,
+  num_workers=5,
 )

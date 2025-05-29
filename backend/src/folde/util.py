@@ -102,7 +102,9 @@ def constant_liar_sample(
     seq_ids: np.ndarray,
     q_slate_size: int,
     lie_noise_stddev_multiplier: float,
-    choice_of_baseline: str = 'min') -> list[str]:
+    choice_of_baseline: str = 'min',
+    ucb_beta: float = 2.0
+    ) -> list[str]:
     """
     The "Constant Liar” approximation to the parallel EI acquisition function.
 
@@ -110,8 +112,9 @@ def constant_liar_sample(
         ensemble_preds: np.ndarray, shape (S, N)
         seq_ids: np.ndarray, shape (N,)
         q_slate_size: int, number of samples to draw
-        beta: float, beta parameter for UCB
-        tau2: float, a model of sample variance, helps numerical stability
+        lie_noise_stddev_multiplier: float, multiplier for lie noise stddev
+        choice_of_baseline: str, 'min', 'mean', or 'max'
+        ucb_beta: float, beta parameter for UCB
     """
     MAX_POINTS_TO_CONSIDER = 5000
     if ensemble_preds.ndim != 2:
@@ -155,14 +158,14 @@ def constant_liar_sample(
     for _ in range(q_slate_size):
 
         # 1) Upper-confidence-bound score for every unpicked item
-        ucb                 = prior_mean
+        ucb                 = prior_mean + ucb_beta * sigmas
         ucb[selected]       = -torch.inf                # mask already-selected indices
 
         # 2) Greedily take the arg-max
         idx                 = int(torch.argmax(ucb))
         selected.append(idx)
         # print(f"Picked {seq_ids[idx]}  with UCB={ucb[idx]:.3f}")
-        logging.info(f'Selecting {seq_ids[idx]} (original rank {idx+1}), score: {ucb[idx]} = {prior_mean[idx]}')
+        logging.info(f'Selecting {seq_ids[idx]} (original rank {idx+1}), score: {ucb[idx]} = {prior_mean[idx]} + {ucb_beta} * {sigmas[idx]}')
 
         # 3) Single-point GP update with *fake* observation y=L at index idx
         k_i                 = Cov[:, idx].clone()       # column vector k(·, x_i)
@@ -178,6 +181,7 @@ def constant_liar_sample(
 
         # Refresh variance/std-dev
         vars                = Cov.diag()
+        sigmas              = vars.sqrt()
 
     # ─────────────────────────── map indices back to IDs ────────────────────────
     constant_liar_chosen_seq_ids = seq_ids[selected]                  # final slate of length Q
