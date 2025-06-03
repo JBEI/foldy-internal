@@ -118,21 +118,17 @@ def maybe_get_seq_id_error_message(wt_aa_seq: str, seq_id: Any) -> Optional[str]
     return None
 
 
-def sort_seq_id_list(wt_aa_seq: str, seq_id_list: List[str]) -> List[str]:
+def sort_seq_id_list_no_verification(seq_id_list: list[str]) -> list[str]:
     """Sort a list of sequence IDs deterministically.
 
     Sort order is: (# of mutations, first mut locus, first mut allele, second mut locus, second mut allele...)
-    
+
     Args:
         seq_id_list: List of sequence IDs
-    
+
     Returns:
         Sorted list of sequence IDs
     """
-    for seq_id in seq_id_list:
-        error_msg =  maybe_get_seq_id_error_message(wt_aa_seq, seq_id)
-        if error_msg:
-            raise ValueError(f"Invalid seq_id '{seq_id}': {error_msg}")
 
     def get_sort_key(seq_id: str) -> tuple:
         if seq_id == 'WT':
@@ -144,6 +140,25 @@ def sort_seq_id_list(wt_aa_seq: str, seq_id_list: List[str]) -> List[str]:
         flatten = lambda r: [a for b in r for a in b]
         return tuple([num_muts] + flatten(zip(mut_loci, mut_alleles)))
     return sorted(seq_id_list, key=get_sort_key)
+
+def sort_seq_id_list(wt_aa_seq: str, seq_id_list: list[str]) -> list[str]:
+    """Sort a list of sequence IDs deterministically.
+
+    Sort order is: (# of mutations, first mut locus, first mut allele, second mut locus, second mut allele...)
+
+    Args:
+        seq_id_list: List of sequence IDs
+
+    Returns:
+        Sorted list of sequence IDs
+    """
+    for seq_id in seq_id_list:
+        error_msg =  maybe_get_seq_id_error_message(wt_aa_seq, seq_id)
+        if error_msg:
+            raise ValueError(f"Invalid seq_id '{seq_id}': {error_msg}")
+
+    return sort_seq_id_list_no_verification(seq_id_list)
+
 
 def get_seq_ids_for_deep_mutational_scan(
     wt_aa_seq: str, dms_starting_seq_ids: List[str], extra_seq_ids: List[str]
@@ -356,7 +371,7 @@ def process_and_validate_evolve_input_files(
     if naturalness_df is not None:
         naturalness_df = naturalness_df.set_index("seq_id")
 
-    
+
     for col in embedding_df.columns:
         if col == "embedding" or col.startswith("embedding_layer_"):
             if isinstance(embedding_df[col].iloc[0], str):
@@ -366,7 +381,7 @@ def process_and_validate_evolve_input_files(
                 embedding_df[col] = embedding_df[col].apply(
                     lambda x: np.array(json.loads(x)) if isinstance(x, str) else x
                 )
-    
+
     return (activity_df, embedding_df, naturalness_df)
 
 

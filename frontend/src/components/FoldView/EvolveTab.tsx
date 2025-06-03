@@ -161,8 +161,15 @@ const seqIdListToLociList = (seqIdList: string[]): number[] => {
     return Array.from(new Set(lociToHighlightList));
 }
 
-
-
+const seqIdListToAlleleIdCount = (seqIdList: string[]): { [alleleId: string]: number } => {
+    const mutatationCount: { [alleleId: string]: number } = {};
+    seqIdList.forEach(seqId => {
+        seqId.split('_').forEach(alleleId => {
+            mutatationCount[alleleId] = (mutatationCount[alleleId] || 0) + 1;
+        })
+    })
+    return mutatationCount;
+}
 
 interface PredictedMutantTableProps {
     yamlConfig: string | null;
@@ -269,7 +276,7 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
             name: "Order",
             sortable: true,
             resizable: true,
-            width: 80,
+            width: 60,
             sortDescendingFirst: false,
             formatter: ({ row }: { row: any }) => (
                 <div style={{ textAlign: 'center' }}>
@@ -388,8 +395,21 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
         highlightResiduesOnModel();
     }, [selectedSeqIds, tableData]);
 
+    const alleleIdCount = useMemo(() => {
+        return seqIdListToAlleleIdCount(tableData.map(row => row.seqId));
+    }, [tableData]);
+
     return (
         <DataTableContainer>
+            <h3>Slate</h3>
+            <p>
+                These are the top mutants selected by the model for evaluating in the next
+                round. Here you can view the mean activity prediction of the mutants (unitless),
+                click the sequence ID to highlight the residues on the structure, and view the standard
+                deviation of the ensemble of predictors, which is a measure of model confidence
+                in these predicitons. Try changing the sort order to cluster, to simplify the slate
+                self-correlation heatmap!
+            </p>
             <div style={{ marginBottom: '10px' }}>
                 <Select
                     value={seqIdOrderChoice}
@@ -435,72 +455,89 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
                     Highlight residues on model
                 </button>
             </ButtonGroup>
+            <div>
+                <h3 style={{ marginTop: '20px' }}>Slate Stats</h3>
+                <p>
+                    Slate contains {Object.keys(alleleIdCount).length} mutations
+                    at {seqIdListToLociList(tableData.map(row => row.seqId)).length} loci, including
+                    <ul>
+                        {Object.entries(alleleIdCount)
+                            .sort(([, countA], [, countB]) => countB - countA)
+                            .map(([alleleId, count]) => (
+                                <li key={alleleId}>{alleleId} ({count})</li>
+                            ))}
+                    </ul>
+                </p>
+            </div>
 
             {useMemo(() => {
                 if (!correlationData) return null;
 
                 return (
-                    <div style={{
-                        height: '600px', // Increased height for better visibility
-                        backgroundColor: '#f9f9f9',
-                        padding: '15px',
-                        borderRadius: '4px',
-                        marginTop: '20px',
-                        overflowX: 'auto', // Add horizontal scroll for many sequences
-                        overflowY: 'auto'  // Add vertical scroll too
-                    }}>
-                        <Plot
-                            data={[{
-                                z: correlationData,
-                                x: tableData.map(row => row.seqId),
-                                y: tableData.map(row => row.seqId),
-                                type: 'heatmap',
-                                colorscale: 'RdBu',
-                                zmin: -1,
-                                zmax: 1,
-                                hovertemplate: '%{x} vs %{y}<br>Correlation: %{z:.2f}<extra></extra>',
-                                showscale: true,
-                                colorbar: {
-                                    title: 'Correlation',
-                                    titleside: 'right'
-                                }
-                            }]}
-                            layout={{
-                                title: 'Sequence Prediction Correlation',
-                                autosize: true,
-                                // Increase margins to accommodate sequence IDs
-                                margin: { l: 150, r: 50, t: 60, b: 150 },
-                                xaxis: {
-                                    title: 'Sequence ID',
-                                    tickangle: 45,
-                                    tickfont: { size: 10 }
-                                },
-                                yaxis: {
-                                    title: 'Sequence ID',
-                                    autorange: 'reversed',
-                                    tickfont: { size: 10 }
-                                },
-                                plot_bgcolor: '#f9f9f9',
-                                paper_bgcolor: '#f9f9f9',
-                                font: { family: 'Arial, sans-serif' }
-                            }}
-                            style={{ width: '100%', height: '100%' }}
-                            useResizeHandler={true}
-                            config={{
-                                responsive: true,
-                                displayModeBar: true,
-                                displaylogo: false,
-                                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
-                                toImageButtonOptions: {
-                                    format: 'png',
-                                    filename: 'sequence_correlation_heatmap',
-                                    height: 800,
-                                    width: 800,
-                                    scale: 2
-                                }
-                            }}
-                        />
-                    </div>
+                    <span>
+                        <h3>Slate Self Correlation</h3>
+                        <div style={{
+                            height: '600px', // Increased height for better visibility
+                            backgroundColor: 'white',  //'#f9f9f9',
+                            padding: '15px',
+                            borderRadius: '4px',
+                            marginTop: '20px',
+                            overflowX: 'auto', // Add horizontal scroll for many sequences
+                            overflowY: 'auto'  // Add vertical scroll too
+                        }}>
+                            <Plot
+                                data={[{
+                                    z: correlationData,
+                                    x: tableData.map(row => row.seqId),
+                                    y: tableData.map(row => row.seqId),
+                                    type: 'heatmap',
+                                    colorscale: 'RdBu',
+                                    zmin: -1,
+                                    zmax: 1,
+                                    hovertemplate: '%{x} vs %{y}<br>Correlation: %{z:.2f}<extra></extra>',
+                                    showscale: true,
+                                    colorbar: {
+                                        title: 'Correlation',
+                                        titleside: 'right'
+                                    }
+                                }]}
+                                layout={{
+                                    title: 'Sequence Prediction Correlation',
+                                    autosize: true,
+                                    // Increase margins to accommodate sequence IDs
+                                    margin: { l: 150, r: 50, t: 60, b: 100 },
+                                    xaxis: {
+                                        title: 'Sequence ID',
+                                        tickangle: 45,
+                                        tickfont: { size: 10 }
+                                    },
+                                    yaxis: {
+                                        title: 'Sequence ID',
+                                        autorange: 'reversed',
+                                        tickfont: { size: 10 }
+                                    },
+                                    plot_bgcolor: 'white',  // '#f9f9f9',
+                                    paper_bgcolor: 'white',  // '#f9f9f9',
+                                    font: { family: 'Arial, sans-serif' }
+                                }}
+                                style={{ width: '100%', height: '100%' }}
+                                useResizeHandler={true}
+                                config={{
+                                    responsive: true,
+                                    displayModeBar: true,
+                                    displaylogo: false,
+                                    modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                                    toImageButtonOptions: {
+                                        format: 'png',
+                                        filename: 'sequence_correlation_heatmap',
+                                        height: 800,
+                                        width: 800,
+                                        scale: 2
+                                    }
+                                }}
+                            />
+                        </div>
+                    </span>
                 );
             }, [correlationData, tableData])}
         </DataTableContainer>
@@ -948,9 +985,9 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
                             alignItems: "center",
                             marginBottom: "10px"
                         }}>
-                            <h3 style={{ margin: 0, overflowWrap: 'anywhere' }}>
+                            <h2 style={{ margin: 0, overflowWrap: 'anywhere' }}>
                                 {evolutions?.find(e => e.id === displayedEvolutionId)?.name || "Evolution Results"}
-                            </h3>
+                            </h2>
                             <button
                                 onClick={() => setDisplayedEvolutionId(null)}
                                 style={{

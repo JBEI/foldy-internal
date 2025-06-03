@@ -37,86 +37,17 @@ There is a rich ecosystem for running structural biology tools, and Foldy is not
 
 ## Development Setup
 
-### Python Environment Setup
-1. Install Python 3.12:
-   - On macOS with Homebrew: `brew install python@3.12`
-   - On Ubuntu/Debian: `sudo apt install python3.12 python3.12-venv`
-   - On Windows: Download Python 3.12 from [python.org](https://www.python.org/downloads/)
+For complete development environment setup instructions, including Python virtual environment, Node.js/npm, pre-commit hooks, and Docker configuration, see:
 
-2. Create and activate a virtual environment with Python 3.12:
-```bash
-# From the project root
-# On Unix/macOS
-python3.12 -m venv .venv
-source .venv/bin/activate
+**[Development Environment Setup Guide](deployment/development/README.md)**
 
-# On Windows
-py -3.12 -m venv .venv
-.venv\Scripts\activate
-```
-
-3. Verify correct Python version:
-```bash
-python --version  # Should output Python 3.12.x
-```
-
-4. Install the project dependencies:
-```bash
-cd backend
-pip install -r requirements.txt
-pip install -r requirements-dev.txt  # Development dependencies
-```
-
-### Pre-commit Setup
-We use pre-commit hooks to ensure code quality. The hooks run:
-- mypy (type checking)
-- black (code formatting)
-- isort (import sorting)
-- basic file checks
-
-1. Install pre-commit:
-```bash
-pip install pre-commit
-```
-
-2. Install the git hooks:
-```bash
-pre-commit install --install-hooks
-pre-commit install -t pre-push  # Also install pre-push hooks
-```
-
-3. (Optional) Run against all files:
-```bash
-pre-commit run --all-files
-```
-
-### Updating Pre-commit Hooks
-When the `.pre-commit-config.yaml` file changes (either by you or after pulling updates), run:
-```bash
-pre-commit autoupdate  # Updates hooks to latest versions
-pre-commit clean       # Cleans out old hooks
-pre-commit install --install-hooks  # Reinstalls hooks
-```
-
-### Notes on mypy
-- mypy configuration is in `backend/mypy.ini`
-- Type checking runs on the `backend/src` directory
-- Required type stubs are automatically installed by pre-commit
-- The virtual environment's Python version should match the one specified in mypy.ini (Python 3.12)
-
-### Troubleshooting
-If you encounter mypy errors:
-1. Ensure you're using Python 3.12
-2. Try clearing the pre-commit cache:
-```bash
-pre-commit clean
-pre-commit gc
-```
-3. Verify all dependencies are installed:
-```bash
-pip install -r backend/requirements.txt
-pip install -r backend/requirements-dev.txt
-```
+The guide covers:
+- Python 3.12 and virtual environment setup
+- Node.js installation with nvm
+- Pre-commit hooks (pyright, black, isort)
+- Docker-based development environment
+- Database setup and migrations
+- Testing and troubleshooting
 
 
 ## Acknowledgements
