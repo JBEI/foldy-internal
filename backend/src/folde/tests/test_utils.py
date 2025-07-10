@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+
 from folde.few_shot_models import FewShotModel, register_few_shot_model
 from folde.zero_shot_models import ZeroShotModel, register_zeroshot_model
 
@@ -79,23 +80,30 @@ class MockZeroShotModel(ZeroShotModel):
         self.predict_called = False
         self.predict_inputs = []
 
-    def predict(self, naturalness_df, embedding_df=None):
+    def predict(self, naturalness_series, embedding_series=None):
         """Mock predict method."""
         self.predict_called = True
-        self.predict_inputs.append((naturalness_df, embedding_df))
+        self.predict_inputs.append((naturalness_series, embedding_series))
 
         if self.return_values is not None:
             return self.return_values
 
         # By default, return values proportional to naturalness scores
-        return naturalness_df[self.naturalness_col].values
+        return naturalness_series.values
 
 
 @register_few_shot_model
 class MockFewShotModel(FewShotModel):
     """Mock FewShotModel for testing campaign simulations."""
 
-    def __init__(self, return_values=None, decision_mode="median", temperature=0.0, epsilon=0.0, random_state=42):
+    def __init__(
+        self,
+        return_values=None,
+        decision_mode="median",
+        temperature=0.0,
+        epsilon=0.0,
+        random_state=42,
+    ):
         """Initialize mock model.
 
         Args:
@@ -104,6 +112,7 @@ class MockFewShotModel(FewShotModel):
             temperature: Temperature for sampling
             epsilon: Epsilon for epsilon-greedy exploration
         """
+        # TODO(jbr): Base class FewShotModel missing required wt_aa_seq parameter
         super().__init__(decision_mode=decision_mode, temperature=temperature, epsilon=epsilon)
         self.return_values = return_values
         self.random_state = random_state
@@ -112,14 +121,24 @@ class MockFewShotModel(FewShotModel):
         self.predict_called = False
         self.predict_inputs = []
 
-    def fit(self, naturalness_series: pd.Series, embedding_series: pd.Series, 
-            measured_activity_series: pd.Series, validation_activity_series=None, **kwargs) -> "MockFewShotModel":
+    def fit(
+        self,
+        naturalness_series: pd.Series,
+        embedding_series: pd.Series,
+        measured_activity_series: pd.Series,
+        test_naturalness_series: pd.Series,
+        test_embedding_series: pd.Series,
+        validation_activity_series=None,
+        **kwargs,
+    ) -> "MockFewShotModel":
         """Mock fit method."""
         self.fit_called = True
         self.fit_inputs.append((naturalness_series, embedding_series, measured_activity_series))
         return self
 
-    def predict(self, naturalness_series: pd.Series, embedding_series: pd.Series) -> List[pd.Series]:
+    def predict(
+        self, naturalness_series: pd.Series, embedding_series: pd.Series
+    ) -> List[pd.Series]:
         """Mock predict method."""
         self.predict_called = True
         self.predict_inputs.append((naturalness_series, embedding_series))

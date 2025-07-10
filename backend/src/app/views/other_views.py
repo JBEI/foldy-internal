@@ -35,7 +35,7 @@ from app.extensions import db
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.rq_helpers import get_queue
 from app.jobs import esm_jobs, other_jobs
-from app.models import Dock, Fold, Invokation
+from app.models import Dock, Fold, Invokation, User
 from app.util import get_job_type_replacement, make_new_folds, start_stage
 
 ns = Namespace("other_views", decorators=[jwt_required(fresh=True)])
@@ -336,9 +336,9 @@ class TagsResource(Resource):
         only_public = not user_jwt_grants_edit_access(get_jwt()["user_claims"])
 
         # Build query based on access permissions
-        query = db.session.query(Fold).join(Fold.user)
+        query = db.session.query(Fold).join(User)
         if only_public:
-            query = query.filter(Fold.is_public == True)
+            query = query.filter(Fold.public == True)
 
         # Get all folds with tags
         folds_with_tags = (
@@ -403,7 +403,11 @@ class FoldResource(Resource):
                         )
                 fields_to_update["tagstring"] = ",".join(fields_to_update["tags"])
                 del fields_to_update["tags"]
-            Fold.get_by_id(fold_id).update(**fields_to_update)
+            fold = Fold.get_by_id(fold_id)
+            if fold:
+                fold.update(**fields_to_update)
+            else:
+                raise BadRequest("Fold not found")
             return True
         except Exception as e:
             raise BadRequest(f"Update operation failed {e}")
@@ -480,7 +484,7 @@ class PaeResource(Resource):
                     )
                     return make_response({"error": "PAE data not found"}, 404)
 
-                if isinstance(pae, np.lib.npyio.NpzFile):
+                if hasattr(pae, "files"):
                     pae = pae["pae"]
 
                 if not isinstance(pae, np.ndarray):
@@ -593,6 +597,8 @@ class DockCreateResource(Resource):
             raise BadRequest(f"Invalid docking tool {tool}: must be one of {ALLOWED_DOCKING_TOOLS}")
 
         fold = Fold.get_by_id(fold_id)
+        if not fold:
+            raise BadRequest("Fold not found")
 
         new_invokation_id = get_job_type_replacement(fold, f"dock_{ligand_name}")
 

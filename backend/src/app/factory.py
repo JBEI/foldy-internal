@@ -56,12 +56,13 @@ def register_extensions(app: Flask) -> None:
     """
 
     class VerifiedModelView(ModelView):
-        def is_accessible(self) -> bool:
+        def is_accessible(self):  # pyright: ignore[reportIncompatibleMethodOverride]
             """Checks if the current user has access to this admin view.
 
             Returns:
                 bool: True if user has edit access, False otherwise
             """
+            # TODO(jbr): Base class expects Literal[True] but we need conditional access
             verify_jwt_in_request()
             result: bool = user_jwt_grants_edit_access(get_jwt()["user_claims"])
             return result
@@ -110,6 +111,7 @@ def register_extensions(app: Flask) -> None:
             }
         }
 
+        @staticmethod
         def _sequence_formatter(view: Any, context: Any, model: models.Fold, name: str) -> Markup:
             """Format sequence field for display in admin view.
 
@@ -291,7 +293,7 @@ def create_app(config_object: str = "settings") -> Flask:
             Tuple containing error response dictionary and HTTP status code
         """
         # Found here: https://newbedev.com/python-flask-json-error-message-format-code-example
-        if hasattr(error, "description"):
+        if isinstance(error, BadRequest):
             message = str(error.description)
         else:
             message = str(error)

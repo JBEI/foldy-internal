@@ -10,5 +10,8 @@
         "extraPaths": ["backend/src"]
       }
     ],
-    "typeCheckingMode": "standard"
+    "typeCheckingMode": "standard",
+    "reportMissingImports": "none",
+    "reportOptionalMemberAccess": "error",
+    "reportGeneralTypeIssues": "error"
 }

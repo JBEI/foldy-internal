@@ -13,7 +13,6 @@ from sqlalchemy.orm import deferred
 from app.database import Column, PkModel, db, reference_col, relationship
 
 
-# pyright: ignore[reportCallIssue]
 class Invokation(PkModel):
     """A single invokation of a command and its results."""
 
@@ -31,10 +30,12 @@ class Invokation(PkModel):
     log = deferred(Column(db.Text, nullable=True))
 
     def __init__(self, fold_id: int, type: str, state: str) -> None:
-        super().__init__(fold_id=fold_id, type=type, state=state)  # pyright: ignore
+        super().__init__()
+        self.fold_id = fold_id
+        self.type = type
+        self.state = state
 
 
-# pyright: ignore[reportCallIssue]
 class User(PkModel):
     """A user of the app."""
 
@@ -54,7 +55,9 @@ class User(PkModel):
 
     def __init__(self, email: str, access_type: str) -> None:
         """Create a new user."""
-        super().__init__(email=email, access_type=access_type)
+        super().__init__()
+        self.email = email
+        self.access_type = access_type
 
     def __repr__(self) -> str:
         return f"{self.email}"
@@ -65,7 +68,6 @@ class User(PkModel):
         return count
 
 
-# pyright: ignore[reportCallIssue]
 class Fold(PkModel):
     """A protein fold."""
 
@@ -145,7 +147,6 @@ class Fold(PkModel):
         return result
 
 
-# pyright: ignore[reportCallIssue]
 class Dock(PkModel):
     """A docking run."""
 
@@ -177,8 +178,26 @@ class Dock(PkModel):
     # Diffdock output - a CSV of pose confidences.
     pose_confidences = Column(db.String, nullable=True)
 
+    def __init__(
+        self,
+        ligand_name: str,
+        ligand_smiles: str,
+        tool: str,
+        receptor_fold_id: int,
+        invokation_id: int,
+        bounding_box_residue: Optional[str] = None,
+        bounding_box_radius_angstrom: Optional[float] = None,
+    ) -> None:
+        super().__init__()
+        self.ligand_name = ligand_name
+        self.ligand_smiles = ligand_smiles
+        self.tool = tool
+        self.receptor_fold_id = receptor_fold_id
+        self.invokation_id = invokation_id
+        self.bounding_box_residue = bounding_box_residue
+        self.bounding_box_radius_angstrom = bounding_box_radius_angstrom
 
-# pyright: ignore[reportCallIssue]
+
 class Logit(PkModel):
     """A logit run."""
 
@@ -199,7 +218,6 @@ class Logit(PkModel):
     )
 
 
-# pyright: ignore[reportCallIssue]
 class Embedding(PkModel):
     """An embedding run."""
 
@@ -223,7 +241,6 @@ class Embedding(PkModel):
     )
 
 
-# pyright: ignore[reportCallIssue]
 class Evolution(PkModel):
     """A single evolution of a fold."""
 

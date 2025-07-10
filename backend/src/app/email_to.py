@@ -1,6 +1,6 @@
 """Copied from the email_to package, for adding ssl support."""
 
-from __future__ import absolute_import
+from __future__ import absolute_import, annotations
 
 # -*- coding: utf-8 -*-
 
@@ -8,6 +8,7 @@ from __future__ import absolute_import
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from typing import TYPE_CHECKING, Optional
 
 import markdown
 import premailer
@@ -38,7 +39,7 @@ class Message(object):
                 body = [body]
             self.body = body
         self.style = style
-        self.server = server
+        self.server: Optional[EmailServer] = server
 
     def add(self, line):
         """Adds a new Markdown formatted line to the current email body"""
@@ -76,6 +77,7 @@ class Message(object):
             subject (str): Subject line of email to send
 
         """
+        assert self.server is not None, "Email server not configured"
         self.server.send_message(self, send_to, subject)
 
 
@@ -94,16 +96,17 @@ class EmailServer(object):
         self.port = port
         self.email_address = email
         self.password = password
-        self.server = None
+        self._smtp_server: Optional[smtplib.SMTP] = None
 
     def _login(self):
-        # self.server = smtplib.SMTP_SSL(self.url, self.port)
-        self.server = smtplib.SMTP(self.url, self.port)
-        self.server.starttls()
-        self.server.login(self.email_address, self.password)
+        # self._smtp_server = smtplib.SMTP_SSL(self.url, self.port)
+        self._smtp_server = smtplib.SMTP(self.url, self.port)
+        self._smtp_server.starttls()
+        self._smtp_server.login(self.email_address, self.password)
 
     def _logout(self):
-        self.server.quit()
+        assert self._smtp_server is not None, "SMTP server not connected"
+        self._smtp_server.quit()
 
     def quick_email(self, send_to, subject, body, style=None):
         """Compose and send an email in a single call
@@ -135,7 +138,8 @@ class EmailServer(object):
         message["Subject"] = subject
 
         self._login()
-        self.server.sendmail(self.email_address, send_to, message.as_string())
+        assert self._smtp_server is not None, "SMTP server not connected"
+        self._smtp_server.sendmail(self.email_address, send_to, message.as_string())
         self._logout()
 
     def message(self, body=None, style=None):
