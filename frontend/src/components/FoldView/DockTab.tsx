@@ -1,20 +1,12 @@
 import fileDownload from "js-file-download";
 import React, { useMemo, useState } from "react";
-import {
-    FaChevronLeft,
-    FaChevronRight,
-    FaClock,
-    FaDownload,
-    FaEye,
-    FaFrownOpen,
-    FaRedo,
-    FaTrash,
-} from "react-icons/fa";
+import { Button, Space, Tooltip } from 'antd';
+import { LeftOutlined, RightOutlined, ClockCircleOutlined, DownloadOutlined, EyeOutlined, FrownOutlined, RedoOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { getDockSdf, postDock } from "../../api/dockApi";
-import { NewDockPrompt } from "../../util/newDockPrompt";
 import { Dock, Invokation, DockInput } from "../../types/types";
 import { notify } from "../../services/NotificationService";
-import { TabContainer, DescriptionSection, TableSection, CollapsibleSection, ResponsiveTable } from "../../util/tabComponents";
+import { TabContainer, DescriptionSection, TableSection, ResponsiveTable } from "../../util/tabComponents";
+import { DockModal } from "../shared/DockModal";
 
 interface DockTabProps {
     foldId: number;
@@ -41,7 +33,7 @@ const DockTab = React.memo((props: DockTabProps) => {
         key: "ligand_name",
         direction: "ascending",
     });
-    const [showDockForm, setShowDockForm] = useState(false);
+    const [showDockModal, setShowDockModal] = useState(false);
 
     const getDockState = (dock: Dock, jobs: Invokation[] | null) => {
         if (!jobs) return "queued";
@@ -147,7 +139,18 @@ const DockTab = React.memo((props: DockTabProps) => {
             </DescriptionSection>
 
             {/* Docking Results Table */}
-            <TableSection title="Docking Results">
+            <TableSection
+                title="Docking Runs"
+                extra={
+                    <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={() => setShowDockModal(true)}
+                    >
+                        New
+                    </Button>
+                }
+            >
                 <ResponsiveTable>
                     <thead>
                         <tr>
@@ -195,45 +198,72 @@ const DockTab = React.memo((props: DockTabProps) => {
                                     </span>
                                 </td>
                                 <td>
-                                    {getDockState(dock, props.jobs) === "queued" ||
-                                        getDockState(dock, props.jobs) === "running" ? (
-                                        <FaClock
-                                            uk-tooltip={`Docking is currently ${getDockState(dock, props.jobs)}`}
-                                        />
-                                    ) : getDockState(dock, props.jobs) === "failed" ? (
-                                        <FaFrownOpen
-                                            uk-tooltip="Docking failed. Consider rerunning this docking job."
-                                        />
-                                    ) : (
-                                        <FaEye
-                                            uk-tooltip="View this ligand's pose in the visualization pane."
-                                            onClick={() => props.displayLigandPose(dock.ligand_name)}
-                                        />
-                                    )}
-                                    {props.displayedLigandNames.includes(dock.ligand_name) && (
-                                        <span>
-                                            <FaChevronLeft
-                                                uk-tooltip="View the previous pose prediction for this ligand."
-                                                onClick={() => props.shiftFrame(dock.ligand_name, -1)}
+                                    <Space>
+                                        {getDockState(dock, props.jobs) === "queued" ||
+                                            getDockState(dock, props.jobs) === "running" ? (
+                                            <Tooltip title={`Docking is currently ${getDockState(dock, props.jobs)}`}>
+                                                <Button type="text" icon={<ClockCircleOutlined />} size="small" />
+                                            </Tooltip>
+                                        ) : getDockState(dock, props.jobs) === "failed" ? (
+                                            <Tooltip title="Docking failed. Consider rerunning this docking job.">
+                                                <Button type="text" icon={<FrownOutlined />} size="small" />
+                                            </Tooltip>
+                                        ) : (
+                                            <Tooltip title="View this ligand's pose in the visualization pane.">
+                                                <Button
+                                                    type="text"
+                                                    icon={<EyeOutlined />}
+                                                    size="small"
+                                                    onClick={() => props.displayLigandPose(dock.ligand_name)}
+                                                />
+                                            </Tooltip>
+                                        )}
+                                        {props.displayedLigandNames.includes(dock.ligand_name) && (
+                                            <>
+                                                <Tooltip title="View the previous pose prediction for this ligand.">
+                                                    <Button
+                                                        type="text"
+                                                        icon={<LeftOutlined />}
+                                                        size="small"
+                                                        onClick={() => props.shiftFrame(dock.ligand_name, -1)}
+                                                    />
+                                                </Tooltip>
+                                                <Tooltip title="View the next pose prediction for this ligand.">
+                                                    <Button
+                                                        type="text"
+                                                        icon={<RightOutlined />}
+                                                        size="small"
+                                                        onClick={() => props.shiftFrame(dock.ligand_name, 1)}
+                                                    />
+                                                </Tooltip>
+                                            </>
+                                        )}
+                                        <Tooltip title="Delete this docking result.">
+                                            <Button
+                                                type="text"
+                                                icon={<DeleteOutlined />}
+                                                size="small"
+                                                danger
+                                                onClick={() => props.deleteLigandPose(dock.id, dock.ligand_name)}
                                             />
-                                            <FaChevronRight
-                                                uk-tooltip="View the next pose prediction for this ligand."
-                                                onClick={() => props.shiftFrame(dock.ligand_name, 1)}
+                                        </Tooltip>
+                                        <Tooltip title="Rerun this docking job.">
+                                            <Button
+                                                type="text"
+                                                icon={<RedoOutlined />}
+                                                size="small"
+                                                onClick={() => rerunDock(dock)}
                                             />
-                                        </span>
-                                    )}
-                                    <FaTrash
-                                        uk-tooltip="Delete this docking result."
-                                        onClick={() => props.deleteLigandPose(dock.id, dock.ligand_name)}
-                                    />
-                                    <FaRedo
-                                        uk-tooltip="Rerun this docking job."
-                                        onClick={() => rerunDock(dock)}
-                                    />
-                                    <FaDownload
-                                        uk-tooltip="Download the SDF file for this ligand pose."
-                                        onClick={() => downloadLigandPose(dock.ligand_name)}
-                                    />
+                                        </Tooltip>
+                                        <Tooltip title="Download the SDF file for this ligand pose.">
+                                            <Button
+                                                type="text"
+                                                icon={<DownloadOutlined />}
+                                                size="small"
+                                                onClick={() => downloadLigandPose(dock.ligand_name)}
+                                            />
+                                        </Tooltip>
+                                    </Space>
                                 </td>
                             </tr>
                         ))}
@@ -241,19 +271,16 @@ const DockTab = React.memo((props: DockTabProps) => {
                 </ResponsiveTable>
             </TableSection>
 
-            {/* Collapsible Dock New Ligands Section */}
-            <CollapsibleSection
+            {/* Dock Modal */}
+            <DockModal
+                open={showDockModal}
+                onClose={() => setShowDockModal(false)}
+                foldIds={[props.foldId]}
+                existingLigands={{
+                    [props.foldId]: (props.docks || []).map((dock) => dock.ligand_name),
+                }}
                 title="Dock New Ligands"
-                isOpen={showDockForm}
-                onToggle={() => setShowDockForm(!showDockForm)}
-            >
-                <NewDockPrompt
-                    foldIds={[props.foldId]}
-                    existingLigands={{
-                        [props.foldId]: (props.docks || []).map((dock) => dock.ligand_name),
-                    }}
-                />
-            </CollapsibleSection>
+            />
         </TabContainer>
     );
 });

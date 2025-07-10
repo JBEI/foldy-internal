@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import UIkit from "uikit";
 import {
     addInvokationToAllJobs,
     bulkAddTag,
@@ -15,6 +14,29 @@ import {
     upgradeDbs,
 } from "../../api/adminApi";
 import { notify } from '../../services/NotificationService';
+import {
+    Card,
+    Button,
+    Input,
+    Typography,
+    Row,
+    Col,
+    Space,
+    Alert,
+    Divider,
+    Form
+} from 'antd';
+import {
+    DatabaseOutlined,
+    PlayCircleOutlined,
+    StopOutlined,
+    MailOutlined,
+    SettingOutlined,
+    DeleteOutlined,
+    TagOutlined
+} from '@ant-design/icons';
+
+const { Title, Text } = Typography;
 
 function SudoPage() {
     const [revision, setRevision] = useState<string>("");
@@ -179,282 +201,267 @@ function SudoPage() {
     };
 
     return (
-        <form
+        <div
             data-testid="Workers"
-            className="uk-margin-left uk-margin-right uk-form-horizontal"
             style={{
                 flexGrow: 1,
-                overflowY: "scroll",
-                paddingTop: "10px",
-                paddingBottom: "10px",
+                overflowY: "auto",
+                padding: "16px",
+                backgroundColor: "#f5f5f5"
             }}
         >
-            <h3>Create the DBs</h3>
-            <button
-                type="button"
-                className="uk-button uk-button-default"
-                onClick={localCreateDbs}
-            >
-                Create DBs
-            </button>
-            <br />
+            <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
+                <Title level={3} style={{ textAlign: "center", marginBottom: "16px" }}>
+                    <SettingOutlined /> Admin Control Panel
+                </Title>
 
-            <h3>Upgrade the DBs</h3>
-            <button
-                type="button"
-                className="uk-button uk-button-default"
-                onClick={localUpgradeDbs}
-            >
-                Upgrade DBs
-            </button>
-            <br />
-
-            <h3>Stamp DBs</h3>
-            <label className="uk-form-label" htmlFor="name">
-                Revision
-            </label>
-            <div className="uk-form-controls">
-                <input
-                    className="uk-input"
-                    type="text"
-                    placeholder="Name"
-                    id="name"
-                    value={revision}
-                    onChange={(e) => setRevision(e.target.value)}
+                <Alert
+                    message="Use these controls carefully - all actions affect production data"
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: "16px" }}
+                    banner
                 />
+
+                <Row gutter={[16, 16]}>
+                    {/* Database Management */}
+                    <Col xs={24} lg={8}>
+                        <Card
+                            title={<><DatabaseOutlined /> Database</>}
+                            size="small"
+                        >
+                            <Space direction="vertical" style={{ width: "100%" }} size="small">
+                                <Button
+                                    type="primary"
+                                    onClick={localCreateDbs}
+                                    icon={<DatabaseOutlined />}
+                                    block
+                                    size="small"
+                                >
+                                    Create DBs
+                                </Button>
+
+                                <Button
+                                    type="primary"
+                                    onClick={localUpgradeDbs}
+                                    icon={<DatabaseOutlined />}
+                                    block
+                                    size="small"
+                                >
+                                    Upgrade DBs
+                                </Button>
+
+                                <Input
+                                    placeholder="Revision number"
+                                    value={revision}
+                                    onChange={(e) => setRevision(e.target.value)}
+                                    size="small"
+                                />
+                                <Button
+                                    type="primary"
+                                    onClick={localStampDbs}
+                                    disabled={!revision}
+                                    icon={<DatabaseOutlined />}
+                                    block
+                                    size="small"
+                                >
+                                    Stamp Revision
+                                </Button>
+                            </Space>
+                        </Card>
+                    </Col>
+
+                    {/* Job Management */}
+                    <Col xs={24} lg={8}>
+                        <Card
+                            title={<><PlayCircleOutlined /> Jobs</>}
+                            size="small"
+                        >
+                            <Space direction="vertical" style={{ width: "100%" }} size="small">
+                                <Input
+                                    placeholder="Queue name"
+                                    value={newJobQueue}
+                                    onChange={(e) => setNewJobQueue(e.target.value)}
+                                    size="small"
+                                />
+                                <Button
+                                    type="primary"
+                                    onClick={localQueueJob}
+                                    disabled={!newJobQueue}
+                                    icon={<PlayCircleOutlined />}
+                                    block
+                                    size="small"
+                                >
+                                    Queue Job
+                                </Button>
+
+                                <Input
+                                    placeholder="Queue to clear"
+                                    value={queueToClear}
+                                    onChange={(e) => setQueueToClear(e.target.value)}
+                                    size="small"
+                                />
+                                <Button
+                                    type="primary"
+                                    danger
+                                    onClick={localRemoveFailedJobs}
+                                    disabled={!queueToClear}
+                                    icon={<DeleteOutlined />}
+                                    block
+                                    size="small"
+                                >
+                                    Remove Failed Jobs
+                                </Button>
+
+                                <Input
+                                    placeholder="Stage name"
+                                    value={stageToRun || ""}
+                                    onChange={(e) => setStageToRun(e.target.value)}
+                                    size="small"
+                                />
+                                <Button
+                                    type="primary"
+                                    onClick={localRunUnrunStages}
+                                    disabled={!stageToRun}
+                                    icon={<PlayCircleOutlined />}
+                                    block
+                                    size="small"
+                                >
+                                    Run Stages
+                                </Button>
+                            </Space>
+                        </Card>
+                    </Col>
+
+                    {/* Worker Management */}
+                    <Col xs={24} lg={8}>
+                        <Card
+                            title={<><StopOutlined /> Workers</>}
+                            size="small"
+                        >
+                            <Space direction="vertical" style={{ width: "100%" }} size="small">
+                                <Input
+                                    placeholder="Worker name"
+                                    value={workerToKill}
+                                    onChange={(e) => setWorkerToKill(e.target.value)}
+                                    size="small"
+                                />
+                                <Button
+                                    type="primary"
+                                    danger
+                                    onClick={localKillWorker}
+                                    disabled={!workerToKill}
+                                    icon={<StopOutlined />}
+                                    block
+                                    size="small"
+                                >
+                                    Kill Worker
+                                </Button>
+
+                                <Input
+                                    placeholder="Job type"
+                                    value={newInvokationType || ""}
+                                    onChange={(e) => setNewInvokationType(e.target.value)}
+                                    size="small"
+                                />
+                                <Input
+                                    placeholder="Job state"
+                                    value={newInvokationState || ""}
+                                    onChange={(e) => setNewInvokationState(e.target.value)}
+                                    size="small"
+                                />
+                                <Button
+                                    type="primary"
+                                    onClick={localAddInvokationToAllJobs}
+                                    disabled={!newInvokationType || !newInvokationState}
+                                    icon={<PlayCircleOutlined />}
+                                    block
+                                    size="small"
+                                >
+                                    Add Jobs to All Folds
+                                </Button>
+                            </Space>
+                        </Card>
+                    </Col>
+
+                    {/* Fold Management */}
+                    <Col xs={24} lg={8}>
+                        <Card
+                            title={<><TagOutlined /> Folds</>}
+                            size="small"
+                        >
+                            <Space direction="vertical" style={{ width: "100%" }} size="small">
+                                <Button
+                                    type="primary"
+                                    onClick={localSetAllUnsetModelPresets}
+                                    icon={<SettingOutlined />}
+                                    block
+                                    size="small"
+                                >
+                                    Set Model Presets
+                                </Button>
+
+                                <Input
+                                    placeholder="Range (e.g., '10-60')"
+                                    value={foldsToKill || ""}
+                                    onChange={(e) => setFoldsToKill(e.target.value)}
+                                    size="small"
+                                />
+                                <Button
+                                    type="primary"
+                                    danger
+                                    onClick={localKillFoldsInRange}
+                                    disabled={!foldsToKill}
+                                    icon={<DeleteOutlined />}
+                                    block
+                                    size="small"
+                                >
+                                    Kill Folds
+                                </Button>
+
+                                <Input
+                                    placeholder="Fold range (e.g., '10-60')"
+                                    value={foldsToBulkAddTag || ""}
+                                    onChange={(e) => setFoldsToBulkAddTag(e.target.value)}
+                                    size="small"
+                                />
+                                <Input
+                                    placeholder="Tag name"
+                                    value={tagToBulkAdd || ""}
+                                    onChange={(e) => setTagToBulkAdd(e.target.value)}
+                                    size="small"
+                                />
+                                <Button
+                                    type="primary"
+                                    onClick={localBulkAddTag}
+                                    disabled={!foldsToBulkAddTag || !tagToBulkAdd}
+                                    icon={<TagOutlined />}
+                                    block
+                                    size="small"
+                                >
+                                    Bulk Add Tags
+                                </Button>
+                            </Space>
+                        </Card>
+                    </Col>
+
+                    {/* System Management */}
+                    <Col xs={24} lg={8}>
+                        <Card title={<><MailOutlined /> System</>} size="small">
+                            <Button
+                                type="primary"
+                                onClick={localSendEmail}
+                                icon={<MailOutlined />}
+                                block
+                                size="small"
+                            >
+                                Send Test Email
+                            </Button>
+                        </Card>
+                    </Col>
+                </Row>
             </div>
-            <button
-                type="button"
-                className="uk-button uk-button-default uk-margin-small"
-                onClick={localStampDbs}
-            >
-                Stamp Revision on DBs
-            </button>
-
-            <br />
-            <h3>Queue a Job</h3>
-            <div className="uk-margin-small">
-                <label className="uk-form-label" htmlFor="name">
-                    Queue Name
-                </label>
-                <div className="uk-form-controls">
-                    <input
-                        className="uk-input"
-                        type="text"
-                        placeholder="Name"
-                        id="name"
-                        value={newJobQueue}
-                        onChange={(e) => setNewJobQueue(e.target.value)}
-                    />
-                </div>
-            </div>
-
-            <button
-                type="button"
-                className="uk-button uk-button-default"
-                onClick={localQueueJob}
-            >
-                Queue Job
-            </button>
-
-            <br />
-            <h3>Remove Failed Jobs</h3>
-            <div className="uk-margin-small">
-                <label className="uk-form-label" htmlFor="name">
-                    Queue Name
-                </label>
-                <div className="uk-form-controls">
-                    <input
-                        className="uk-input"
-                        type="text"
-                        placeholder="Name"
-                        id="name"
-                        value={queueToClear}
-                        onChange={(e) => setQueueToClear(e.target.value)}
-                    />
-                </div>
-            </div>
-            <button
-                type="button"
-                className="uk-button uk-button-default"
-                onClick={localRemoveFailedJobs}
-            >
-                Remove Failed Jobs
-            </button>
-
-            <br />
-            <h3>Kill Worker</h3>
-            <div className="uk-margin-small">
-                <label className="uk-form-label" htmlFor="name">
-                    Worker Name
-                </label>
-                <div className="uk-form-controls">
-                    <input
-                        className="uk-input"
-                        type="text"
-                        placeholder="Name"
-                        id="name"
-                        value={workerToKill}
-                        onChange={(e) => setWorkerToKill(e.target.value)}
-                    />
-                </div>
-            </div>
-            <button
-                type="button"
-                className="uk-button uk-button-default"
-                onClick={localKillWorker}
-            >
-                Kill Worker
-            </button>
-
-            <br />
-            <h3>Send test email</h3>
-            <button
-                type="button"
-                className="uk-button uk-button-default"
-                onClick={localSendEmail}
-            >
-                Send Email
-            </button>
-
-            <br />
-            <h3>Add Invokation To All Folds</h3>
-            <div className="uk-margin-small">
-                <label className="uk-form-label" htmlFor="name">
-                    Job Type
-                </label>
-                <div className="uk-form-controls">
-                    <input
-                        className="uk-input"
-                        type="text"
-                        placeholder="Name"
-                        id="name"
-                        value={newInvokationType || ""}
-                        onChange={(e) => setNewInvokationType(e.target.value)}
-                    />
-                </div>
-                <label className="uk-form-label" htmlFor="name">
-                    Job State
-                </label>
-                <div className="uk-form-controls">
-                    <input
-                        className="uk-input"
-                        type="text"
-                        placeholder="Name"
-                        id="name"
-                        value={newInvokationState || ""}
-                        onChange={(e) => setNewInvokationState(e.target.value)}
-                    />
-                </div>
-            </div>
-            <button
-                type="button"
-                className="uk-button uk-button-default"
-                onClick={localAddInvokationToAllJobs}
-            >
-                add invokation to all jobs
-            </button>
-
-            <br />
-            <h3>Run Unrun (or failed) Stages</h3>
-            <div className="uk-margin-small">
-                <label className="uk-form-label" htmlFor="name">
-                    Stage Name
-                </label>
-                <div className="uk-form-controls">
-                    <input
-                        className="uk-input"
-                        type="text"
-                        placeholder="Name"
-                        id="name"
-                        value={stageToRun || ""}
-                        onChange={(e) => setStageToRun(e.target.value)}
-                    />
-                </div>
-            </div>
-            <button
-                type="button"
-                className="uk-button uk-button-default"
-                onClick={localRunUnrunStages}
-            >
-                run stage for all folds without that stage
-            </button>
-
-            <br />
-            <h3>Set All Unset Model Presets</h3>
-            <button
-                type="button"
-                className="uk-button uk-button-default"
-                onClick={localSetAllUnsetModelPresets}
-            >
-                Set All Unset Model Presets
-            </button>
-
-            <br />
-            <h3>Kill Folds in Range</h3>
-            <div className="uk-margin-small">
-                <label className="uk-form-label" htmlFor="name">
-                    Range of Folds
-                </label>
-                <div className="uk-form-controls">
-                    <input
-                        className="uk-input"
-                        type="text"
-                        placeholder="Range of folds to kill (eg, '10-60')"
-                        id="name"
-                        value={foldsToKill || ""}
-                        onChange={(e) => setFoldsToKill(e.target.value)}
-                    />
-                </div>
-            </div>
-            <button
-                type="button"
-                className="uk-button uk-button-default"
-                onClick={localKillFoldsInRange}
-            >
-                kill folds in range
-            </button>
-
-            <br />
-            <h3>Bulk Add Tag To Folds in Range</h3>
-            <div className="uk-margin-small">
-                <label className="uk-form-label" htmlFor="name">
-                    Range of Folds
-                </label>
-                <div className="uk-form-controls">
-                    <input
-                        className="uk-input"
-                        type="text"
-                        placeholder="Range of folds (eg, '10-60')"
-                        id="name"
-                        value={foldsToBulkAddTag || ""}
-                        onChange={(e) => setFoldsToBulkAddTag(e.target.value)}
-                    />
-                </div>
-            </div>
-            <div className="uk-margin-small">
-                <label className="uk-form-label" htmlFor="name">
-                    Tag to Add
-                </label>
-                <div className="uk-form-controls">
-                    <input
-                        className="uk-input"
-                        type="text"
-                        placeholder="Tag to add (must be alphanumeric)"
-                        id="name"
-                        value={tagToBulkAdd || ""}
-                        onChange={(e) => setTagToBulkAdd(e.target.value)}
-                    />
-                </div>
-            </div>
-            <button
-                type="button"
-                className="uk-button uk-button-default"
-                onClick={localBulkAddTag}
-            >
-                bulk add tag
-            </button>
-        </form>
+        </div>
     );
 }
 

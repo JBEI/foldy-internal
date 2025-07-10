@@ -15,7 +15,7 @@ import Plot from 'react-plotly.js';
 import { TabContainer, DescriptionSection, TableSection, CollapsibleSection, FormRow, FormField, ButtonGroup, ResponsiveTable } from '../../util/tabComponents';
 import { TextInputControl, TextAreaControl, SelectControl, FileUploadControl, MultiSelectControl, NumberInputControl } from '../../util/controlComponents';
 import { DataTableContainer, PlotContainer } from '../../util/plotComponents';
-import { Row, Col, Form, Input, Select, Upload, Button as AntButton, Card, Divider, InputNumber, Alert, Modal, Typography } from 'antd';
+import { Row, Col, Form, Input, Select, Upload, Button as AntButton, Card, Divider, InputNumber, Alert, Modal, Typography, Spin } from 'antd';
 import { UploadOutlined, PlayCircleOutlined, InfoCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 
 const { Text, Paragraph, Title } = Typography;
@@ -186,8 +186,8 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
     sortOptions,
 }) => {
     if (!predictedMutantCsvData) {
-        return <div className="uk-text-center">
-            <div uk-spinner="ratio: 4"></div>
+        return <div style={{ textAlign: 'center', padding: '60px 0' }}>
+            <Spin size="large" />
         </div>;
     }
 
@@ -370,6 +370,7 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
         if (configHelper.getProteinSequences().length > 1) {
             notify.error('Cannot currently highlight residues on multimers.');
         }
+        let chainId = configHelper.getProteinSequences()[0][0];
 
         const uniqueLociToHighlight = seqIdListToLociList(tableData.map(row => row.seqId));
 
@@ -378,7 +379,7 @@ const PredictedMutantTable: React.FC<PredictedMutantTableProps> = ({
         const selection = uniqueLociToHighlight.map(locus => {
             const color = specialSelectedLoci.includes(locus) ? "#FFD700" : "#39f";
             return {
-                struct_asym_id: 'A',
+                struct_asym_id: chainId,
                 start_residue_number: locus,
                 end_residue_number: locus,
                 color: color,
@@ -822,6 +823,7 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
 
     const rerunEvolution = async (evolution: Evolution) => {
         notify.info(`Repopulating "New Evolution Run" with parameters from ${evolution.name}. Make sure to add the activity file, you can download the previous one from Files tab.`);
+        setNumMutants(evolution.num_mutants);
         setEvolutionName(evolution.name);
         setMode(evolution.mode);
         setActivityFileSource('evolution');

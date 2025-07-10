@@ -17,44 +17,6 @@ from app.helpers.jobs_util import (
 from app.models import Fold, Invokation
 
 
-def cif_to_pdb(cif_file: str, structure_id: str) -> str:
-    """
-    Convert mmCIF file to PDB format.
-    If any chain IDs are longer than one character, all chains are
-    renamed sequentially to single-letter IDs (A, B, C…).
-
-    Parameters
-    ----------
-    cif_file : str
-        Path to the input mmCIF file.
-    structure_id : str
-        Identifier to assign to the structure.
-
-    Returns
-    -------
-    str
-        PDB file contents.
-    """
-    parser = MMCIFParser(QUIET=True)
-    structure = parser.get_structure(structure_id, cif_file)
-
-    # Detect whether any chain needs shortening
-    needs_collapse = any(len(ch.id) != 1 for ch in structure.get_chains())
-
-    if needs_collapse:
-        id_pool = iter(string.ascii_uppercase)     # A, B, C, …
-        for chain in structure.get_chains():
-            chain.id = next(id_pool, chain.id[:1])  # fallback to first char if we run out
-
-    pdb_io = PDBIO()
-    pdb_io.set_structure(structure)
-
-    pdb_file_contents = io.StringIO()
-    pdb_io.save(pdb_file_contents)
-    pdb_file_contents.seek(0)
-    return pdb_file_contents.read()
-
-
 def try_check_smiles_string_validity(smiles_string):
     """Try to check if a smiles string is valid."""
     try:
@@ -140,6 +102,7 @@ def run_boltz(fold_id, invokation_id):
                 "/hf-cache/",
                 "--num_workers",
                 "0",  # Should this be 1 or 0? 1 seems to work ok, but zero doesnt spin up any workers (a behavior which seems to cause a "pin memory" issue for foldy-in-a-box).
+                "--use_potentials",
                 "--write_full_pae",
                 "--write_full_pde",
             ]
@@ -168,20 +131,18 @@ def run_boltz(fold_id, invokation_id):
             # Use glob to find all files matching the pattern
             cif_files = list(Path(temp_dir).glob("boltz_results*/predictions/*/*_model_0.cif"))
             logging.info(f"Found {len(cif_files)} cif files: {cif_files}")
-            if len(cif_files) > 0:
-                cif_file = cif_files[0]
-                logging.info(f"Copying {cif_file} to ranked_0.pdb/cif")
+            if len(cif_files) == 0:
+                logging.error(f"No CIF files found in {temp_dir}")
+                raise BadRequest(f"No CIF files found in {temp_dir}")
 
-                try:
-                    fsm.storage_manager.write_file(fold_id, 'ranked_0.cif', cif_file.read_text())
-                except Exception as e:
-                    logging.error(f"Error writing CIF to cif: {e}")
-                    raise e
+            cif_file = cif_files[0]
+            logging.info(f"Copying {cif_file} to ranked_0.cif")
 
-                try:
-                    pdb_file_contents = cif_to_pdb(str(cif_file), "structure")
-                    fsm.storage_manager.write_file(fold_id, "ranked_0.pdb", pdb_file_contents)
-                except Exception as e:
-                    logging.error(f"Error converting CIF to PDB: {e}")
-                    raise e
+            try:
+                fsm.storage_manager.write_file(fold_id, "ranked_0.cif", cif_file.read_text())
+            except Exception as e:
+                logging.error(f"Error writing CIF to cif: {e}")
+                raise e
+
+            logging.info("We no longer convert CIF to PDB. In this case, CIF format is superior!!!")
             logging.info(f"Finished!")

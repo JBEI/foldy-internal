@@ -28,7 +28,7 @@ def recursive_cleanup(obj):
             obj = obj.detach().cpu()
         return None  # Return None to indicate this should be deleted
 
-    elif hasattr(obj, '__dict__'):
+    elif hasattr(obj, "__dict__"):
         # For objects with attributes
         for attr_name, attr_value in list(obj.__dict__.items()):
             result = recursive_cleanup(attr_value)
@@ -91,7 +91,7 @@ class FoldyESMClient(ABC):
     def embed(
         self,
         sequence_or_complex: SequenceOrComplexType,
-        pdb_file_path: Optional[str] = None,
+        cif_file_path: Optional[str] = None,
         extra_layers: List[int] = [],
     ) -> List[List[float]]:
         """
@@ -100,7 +100,7 @@ class FoldyESMClient(ABC):
         Args:
             sequence_or_complex: Either a protein sequence string or a list of
                                 (chain_id, sequence) tuples for complexes
-            pdb_file_path: Optional path to a PDB file for structure-aware models
+            cif_file_path: Optional path to a CIF file for structure-aware models
 
         Returns:
             A list of list of floats representing embedding vectors for extra_layers, and the final layer.
@@ -109,7 +109,7 @@ class FoldyESMClient(ABC):
 
     @abstractmethod
     def get_logits(
-        self, sequence_or_complex: SequenceOrComplexType, pdb_file_path: Optional[str] = None
+        self, sequence_or_complex: SequenceOrComplexType, cif_file_path: Optional[str] = None
     ) -> pd.DataFrame:
         """
         Get logits for a protein sequence or complex.
@@ -117,7 +117,7 @@ class FoldyESMClient(ABC):
         Args:
             sequence_or_complex: Either a protein sequence string or a list of
                                 (chain_id, sequence) tuples for complexes
-            pdb_file_path: Optional path to a PDB file for structure-aware models
+            cif_file_path: Optional path to a CIF file for structure-aware models
 
         Returns:
             A pandas DataFrame with sequence logits in melted format with
@@ -151,51 +151,51 @@ class FoldyESMCClient(FoldyESMClient):
         self.device = device
 
     def _get_esm_protein_tensor_for_sequence(
-        self, sequence: str, pdb_file_path: Optional[str] = None
+        self, sequence: str, cif_file_path: Optional[str] = None
     ) -> Any:  # -> torch.Tensor (use Any to avoid torch import)
         """
         Create an ESM protein tensor from a sequence.
 
         Args:
             sequence: Protein sequence string
-            pdb_file_path: Not supported for ESM-C
+            cif_file_path: Not supported for ESM-C
 
         Returns:
             Tensor representation of the protein
 
         Raises:
-            ValueError: If pdb_file_path is provided (not supported)
+            ValueError: If cif_file_path is provided (not supported)
         """
         from esm.sdk.api import ESMProtein, LogitsConfig
 
-        if pdb_file_path:
-            raise ValueError("ESM-C does not support PDB-based embeddings")
+        if cif_file_path:
+            raise ValueError("ESM-C does not support CIF or PDB-based embeddings")
         protein = ESMProtein(sequence=sequence)
 
         return self.client.encode(protein)
 
     def _get_esm_protein_tensor_for_complex(
-        self, complex_input: ComplexType, pdb_file_path: Optional[str] = None
+        self, complex_input: ComplexType, cif_file_path: Optional[str] = None
     ) -> Any:  # -> torch.Tensor (use Any to avoid torch import)
         """
         Create an ESM protein tensor from a protein complex.
 
         Args:
             complex_input: List of (chain_id, sequence) tuples
-            pdb_file_path: Not supported for ESM-C
+            cif_file_path: Not supported for ESM-C
 
         Returns:
             Tensor representation of the protein complex
 
         Raises:
-            ValueError: If pdb_file_path is provided (not supported)
+            ValueError: If cif_file_path is provided (not supported)
         """
         from esm.sdk.api import ESMProtein, LogitsConfig
         from esm.utils.structure.protein_chain import ProteinChain
         from esm.utils.structure.protein_complex import ProteinComplex
 
-        if pdb_file_path:
-            raise ValueError("ESM-C does not support PDB-based embeddings")
+        if cif_file_path:
+            raise ValueError("ESM-C does not support CIF or PDB-based embeddings")
 
         chains = [
             ProteinChain(chain_id=chain_id, sequence=sequence)
@@ -209,7 +209,7 @@ class FoldyESMCClient(FoldyESMClient):
     def embed(
         self,
         sequence_or_complex: SequenceOrComplexType,
-        pdb_file_path: Optional[str] = None,
+        cif_file_path: Optional[str] = None,
         extra_layers: List[int] = [],
     ) -> List[List[float]]:
         """
@@ -218,7 +218,7 @@ class FoldyESMCClient(FoldyESMClient):
         Args:
             sequence_or_complex: Either a protein sequence string or a list of
                                 (chain_id, sequence) tuples for complexes
-            pdb_file_path: Optional path to a PDB file (not supported for ESM-C)
+            cif_file_path: Optional path to a CIF file (not supported for ESM-C)
 
         Returns:
             A list of list of floats representing embedding vectors for extra_layers, and the final layer.
@@ -240,11 +240,11 @@ class FoldyESMCClient(FoldyESMClient):
         try:
             if isinstance(sequence_or_complex, list):
                 protein_tensor = self._get_esm_protein_tensor_for_complex(
-                    sequence_or_complex, pdb_file_path
+                    sequence_or_complex, cif_file_path
                 )
             else:
                 protein_tensor = self._get_esm_protein_tensor_for_sequence(
-                    sequence_or_complex, pdb_file_path
+                    sequence_or_complex, cif_file_path
                 )
 
             with torch.no_grad():
@@ -268,12 +268,12 @@ class FoldyESMCClient(FoldyESMClient):
 
         finally:
             # First recursively clean complex objects
-            if 'logits_output' in locals() and logits_output is not None:
+            if "logits_output" in locals() and logits_output is not None:
                 recursive_cleanup(logits_output)
 
-            if 'protein_tensor' in locals() and protein_tensor is not None:
+            if "protein_tensor" in locals() and protein_tensor is not None:
                 recursive_cleanup(protein_tensor)
-         # Expanded cleanup
+            # Expanded cleanup
             for local_var in [
                 "logits_output",
                 "protein_tensor",
@@ -288,7 +288,7 @@ class FoldyESMCClient(FoldyESMClient):
     def get_logits(
         self,
         sequence_or_complex: SequenceOrComplexType,
-        pdb_file_path: Optional[str] = None,
+        cif_file_path: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         Get logits for a protein sequence or complex.
@@ -296,7 +296,7 @@ class FoldyESMCClient(FoldyESMClient):
         Args:
             sequence_or_complex: Either a protein sequence string or a list of
                                 (chain_id, sequence) tuples for complexes
-            pdb_file_path: Optional path to a PDB file (not supported for ESM-C)
+            cif_file_path: Optional path to a CIF file (not supported for ESM-C)
 
         Returns:
             A pandas DataFrame with sequence logits in melted format with
@@ -309,11 +309,11 @@ class FoldyESMCClient(FoldyESMClient):
 
         if isinstance(sequence_or_complex, list):
             protein_tensor = self._get_esm_protein_tensor_for_complex(
-                sequence_or_complex, pdb_file_path
+                sequence_or_complex, cif_file_path
             )
         else:
             protein_tensor = self._get_esm_protein_tensor_for_sequence(
-                sequence_or_complex, pdb_file_path
+                sequence_or_complex, cif_file_path
             )
         logits_output = self.client.logits(
             protein_tensor, LogitsConfig(sequence=True, return_embeddings=False)
@@ -368,14 +368,14 @@ class FoldyESM3Client(FoldyESMClient):
         self.device = device
 
     def _get_esm_protein_tensor_for_sequence(
-        self, sequence: str, pdb_file_path: Optional[str] = None
+        self, sequence: str, cif_file_path: Optional[str] = None
     ) -> Any:  # -> torch.Tensor (use Any to avoid torch import)
         """
         Create an ESM protein tensor from a sequence.
 
         Args:
             sequence: Protein sequence string
-            pdb_file_path: Optional path to a PDB file for structure-aware modeling
+            cif_file_path: Optional path to a CIF file for structure-aware modeling
 
         Returns:
             Tensor representation of the protein
@@ -383,8 +383,8 @@ class FoldyESM3Client(FoldyESMClient):
         from esm.sdk.api import ESMProtein, LogitsConfig
         from esm.utils.structure.protein_complex import ProteinComplex
 
-        if pdb_file_path:
-            protein_complex = ProteinComplex.from_pdb(path=pdb_file_path)
+        if cif_file_path:
+            protein_complex = ProteinComplex.from_cif(path=cif_file_path)
             protein = ESMProtein.from_protein_complex(protein_complex)
         else:
             protein = ESMProtein(sequence=sequence)
@@ -392,14 +392,14 @@ class FoldyESM3Client(FoldyESMClient):
         return self.client.encode(protein)
 
     def _get_esm_protein_tensor_for_complex(
-        self, complex_input: ComplexType, pdb_file_path: Optional[str] = None
+        self, complex_input: ComplexType, cif_file_path: Optional[str] = None
     ) -> Any:  # -> torch.Tensor (use Any to avoid torch import)
         """
         Create an ESM protein tensor from a protein complex.
 
         Args:
             complex_input: List of (chain_id, sequence) tuples
-            pdb_file_path: Optional path to a PDB file for structure-aware modeling
+            cif_file_path: Optional path to a CIF file for structure-aware modeling
 
         Returns:
             Tensor representation of the protein complex
@@ -408,8 +408,8 @@ class FoldyESM3Client(FoldyESMClient):
         from esm.utils.structure.protein_chain import ProteinChain
         from esm.utils.structure.protein_complex import ProteinComplex
 
-        if pdb_file_path:
-            protein_complex = ProteinComplex.from_pdb(path=pdb_file_path)
+        if cif_file_path:
+            protein_complex = ProteinComplex.from_cif(path=cif_file_path)
             protein = ESMProtein.from_protein_complex(protein_complex)
         else:
             chains = [
@@ -466,7 +466,7 @@ class FoldyESM1and2Client(FoldyESMClient):
     def embed(
         self,
         sequence_or_complex: SequenceOrComplexType,
-        pdb_file_path: Optional[str] = None,
+        cif_file_path: Optional[str] = None,
         extra_layers: List[int] = [],
     ) -> List[List[float]]:
         """
@@ -474,13 +474,13 @@ class FoldyESM1and2Client(FoldyESMClient):
 
         Args:
             sequence_or_complex: Protein sequence string (complex not supported)
-            pdb_file_path: Not supported for ESM-1/2
+            cif_file_path: Not supported for ESM-1/2
 
         Returns:
             A list of list of floats representing embedding vectors for extra_layers, and the final layer.
 
         Raises:
-            ValueError: If a complex or PDB file is provided (not supported)
+            ValueError: If a complex or CIF/PDB file is provided (not supported)
         """
         import gc
 
@@ -491,8 +491,8 @@ class FoldyESM1and2Client(FoldyESMClient):
             torch.cuda.synchronize()
 
         sequence = sequence_or_complex
-        if pdb_file_path:
-            raise ValueError("ESM1 and 2 do not support PDB-based embeddings")
+        if cif_file_path:
+            raise ValueError("ESM1 and 2 do not support CIF or PDB-based embeddings")
         if isinstance(sequence_or_complex, list):
             raise ValueError("ESM1 and 2 do not support protein complexes")
         if len(extra_layers) > 0:
@@ -559,21 +559,21 @@ class FoldyESM1and2Client(FoldyESMClient):
     def get_logits(
         self,
         sequence_or_complex: SequenceOrComplexType,
-        pdb_file_path: Optional[str] = None,
+        cif_file_path: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         Get logits for a protein sequence.
 
         Args:
             sequence_or_complex: Protein sequence string (complex not supported)
-            pdb_file_path: Not supported for ESM-1/2
+            cif_file_path: Not supported for ESM-1/2
 
         Returns:
             A pandas DataFrame with sequence logits in melted format with
             columns 'seq_id' and 'probability'
 
         Raises:
-            ValueError: If a complex or PDB file is provided (not supported)
+            ValueError: If a complex or CIF/PDB file is provided (not supported)
         """
         import torch
 
@@ -581,8 +581,8 @@ class FoldyESM1and2Client(FoldyESMClient):
             raise ValueError("ESM1 and 2 do not support protein complexes")
         sequence = sequence_or_complex
 
-        if pdb_file_path:
-            raise ValueError("ESM1 and 2 do not support PDB-based logits")
+        if cif_file_path:
+            raise ValueError("ESM1 and 2 do not support CIF or PDB-based logits")
 
         data = [("protein", sequence)]
         _, _, batch_tokens = self.batch_converter(data)

@@ -66,8 +66,7 @@ def start_stage(fold_id: int, stage: str, email_on_completion: bool) -> None:
 
     Args:
         fold_id: ID of the fold to process
-        stage: Stage to start (features, models, email, both, write_fastas,
-               decompress_pkls, annotate)
+        stage: Stage to start (email, both, write_fastas, annotate)
         email_on_completion: Whether to send an email when processing completes
 
     Raises:
@@ -110,8 +109,8 @@ def start_stage(fold_id: int, stage: str, email_on_completion: bool) -> None:
         email_args = {}
         if email_on_completion:
             email_args = {
-                "on_success": Callback(send_success_email, timeout='5s'),
-                "on_failure": Callback(send_failure_email, timeout='5s'),
+                "on_success": Callback(send_success_email, timeout="5s"),
+                "on_failure": Callback(send_failure_email, timeout="5s"),
             }
 
         boltz_job = boltz_q.enqueue(
@@ -139,7 +138,6 @@ def start_stage(fold_id: int, stage: str, email_on_completion: bool) -> None:
         raise BadRequest(f"Unsupported stage {stage}")
 
 
-
 def make_new_folds(
     fsm: FoldStorageManager,
     user_email: str,
@@ -147,6 +145,7 @@ def make_new_folds(
     start_fold_job: bool,
     email_on_completion: bool,
     skip_duplicate_entries: bool,
+    is_dry_run: bool,
 ) -> bool:
     """Add a list of new folds to the database and optionally start jobs.
 
@@ -226,6 +225,8 @@ def make_new_folds(
                         f'Fold {fold_data["name"]} already exists ({existing_entry.id}) and its sequence does not match this new request.'
                     )
 
+            if is_dry_run:
+                continue
             new_fold_model = Fold(
                 name=fold_data["name"],
                 user_id=user.id,
@@ -237,6 +238,9 @@ def make_new_folds(
                 disable_relaxation=fold_data["disable_relaxation"],
             )
             new_fold_models.append(new_fold_model)
+
+        if is_dry_run:
+            return True
 
         # Bulk add!
         db.session.bulk_save_objects(new_fold_models, return_defaults=True, preserve_order=True)

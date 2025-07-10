@@ -201,7 +201,7 @@ _Note, using the `us-central1-c` region is required because most google A100s ar
 1. Rebuild the docker images:
 
    ```bash
-   scripts/build_and_deploy_containers.sh ${PROJECT_ID} ${GOOGLE_ARTIFACT_REPO} ${IMAGE_VERSION}
+   scripts/build_and_deploy_containers.sh
    ```
 
 1. Update the helm chart `helm upgrade foldy deployment/helm`

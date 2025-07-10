@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, forwardRef, useImperativeHandle, useRef } from "react";
 import {
     AutoForm,
     AutoField,
@@ -6,8 +6,6 @@ import {
     ListItemField,
     SubmitField,
     ErrorsField,
-    // connectField,
-    // useField
 } from "uniforms-antd";
 import { connectField, useField } from "uniforms";
 import { JSONSchemaBridge } from "uniforms-bridge-json-schema";
@@ -16,10 +14,10 @@ import Ajv, { ErrorObject } from 'ajv';
 import addErrors from "ajv-errors";
 import { Row, Col, Button, Input } from 'antd';
 import { BoltzYamlHelper } from './boltzYamlHelper';
+import { EditOutlined, CheckOutlined } from '@ant-design/icons';
 
 /** Minimal shape we'll edit in Uniforms (internal model). */
 interface BoltzFormModel {
-    version: number;
     sequences: Array<{
         entity_type: "protein" | "dna" | "rna" | "ligand";
         id?: string;      // stored as comma-separated chain IDs
@@ -60,10 +58,86 @@ interface BoltzFormModel {
         //     contacts: Array<[string, number]>; // Array of [CHAIN_ID, RES_IDX]
         // };
     }>;
+    affinity_binder?: string; // Simple optional string field instead of array
+}
+
+
+interface EditableHeaderProps {
+    value: string;
+    onChange: ((value: string) => void) | null;
+    style?: React.CSSProperties;
+}
+
+export function EditableHeader({ value, onChange, style }: EditableHeaderProps) {
+    const [isEditing, setIsEditing] = useState(false);
+    const [inputValue, setInputValue] = useState(value);
+
+    const handleConfirm = () => {
+        if (onChange) {
+            onChange(inputValue);
+            setIsEditing(false);
+        }
+    };
+
+    if (isEditing) {
+        return (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderStyle: 'dashed', borderWidth: '1px', borderColor: '#d9d9d9', borderRadius: '4px', padding: '4px 8px' }}>
+                <Input
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onPressEnter={handleConfirm}
+                    onBlur={handleConfirm}
+                    autoFocus
+                    style={{
+                        fontSize: '24px',
+                        padding: '4px 8px',
+                        ...style
+                    }}
+                />
+                <Button
+                    type="text"
+                    icon={<CheckOutlined />}
+                    onClick={handleConfirm}
+                />
+            </div>
+        );
+    }
+
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderStyle: 'dashed', borderWidth: '1px', borderColor: '#d9d9d9', borderRadius: '4px', padding: '4px 8px' }}>
+            <h3
+                style={{
+                    margin: 0,
+                    padding: '4px 8px',
+                    border: '1px dashed transparent',
+                    cursor: 'pointer',
+                    color: value ? 'black' : '#d9d9d9',
+                    ...style
+                }}
+                onClick={() => {
+                    if (onChange) setIsEditing(true);
+                    return;
+                }}
+            >
+                {value ? value : "Enter Fold Name"}
+            </h3>
+            {
+                onChange === null ? null :
+                    <Button
+                        type="text"
+                        icon={<EditOutlined />}
+                        onClick={() => setIsEditing(true)}
+                    />
+            }
+        </div>
+    );
 }
 
 /** Props for our reusable builder */
 export interface BoltzYamlBuilderProps {
+    foldName: string;
+    setFoldName: ((foldName: string) => void) | null;
+
     /**
      * Optional initial Boltz YAML. We'll parse it, transform to our simpler internal model,
      * and let the user edit. If omitted, we start with an empty default.
@@ -75,6 +149,16 @@ export interface BoltzYamlBuilderProps {
      * Boltz-format YAML string.
      */
     onSave?: (yamlString: string) => void;
+
+    /**
+     * Text to display on the submit button. Defaults to "Save Boltz YAML".
+     */
+    submitButtonText?: string;
+}
+
+/** Exposed methods via ref */
+export interface BoltzYamlBuilderRef {
+    submit: () => void;
 }
 
 const { TextArea } = Input;
@@ -83,13 +167,8 @@ const { TextArea } = Input;
 const simpleSchema = {
     title: "Boltz Config Editor",
     type: "object",
-    required: ["version", "sequences"],
+    required: ["sequences"],
     properties: {
-        version: {
-            type: "integer",
-            default: 1,
-            title: "YAML Version (you probably want 1)",
-        },
         sequences: {
             type: "array",
             default: [],
@@ -252,7 +331,11 @@ const simpleSchema = {
                     // }
                 }
             }
-        }
+        },
+        affinity_binder: {
+            type: 'string',
+            title: 'Chain ID for affinity estimation',
+        },
     },
 };
 
@@ -288,7 +371,7 @@ const schemaValidator = (model: Record<string, any>) => {
     return null;
 }
 
-function additionalChecks(model: BoltzFormModel, errors: { details: [{ name: string, message: string }] } /* Uniforms error list */) {
+function additionalChecks(model: BoltzFormModel, errors: { details: [{ name: string, message: string }] }) {
     if (!model.sequences || !Array.isArray(model.sequences) || model.sequences.length === 0) {
         errors.details.push({
             name: "sequences",
@@ -375,6 +458,28 @@ function additionalChecks(model: BoltzFormModel, errors: { details: [{ name: str
             }
         }
     });
+
+    // Validate affinity_binder if it exists
+    if (model.affinity_binder) {
+        // Get all ligand chain IDs, safely handling undefined/null cases
+        const ligandChainIds = model.sequences
+            .filter(seq => seq.entity_type === 'ligand')
+            .flatMap(seq => {
+                if (!seq.id) {
+                    return [];
+                }
+                const chainIds = seq.id.split(',').map((id: string) => id.trim());
+                return chainIds;
+            })
+            .filter(id => id); // Remove any undefined/null IDs
+
+        if (!ligandChainIds.includes(model.affinity_binder)) {
+            errors.details.push({
+                name: "affinity_binder",
+                message: "Affinity binder must be a chain ID from a ligand sequence"
+            });
+        }
+    }
 }
 
 const schemaBridge = new JSONSchemaBridge({
@@ -386,8 +491,6 @@ const schemaBridge = new JSONSchemaBridge({
  * 3) Convert a BoltzYamlHelper instance to our simpler Uniforms model.
  */
 function fromBoltzObjectToModel(helper: BoltzYamlHelper): BoltzFormModel {
-    const version = helper.getVersion() ?? 1;
-
     // Transform sequences
     const sequences = helper.getAllSequences().map(seq => {
         if (seq.entity_type === "protein" || seq.entity_type === "dna" || seq.entity_type === "rna") {
@@ -418,10 +521,15 @@ function fromBoltzObjectToModel(helper: BoltzYamlHelper): BoltzFormModel {
     // Transform constraints
     const constraints = helper.getNormalizedConstraints();
 
+    // Extract affinity binder if it exists
+    const properties = helper.getProperties();
+    const affinityProperty = properties?.find(p => 'affinity' in p);
+    const affinity_binder = affinityProperty?.affinity?.binder;
+
     return {
-        version,
         sequences,
-        constraints
+        constraints,
+        affinity_binder,
     };
 }
 
@@ -435,7 +543,6 @@ function fromBoltzObjectToModel(helper: BoltzYamlHelper): BoltzFormModel {
  */
 function toBoltzYaml(model: BoltzFormModel): string {
     const boltzObj: any = {
-        version: model.version,
         sequences: model.sequences.map((seq) => {
             if (!seq?.id || !seq?.entity_type) {
                 return {};
@@ -527,6 +634,15 @@ function toBoltzYaml(model: BoltzFormModel): string {
             }
             return {};
         });
+    }
+
+    // Only add properties if affinity_binder is set
+    if (model.affinity_binder) {
+        boltzObj.properties = [{
+            affinity: {
+                binder: model.affinity_binder
+            }
+        }];
     }
 
     return YAML.stringify(boltzObj);
@@ -641,12 +757,11 @@ const ConstraintTypeConditionalFields = connectField((props: { value: BoltzFormM
  * (A) Reusable React component to edit a Boltz config in a "simplified" Uniforms model,
  * with entity_type-based conditional fields.
  */
-const BoltzYamlBuilder: React.FC<BoltzYamlBuilderProps> = ({ initialYaml, onSave }) => {
+const BoltzYamlBuilder = forwardRef<BoltzYamlBuilderRef, BoltzYamlBuilderProps>(({ foldName, setFoldName, initialYaml, onSave, submitButtonText = "Save Boltz YAML" }, ref) => {
     /**
      * Parse initial YAML -> JS object -> simpler form model
      */
     let initialModel: BoltzFormModel = {
-        version: 1,
         sequences: [],
         constraints: [] // Initialize empty constraints array
     };
@@ -663,6 +778,16 @@ const BoltzYamlBuilder: React.FC<BoltzYamlBuilderProps> = ({ initialYaml, onSave
     const [model, setModel] = useState<BoltzFormModel>(initialModel);
     const [showYamlEditor, setShowYamlEditor] = useState(false);
     const [yamlText, setYamlText] = useState(initialYaml || '');
+    const formRef = useRef<any>(null);
+
+    // Expose submit method via ref
+    useImperativeHandle(ref, () => ({
+        submit: () => {
+            if (formRef.current) {
+                formRef.current.submit();
+            }
+        }
+    }));
 
     /** On submit, transform to final Boltz YAML and invoke onSave() callback. */
     function handleSubmit(submitted: BoltzFormModel) {
@@ -705,7 +830,7 @@ const BoltzYamlBuilder: React.FC<BoltzYamlBuilderProps> = ({ initialYaml, onSave
     return (
         <div style={{ margin: "1rem" }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h2>Boltz YAML Editor</h2>
+                <EditableHeader value={foldName} onChange={setFoldName} />
                 <Button
                     onClick={() => setShowYamlEditor(!showYamlEditor)}
                     type={showYamlEditor ? 'primary' : 'default'}
@@ -713,7 +838,6 @@ const BoltzYamlBuilder: React.FC<BoltzYamlBuilderProps> = ({ initialYaml, onSave
                     {showYamlEditor ? 'Show Form Editor' : 'Show YAML Editor'}
                 </Button>
             </div>
-
             {showYamlEditor ? (
                 <div>
                     <TextArea
@@ -732,6 +856,7 @@ const BoltzYamlBuilder: React.FC<BoltzYamlBuilderProps> = ({ initialYaml, onSave
                 </div>
             ) : (
                 <AutoForm
+                    ref={formRef}
                     schema={schemaBridge}
                     model={model}
                     onChangeModel={(m: Record<string, any>) => {
@@ -744,10 +869,8 @@ const BoltzYamlBuilder: React.FC<BoltzYamlBuilderProps> = ({ initialYaml, onSave
                     onValidate={handleValidate}
                 >
                     <Row gutter={24}>
-                        <Col xs={24} xl={12}>
+                        <Col md={24} xl={14}>
                             {/* Main sequence editor */}
-                            <AutoField name="version" />
-
                             <ListField name="sequences">
                                 <ListItemField name="$">
                                     <div style={{ backgroundColor: '#f8f8f8', border: '1px solid #a0a0a0', padding: "6px", borderRadius: "8px", marginBottom: "1rem" }}>
@@ -759,7 +882,17 @@ const BoltzYamlBuilder: React.FC<BoltzYamlBuilderProps> = ({ initialYaml, onSave
                             </ListField>
                         </Col>
 
-                        <Col xs={24} xl={12}>
+                        <Col md={24} lg={10}>
+                            <div style={{
+                                backgroundColor: "#f5f5f5",
+                                padding: "1rem",
+                                borderRadius: "8px",
+                                marginBottom: "1rem"
+                            }}>
+                                <h3>Affinity Prediction</h3>
+                                <AutoField name="affinity_binder" />
+                            </div>
+
                             {/* Constraints editor */}
                             <div style={{
                                 backgroundColor: "#f5f5f5",
@@ -772,17 +905,6 @@ const BoltzYamlBuilder: React.FC<BoltzYamlBuilderProps> = ({ initialYaml, onSave
                                     <ListItemField name="$">
                                         <AutoField name="constraint_type" />
                                         <ConstraintTypeConditionalFields name="" />
-                                        {/* Bond constraint */}
-                                        {/* <h4>Bond Constraint</h4>
-                                        <AutoField name="bond.atom1" />
-                                        <AutoField name="bond.atom2" /> */}
-
-                                        {/* Pocket constraint */}
-                                        {/* <h4>Pocket Constraint</h4>
-                                        <AutoField name="pocket.binder" />
-                                        <ListField name="pocket.contacts">
-                                            <ListItemField name="$" />
-                                        </ListField> */}
                                     </ListItemField>
                                 </ListField>
                             </div>
@@ -793,12 +915,12 @@ const BoltzYamlBuilder: React.FC<BoltzYamlBuilderProps> = ({ initialYaml, onSave
                     <ErrorsField />
 
                     <div style={{ marginTop: "1rem" }}>
-                        <SubmitField value="Save Boltz YAML" />
+                        <SubmitField value={submitButtonText} />
                     </div>
                 </AutoForm>
             )}
         </div>
     );
-};
+});
 
 export default BoltzYamlBuilder;

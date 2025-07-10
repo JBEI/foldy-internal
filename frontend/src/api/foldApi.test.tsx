@@ -122,7 +122,6 @@ describe('foldApi', () => {
                     jobs: [
                         { type: 'features', state: 'finished' },
                         { type: 'models', state: 'finished' },
-                        { type: 'decompress_pkls', state: 'finished' }
                     ]
                 };
                 expect(describeFoldState(foldAllFinished)).toBe('finished');
@@ -133,7 +132,6 @@ describe('foldApi', () => {
                     jobs: [
                         { type: 'features', state: 'running' },
                         { type: 'models', state: 'queued' },
-                        { type: 'decompress_pkls', state: 'queued' }
                     ]
                 };
                 expect(describeFoldState(foldFeaturesRunning)).toBe('features running');

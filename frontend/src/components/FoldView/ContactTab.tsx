@@ -3,6 +3,7 @@ import { getFoldContactProb } from "../../api/foldApi";
 import { getResidueHeatmap } from "../../util/plots";
 import { FoldContactProb } from "../../types/types";
 import { TabContainer, DescriptionSection, SectionCard } from "../../util/tabComponents";
+import { Spin } from "antd";
 
 interface ContactTabProps {
     foldId: number;
@@ -42,8 +43,8 @@ const ContactTab = React.memo(
             }
             if (!contactProb || !props.foldSequence) {
                 return (
-                    <div className="uk-text-center">
-                        <div uk-spinner="ratio: 4"></div>
+                    <div style={{ textAlign: 'center', padding: '60px 0' }}>
+                        <Spin size="large" />
                     </div>
                 );
             }
@@ -69,7 +70,7 @@ const ContactTab = React.memo(
                         ).
                     </p>
                 </DescriptionSection>
-                
+
                 <SectionCard style={{ textAlign: 'center' }}>
                     {getContactProbHeatmap()}
                 </SectionCard>

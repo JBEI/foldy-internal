@@ -200,12 +200,12 @@ def get_esm_logits(logit_id: int):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             if logit_record.use_structure:
-                pdb_binary = fsm.storage_manager.get_binary(fold.id, "ranked_0.pdb")
-                with open(os.path.join(temp_dir, "ranked_0.pdb"), "wb") as f:
+                pdb_binary = fsm.storage_manager.get_binary(fold.id, "ranked_0.cif")
+                with open(os.path.join(temp_dir, "ranked_0.cif"), "wb") as f:
                     f.write(pdb_binary)
-                pdb_file_path = os.path.join(temp_dir, "ranked_0.pdb")
+                cif_file_path = os.path.join(temp_dir, "ranked_0.cif")
             else:
-                pdb_file_path = None
+                cif_file_path = None
 
             if logit_model == "esm1v_t33_650M_UR90S_ensemble":
                 logits_dicts_list = []
@@ -213,7 +213,7 @@ def get_esm_logits(logit_id: int):
                 for ii in range(1, 6):
                     submodel = f"esm1v_t33_650M_UR90S_{ii}"
                     logits_json, melted_df = get_naturalness(
-                        protein_input, submodel, get_depth_two_logits, pdb_file_path
+                        protein_input, submodel, get_depth_two_logits, cif_file_path
                     )
                     logits_dicts_list.append(json.loads(logits_json))
                     melted_df_list.append(melted_df.assign(model=ii))
@@ -221,7 +221,7 @@ def get_esm_logits(logit_id: int):
                 melted_df = pd.concat(melted_df_list)
             else:
                 logits_json, melted_df = get_naturalness(
-                    protein_input, logit_model, get_depth_two_logits, pdb_file_path
+                    protein_input, logit_model, get_depth_two_logits, cif_file_path
                 )
 
         melted_csv_buffer = StringIO()

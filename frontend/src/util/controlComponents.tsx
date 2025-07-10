@@ -1,4 +1,9 @@
 import React, { CSSProperties } from 'react';
+import { Input, InputNumber, Checkbox, Select, Upload, Typography } from 'antd';
+import { UploadOutlined } from '@ant-design/icons';
+import type { UploadFile } from 'antd/es/upload/interface';
+
+const { Text } = Typography;
 
 interface NumberInputControlProps {
     label: string;
@@ -22,30 +27,23 @@ export const NumberInputControl: React.FC<NumberInputControlProps> = ({
     inputWidth = '100px'
 }) => {
     const containerStyle: CSSProperties = {
-        marginBottom: '10px',
+        marginBottom: '16px',
         ...style
-    };
-
-    const inputStyle: CSSProperties = {
-        width: inputWidth,
-        marginLeft: '10px'
     };
 
     return (
         <div style={containerStyle}>
-            <label>
+            <Text strong style={{ marginBottom: '8px', display: 'block' }}>
                 {label}:
-                <input
-                    type="number"
-                    className="uk-input"
-                    value={value}
-                    onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-                    style={inputStyle}
-                    min={min}
-                    max={max}
-                    step={step}
-                />
-            </label>
+            </Text>
+            <InputNumber
+                value={value}
+                onChange={(val) => onChange(val || 0)}
+                style={{ width: inputWidth }}
+                min={min}
+                max={max}
+                step={step}
+            />
         </div>
     );
 };
@@ -64,21 +62,18 @@ export const CheckboxControl: React.FC<CheckboxControlProps> = ({
     style = {}
 }) => {
     const containerStyle: CSSProperties = {
-        marginBottom: '10px',
+        marginBottom: '16px',
         ...style
     };
 
     return (
         <div style={containerStyle}>
-            <label>
-                <input
-                    type="checkbox"
-                    className="uk-checkbox"
-                    checked={checked}
-                    onChange={(e) => onChange(e.target.checked)}
-                />
-                {' '}{label}
-            </label>
+            <Checkbox
+                checked={checked}
+                onChange={(e) => onChange(e.target.checked)}
+            >
+                {label}
+            </Checkbox>
         </div>
     );
 };
@@ -100,12 +95,17 @@ export const TextInputControl: React.FC<TextInputControlProps> = ({
     style = {},
     inputStyle = {}
 }) => {
+    const containerStyle: CSSProperties = {
+        marginBottom: '16px',
+        ...style
+    };
+
     return (
-        <div style={style}>
-            <label className="uk-form-label">{label}</label>
-            <input
-                type="text"
-                className="uk-input"
+        <div style={containerStyle}>
+            <Text strong style={{ marginBottom: '8px', display: 'block' }}>
+                {label}
+            </Text>
+            <Input
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder={placeholder}
@@ -123,6 +123,7 @@ interface TextAreaControlProps {
     rows?: number;
     style?: CSSProperties;
     inputStyle?: CSSProperties;
+    disabled?: boolean;
 }
 
 export const TextAreaControl: React.FC<TextAreaControlProps> = ({
@@ -132,18 +133,26 @@ export const TextAreaControl: React.FC<TextAreaControlProps> = ({
     placeholder,
     rows = 5,
     style = {},
-    inputStyle = {}
+    inputStyle = {},
+    disabled = false
 }) => {
+    const containerStyle: CSSProperties = {
+        marginBottom: '16px',
+        ...style
+    };
+
     return (
-        <div style={style}>
-            <label className="uk-form-label">{label}</label>
-            <textarea
-                className="uk-textarea"
+        <div style={containerStyle}>
+            <Text strong style={{ marginBottom: '8px', display: 'block' }}>
+                {label}
+            </Text>
+            <Input.TextArea
                 rows={rows}
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder={placeholder}
                 style={inputStyle}
+                disabled={disabled}
             />
         </div>
     );
@@ -166,21 +175,22 @@ export const SelectControl: React.FC<SelectControlProps> = ({
     style = {},
     selectStyle = {}
 }) => {
+    const containerStyle: CSSProperties = {
+        marginBottom: '16px',
+        ...style
+    };
+
     return (
-        <div style={style}>
-            <label className="uk-form-label">{label}</label>
-            <select
-                className="uk-select"
+        <div style={containerStyle}>
+            <Text strong style={{ marginBottom: '8px', display: 'block' }}>
+                {label}
+            </Text>
+            <Select
                 value={value}
-                onChange={(e) => onChange(e.target.value)}
-                style={selectStyle}
-            >
-                {options.map(option => (
-                    <option key={option.value} value={option.value}>
-                        {option.label}
-                    </option>
-                ))}
-            </select>
+                onChange={onChange}
+                style={{ width: '100%', ...selectStyle }}
+                options={options}
+            />
         </div>
     );
 };
@@ -200,18 +210,41 @@ export const FileUploadControl: React.FC<FileUploadControlProps> = ({
     selectedFile,
     style = {}
 }) => {
+    const containerStyle: CSSProperties = {
+        marginBottom: '16px',
+        ...style
+    };
+
+    const handleChange = (info: any) => {
+        const { file } = info;
+        if (file?.originFileObj) {
+            onChange(file.originFileObj);
+        } else {
+            onChange(null);
+        }
+    };
+
     return (
-        <div style={style}>
-            <label className="uk-form-label">{label}</label>
-            <input
-                type="file"
+        <div style={containerStyle}>
+            <Text strong style={{ marginBottom: '8px', display: 'block' }}>
+                {label}
+            </Text>
+            <Upload
+                maxCount={1}
                 accept={accept}
-                onChange={(e) => onChange(e.target.files?.[0] || null)}
-                className="uk-input"
-            />
-            {selectedFile && (
-                <p className="uk-text-meta">Selected file: {selectedFile.name}</p>
-            )}
+                onChange={handleChange}
+                beforeUpload={() => false} // Prevent auto upload
+                fileList={selectedFile ? [{
+                    uid: '-1',
+                    name: selectedFile.name,
+                    status: 'done',
+                    originFileObj: selectedFile
+                } as UploadFile] : []}
+            >
+                <button style={{ border: 'none', background: 'none', padding: 0 }}>
+                    <UploadOutlined /> Choose File
+                </button>
+            </Upload>
         </div>
     );
 };
@@ -233,30 +266,32 @@ export const MultiSelectControl: React.FC<MultiSelectControlProps> = ({
     size,
     style = {}
 }) => {
-    const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-        const selectedOptions = Array.from(event.target.selectedOptions).map(option => option.value);
-        onChange(selectedOptions);
+    const containerStyle: CSSProperties = {
+        marginBottom: '16px',
+        ...style
     };
 
+    const selectOptions = options.map(option => ({
+        value: option.key,
+        label: option.label
+    }));
+
     return (
-        <div style={style}>
-            <label className="uk-form-label">{label}</label>
-            <select
-                className="uk-select"
-                multiple
-                size={size || Math.min(10, options.length || 1)}
+        <div style={containerStyle}>
+            <Text strong style={{ marginBottom: '8px', display: 'block' }}>
+                {label}
+            </Text>
+            <Select
+                mode="multiple"
                 value={selectedValues}
-                onChange={handleChange}
-            >
-                {options.map(option => (
-                    <option key={option.key} value={option.key}>
-                        {option.label}
-                    </option>
-                ))}
-            </select>
-            <p className="uk-text-meta">
+                onChange={onChange}
+                options={selectOptions}
+                style={{ width: '100%' }}
+                placeholder="Select items"
+            />
+            <Text type="secondary" style={{ fontSize: '12px', marginTop: '4px', display: 'block' }}>
                 Selected {selectedValues.length} item(s)
-            </p>
+            </Text>
         </div>
     );
 };

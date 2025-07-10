@@ -71,10 +71,10 @@ def register_extensions(app: Flask) -> None:
         column_default_sort = "id"
 
     class UserModelView(VerifiedModelView):
-        column_list = ["email", "created_at", "access_type", "num_folds", "attributes"]
-        column_editable_list = ["created_at", "access_type"]
+        column_list = ["email", "name", "created_at", "access_type", "num_folds", "attributes"]
+        column_editable_list = ["created_at", "name", "access_type"]
         column_sortable_list = ["email", "created_at", "access_type"]
-        column_searchable_list = ["email", "access_type"]
+        column_searchable_list = ["email", "name", "access_type"]
         can_export = True
         page_size = 50
 
@@ -231,6 +231,7 @@ def register_extensions(app: Flask) -> None:
     # def dbg():
     #     raw = request.get_data(cache=True, as_text=True)
     #     print("LEN", len(raw), "START", raw[:80], flush=True)
+
 
 def create_app(config_object: str = "settings") -> Flask:
     """Creates and configures a Flask application instance.

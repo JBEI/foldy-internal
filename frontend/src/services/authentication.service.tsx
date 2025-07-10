@@ -1,6 +1,9 @@
 import React, { useEffect } from "react";
 import { BehaviorSubject } from "rxjs";
 import { map } from "rxjs/operators";
+import { Button, Space, Typography } from 'antd';
+
+const { Text } = Typography;
 
 // Based on:
 // https://jasonwatmore.com/post/2019/04/06/react-jwt-authentication-tutorial-example
@@ -86,38 +89,34 @@ export function LoginButton(props: {
 
     if (props.decodedToken && !props.isExpired) {
         return (
-            <div>
-                <span className="uk-visible@m">
+            <Space size="middle" style={{ color: 'inherit' }}>
+                <Text
+                    style={{ color: 'inherit' }}
+                    className="uk-visible@m"
+                >
                     Logged in as {props.decodedToken.user_claims.name}{props.decodedToken.user_claims.attributes?.beta_access ? ' (BETA ACCESS)' : null}.
-                </span>
-                <button
-                    className="uk-button uk-button-default uk-margin-left"
+                </Text>
+                <Button
                     onClick={(e) => {
                         e.preventDefault();
                         authenticationService.logout();
                     }}
                 >
-                    <span className="icon" style={{ color: "#fff" }}>
-                        Logout
-                    </span>
-                </button>
-            </div>
+                    Logout
+                </Button>
+            </Space>
         );
     } else {
         return (
-            <div>
-                <button
-                    className="uk-button uk-button-default"
-                    onClick={(e) => {
-                        e.preventDefault();
-                        redirectToLogin();
-                    }}
-                >
-                    <span className="icon" style={{ color: "#fff" }}>
-                        Login
-                    </span>
-                </button>
-            </div>
+            <Button
+                onClick={(e) => {
+                    e.preventDefault();
+                    redirectToLogin();
+                }}
+                style={{ backgroundColor: '#0000', color: 'white' }}
+            >
+                Login
+            </Button>
         );
     }
 }

@@ -1,12 +1,7 @@
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from app.authorization import (
-    email_should_get_edit_permission_by_default,
-    email_should_get_upgraded_to_admin,
-)
-from app.extensions import db
-from app.models import User
 from authlib.integrations.flask_client import OAuth
 from flask import Response, current_app, jsonify, redirect, request, url_for
 from flask_jwt_extended import (
@@ -15,7 +10,14 @@ from flask_jwt_extended import (
     unset_jwt_cookies,
 )
 from flask_restx import Namespace, Resource, fields
-from urllib.parse import urlparse, urlencode, parse_qsl, urlunparse
+
+from app.authorization import (
+    email_should_get_edit_permission_by_default,
+    email_should_get_upgraded_to_admin,
+)
+from app.extensions import db
+from app.models import User
+
 ns = Namespace("login_views")
 
 oauth = OAuth()
@@ -131,6 +133,10 @@ class AuthorizeResource(Resource):
             )
             logging.info(f"Updating user {email} with missing access type: {user_type}")
             user = user.update(access_type=user_type)
+
+        # Users pre 7/7/25 don't have a name set. So we set it here.
+        if not user.name:
+            user = user.update(name=name)
 
         # If user is listed in FOLDY_ADMIN_UPGRADE_LIST, then they'll be upgraded
         # to admin.

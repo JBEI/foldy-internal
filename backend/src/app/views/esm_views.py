@@ -24,7 +24,7 @@ from app.helpers.rq_helpers import (
 )
 from app.jobs import esm_jobs, other_jobs
 from app.models import Dock, Embedding, Fold, Invokation, Logit
-from app.util import get_job_type_replacement, make_new_folds
+from app.util import get_job_type_replacement
 from app.views.other_views import embedding_fields, logit_fields
 
 ns = Namespace("esm_views", decorators=[jwt_required(fresh=True)])
@@ -33,6 +33,9 @@ ALLOWED_ESM_MODELS: List[str] = [
     "esmc_600m",
     "esmc_300m",
     "esm3-open",
+    "esm2_t6_8M_UR50D",
+    "esm2_t12_35M_UR50D",
+    "esm2_t30_150M_UR50D",
     "esm2_t33_650M_UR50D",
     "esm2_t36_3B_UR50D",
     "esm2_t48_15B_UR50D",
@@ -110,8 +113,8 @@ class CalculateEmbeddingsResource(Resource):
             embed_record.id,
             job_timeout="12h",
             result_ttl=48 * 60 * 60,  # 2 days
-            on_success=Callback(send_success_email, timeout='5s'),
-            on_failure=Callback(send_failure_email, timeout='5s'),
+            on_success=Callback(send_success_email, timeout="5s"),
+            on_failure=Callback(send_failure_email, timeout="5s"),
         )
         add_meta_to_job(enqueued_job, fold, "embed", embed_record.id)
 
@@ -177,8 +180,8 @@ class StartLogitsResource(Resource):
             logit_record.id,
             job_timeout="12h",
             result_ttl=48 * 60 * 60,  # 2 days
-            on_success=Callback(send_success_email, timeout='5s'),
-            on_failure=Callback(send_failure_email, timeout='5s'),
+            on_success=Callback(send_success_email, timeout="5s"),
+            on_failure=Callback(send_failure_email, timeout="5s"),
         )
         add_meta_to_job(enqueued_job, fold, "logits", logit_record.id)
 

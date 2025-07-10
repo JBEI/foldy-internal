@@ -1,4 +1,5 @@
 import React, { ReactNode, CSSProperties } from 'react';
+import { Spin } from 'antd';
 import './tabComponents.css';
 
 interface TabContainerProps {
@@ -150,13 +151,15 @@ interface TableSectionProps {
     children: ReactNode;
     style?: CSSProperties;
     scrollable?: boolean;
+    extra?: ReactNode;
 }
 
 export const TableSection: React.FC<TableSectionProps> = ({
     title,
     children,
     style = {},
-    scrollable = true
+    scrollable = true,
+    extra
 }) => {
     const sectionStyle: CSSProperties = {
         marginBottom: '30px',
@@ -168,9 +171,23 @@ export const TableSection: React.FC<TableSectionProps> = ({
         ...style
     };
 
+    const headerStyle: CSSProperties = {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '15px'
+    };
+
     return (
         <section style={sectionStyle}>
-            <h3 style={{ overflowWrap: 'anywhere' }}>{title}</h3>
+            {extra ? (
+                <div style={headerStyle}>
+                    <h3 style={{ margin: 0, overflowWrap: 'anywhere' }}>{title}</h3>
+                    {extra}
+                </div>
+            ) : (
+                <h3 style={{ overflowWrap: 'anywhere' }}>{title}</h3>
+            )}
             {children}
         </section>
     );
@@ -228,10 +245,12 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
     message = "Loading...",
     size = 4
 }) => {
+    const spinSize = size >= 4 ? 'large' : size >= 2 ? 'default' : 'small';
+
     return (
         <div className="loading-spinner">
-            <div className="uk-text-center">
-                <div uk-spinner={`ratio: ${size}`}></div>
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                <Spin size={spinSize} />
                 {message && <p style={{ marginTop: '10px' }}>{message}</p>}
             </div>
         </div>

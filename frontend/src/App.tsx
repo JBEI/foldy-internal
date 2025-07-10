@@ -13,6 +13,8 @@ import "./App.scss";
 
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import UIkit from "uikit";
+import { Layout, Menu, Button as AntButton, Drawer, Spin } from "antd";
+import { MenuOutlined, HomeOutlined, InfoCircleOutlined, SettingOutlined, DatabaseOutlined, TagOutlined } from "@ant-design/icons";
 import About from "./components/AboutView/About";
 import DashboardView from "./components/DashboardView";
 import NewBoltzFoldView from "./components/NewFoldView/NewBoltzFoldView";
@@ -29,8 +31,10 @@ import {
     LoginButton,
 } from "./services/authentication.service";
 import TagView from "./TagView";
-import { FoldyMascot } from "./util/foldyMascot";
+import TagsView from "./components/TagsView";
+import { FoldingAtTheDisco, FoldyMascot } from "./util/foldyMascot";
 import { notify } from "./services/NotificationService";
+import { useKeyboardIntercept } from "./util/keyboardInterceptor";
 
 const AvatarFoldView = lazy(() => import("./components/FoldView/FoldView"));
 
@@ -55,13 +59,69 @@ function CheckForErrorQueryString() {
     return <div></div>;
 }
 
+interface NavLinkProps {
+    href: string;
+    children: React.ReactNode;
+    external?: boolean;
+}
+
+function NavLink({ href, children, external = false }: NavLinkProps) {
+    const commonStyles = {
+        color: "#fff",
+        textDecoration: 'none' as const,
+        padding: '8px 12px',
+        borderRadius: '4px',
+        transition: 'background-color 0.2s',
+        fontSize: '15px',
+    };
+
+    const handleMouseEnter = (e: React.MouseEvent<HTMLAnchorElement>) => {
+        (e.target as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.1)';
+    };
+
+    const handleMouseLeave = (e: React.MouseEvent<HTMLAnchorElement>) => {
+        (e.target as HTMLElement).style.backgroundColor = 'transparent';
+    };
+
+    if (external) {
+        return (
+            <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={commonStyles}
+                onMouseEnter={handleMouseEnter}
+                onMouseLeave={handleMouseLeave}
+            >
+                {children}
+            </a>
+        );
+    }
+
+    return (
+        <a
+            href={href}
+            style={commonStyles}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+        >
+            {children}
+        </a>
+    );
+}
+
 function RoutedApp({ token, setToken }: {
     token: string | null;
     setToken: React.Dispatch<React.SetStateAction<string | null>>;
 }) {
     const { decodedToken, isExpired } = useJwt(token || '');
     let [searchParams, setSearchParams] = useSearchParams();
+    const [cartwheelingMascotList, setCartwheelingMascotList] = useState<React.ReactElement[]>([]);
+    const [enableDisco, setEnableDisco] = useState(false);
+    const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 960);
     const navigate = useNavigate();
+    const location = useLocation();
 
     var fullDecodedToken: DecodedJwt | null = null;
     if (isFullDecodedJwt(decodedToken)) {
@@ -75,9 +135,29 @@ function RoutedApp({ token, setToken }: {
 
             UIkit.modal
                 .alert(
-                    `<p>Welcome new user!</p><p>${getDescriptionOfUserType(
+                    `<div style="text-align: left;">
+                        <h3>🎉 Welcome to ${import.meta.env.VITE_INSTITUTION} Foldy!</h3>
+                        <p><strong>Your access level:</strong> ${getDescriptionOfUserType(
                         fullDecodedToken.user_claims.type || ""
-                    )}</p><p>Check out the <a href="/about">About</a> page for information about the service and updates as we make improvements.</p>`
+                    )}</p>
+
+                        <h4>🧬 What is Foldy?</h4>
+                        <p>Foldy is a democratized protein folding platform that uses cutting-edge AI models (like Boltz-2x) to predict protein structures with exceptional accuracy for complex scenarios including multimers, small molecule docking, and nucleic acid interactions.</p>
+
+                        <h4>🚀 Get Started:</h4>
+                        <ul>
+                            <li>Browse existing structures from the <strong>Dashboard</strong></li>
+                            <li>Create predictions by clicking <strong>"NEW"</strong> (editors only)</li>
+                            <li>Explore the comprehensive analysis tools in each fold</li>
+                        </ul>
+
+                        <div style="background-color: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 12px; margin: 16px 0;">
+                            <h4 style="color: #389e0d; margin-top: 0;">📚 Citations & Attribution</h4>
+                            <p style="margin-bottom: 8px;">If you publish research using this platform, please consider citing the relevant papers to support the developers. This includes both the Foldy platform and underlying methods like Boltz-2x.</p>
+                        </div>
+
+                        <p>Visit the <a href="/about">About page</a> for detailed information, FAQs, and complete citation requirements.</p>
+                    </div>`
                 )
                 .then(() => {
                     navigate("/about");
@@ -85,10 +165,31 @@ function RoutedApp({ token, setToken }: {
         }
     }
 
+    useKeyboardIntercept('f', () => {
+        setCartwheelingMascotList([...cartwheelingMascotList, <FoldyMascot text={""} moveTextAbove={false} isCartwheeling={true} key={cartwheelingMascotList.length} isKanKaning={false} />]);
+    });
+
+    useKeyboardIntercept('k', () => {
+        setCartwheelingMascotList([...cartwheelingMascotList, <FoldyMascot text={""} moveTextAbove={false} isCartwheeling={true} key={cartwheelingMascotList.length} isKanKaning={true} />]);
+    });
+
+    useKeyboardIntercept('d', () => {
+        setEnableDisco(!enableDisco);
+    });
+
+    useEffect(() => {
+        const handleResize = () => {
+            setIsMobile(window.innerWidth < 960);
+        };
+
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
     const renderLoader = () => {
         return (
-            <div className="uk-text-center">
-                <div uk-spinner="ratio: 4"></div>
+            <div style={{ textAlign: 'center', padding: '60px 0' }}>
+                <Spin size="large" />
             </div>
         );
     };
@@ -112,173 +213,187 @@ function RoutedApp({ token, setToken }: {
 
     const foldyWelcomeText = `Welcome to ${import.meta.env.VITE_INSTITUTION} Foldy! Login with an ${import.meta.env.VITE_INSTITUTION} account for edit access, or any other account to view public structures.`;
 
-    // JBEI orange: CF4520
-    // JBEI red: CF4420
-    // const desktop_navbar = <nav className="uk-navbar" style={{background: 'linear-gradient(to left, #CF4420, #CF4520)'}}>
+    const menuItems = [
+        {
+            key: 'dashboard',
+            icon: <HomeOutlined />,
+            label: 'Dashboard',
+            onClick: () => navigate('/')
+        },
+        {
+            key: 'tags',
+            icon: <TagOutlined />,
+            label: 'Tags',
+            onClick: () => navigate('/tags')
+        },
+        ...(fullDecodedToken?.user_claims.type === "admin" ? [
+            {
+                key: 'rq',
+                icon: <SettingOutlined />,
+                label: 'RQ',
+                onClick: () => window.open(`${import.meta.env.VITE_BACKEND_URL}/rq/`, '_blank')
+            },
+            {
+                key: 'dbs',
+                icon: <DatabaseOutlined />,
+                label: 'DBs',
+                onClick: () => window.open(`${import.meta.env.VITE_BACKEND_URL}/admin/`, '_blank')
+            },
+            {
+                key: 'sudo',
+                icon: <SettingOutlined />,
+                label: 'Sudo Page',
+                onClick: () => navigate('/sudopage')
+            }
+        ] : []),
+        {
+            key: 'about',
+            icon: <InfoCircleOutlined />,
+            label: 'About',
+            onClick: () => navigate('/about')
+        }
+    ];
+
     const desktop_navbar = (
-        <nav
-            className="uk-navbar"
-            style={{ background: "linear-gradient(to left, #28a5f5, #1e87f0)" }}
+        <Layout.Header
+            style={{
+                background: "linear-gradient(to left, #28a5f5, #1e87f0)",
+                padding: '0 24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+            }}
         >
-            <div className="uk-navbar-left">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
                 <a
                     href="/"
-                    className="uk-navbar-item uk-logo uk-margin-left"
-                    style={{ color: "#fff" }}
+                    style={{
+                        color: "#fff",
+                        textDecoration: 'none',
+                        fontSize: '20px',
+                        whiteSpace: 'nowrap'
+                    }}
                 >
                     {foldyTitle}
                 </a>
-                <a href="/" className="uk-navbar-item" style={{ color: "#fff" }}>
-                    Dashboard
-                </a>
-                {fullDecodedToken?.user_claims.type === "admin" ? (
-                    <a
-                        href={`${import.meta.env.VITE_BACKEND_URL}/rq/`}
-                        className="uk-navbar-item"
-                        style={{ color: "#fff" }}
-                    >
-                        RQ
-                    </a>
-                ) : null}
-                {fullDecodedToken?.user_claims.type === "admin" ? (
-                    <a
-                        href={`${import.meta.env.VITE_BACKEND_URL}/admin/`}
-                        className="uk-navbar-item"
-                        style={{ color: "#fff" }}
-                    >
-                        DBs
-                    </a>
-                ) : null}
-                {fullDecodedToken?.user_claims.type === "admin" ? (
-                    <a
-                        href="/sudopage"
-                        className="uk-navbar-item"
-                        style={{ color: "#fff" }}
-                    >
-                        Sudo Page
-                    </a>
-                ) : null}
-                <a href="/about" className="uk-navbar-item" style={{ color: "#fff" }}>
-                    About
-                </a>
+                <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
+                    <NavLink href="/">Dashboard</NavLink>
+                    <NavLink href="/tags">Tags</NavLink>
+                    {fullDecodedToken?.user_claims.type === "admin" && (
+                        <>
+                            <NavLink href={`${import.meta.env.VITE_BACKEND_URL}/rq/`} external>RQ</NavLink>
+                            <NavLink href={`${import.meta.env.VITE_BACKEND_URL}/admin/`} external>DBs</NavLink>
+                            <NavLink href="/sudopage">Sudo Page</NavLink>
+                        </>
+                    )}
+                    <NavLink href="/about">About</NavLink>
+                </div>
             </div>
 
-            <div
-                className="uk-navbar-right uk-navbar-item uk-active uk-margin-small-right"
-                style={{ color: "#fff" }}
-            >
-                <LoginButton
-                    decodedToken={fullDecodedToken}
-                    setToken={setToken}
-                    isExpired={isExpired}
-                />
-                {/* <GoogleLogin
-          onSuccess={(credentialResponse) => {
-            console.log(credentialResponse);
-          }}
-          onError={() => {
-            console.log("Login Failed");
-          }}
-        /> */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ color: '#fff' }}>
+                    <LoginButton
+                        decodedToken={fullDecodedToken}
+                        setToken={setToken}
+                        isExpired={isExpired}
+                    />
+                </div>
+                {fullDecodedToken && !isExpired ? null : (
+                    <FoldyMascot text={foldyWelcomeText} moveTextAbove={false} isCartwheeling={false} isKanKaning={false} />
+                )}
             </div>
-
-            {fullDecodedToken && !isExpired ? null : (
-                <FoldyMascot text={foldyWelcomeText} moveTextAbove={false} />
-            )}
-        </nav>
+        </Layout.Header>
     );
 
     const mobile_navbar = (
-        <nav
-            className="uk-navbar"
+        <Layout.Header
             style={{
                 background: "linear-gradient(to left, #28a5f5, #1e87f0)",
                 zIndex: 100,
                 position: "fixed",
                 top: 0,
                 width: "100%",
+                padding: '0 16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
             }}
         >
-            <div className="uk-navbar-left">
-                <a
-                    href="/"
-                    className="uk-navbar-item uk-logo uk-margin-small-left"
-                    style={{ color: "#fff" }}
-                >
-                    {foldyTitle}
-                </a>
-            </div>
+            <a
+                href="/"
+                style={{
+                    color: "#fff",
+                    textDecoration: 'none',
+                    fontSize: '20px',
+                    flex: '1'
+                }}
+            >
+                {foldyTitle}
+            </a>
 
-            <div className="uk-navbar-right uk-navbar-item uk-active uk-margin-small-right">
-                <button
-                    className="uk-navbar-toggle"
-                    uk-navbar-toggle-icon={1}
-                    style={{ color: "#fff" }}
-                    uk-toggle="target: #off-canvas-navbar"
-                ></button>
-            </div>
+            <AntButton
+                type="text"
+                icon={<MenuOutlined />}
+                onClick={() => setMobileDrawerOpen(true)}
+                style={{
+                    color: '#fff',
+                    border: 'none',
+                    padding: '4px 8px',
+                    minWidth: '40px',
+                    height: '40px'
+                }}
+            />
 
             {fullDecodedToken && !isExpired ? null : (
-                <FoldyMascot text={foldyWelcomeText} moveTextAbove={true} />
+                <FoldyMascot text={foldyWelcomeText} moveTextAbove={true} isCartwheeling={false} isKanKaning={false} />
             )}
-        </nav>
+        </Layout.Header>
     );
 
     return (
         <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
-            <div className="uk-visible@m">{desktop_navbar}</div>
-            <div className="uk-hidden@m" style={{ paddingTop: "60px" }}>{mobile_navbar}</div>
+            <div style={{ display: isMobile ? 'none' : 'block' }}>{desktop_navbar}</div>
+            <div style={{ display: isMobile ? 'block' : 'none', paddingTop: "80px" }}>{mobile_navbar}</div>
 
             <CheckForErrorQueryString />
-            <div id="off-canvas-navbar" uk-offcanvas={1}>
-                <div className="uk-offcanvas-bar uk-flex uk-flex-column">
-                    <button
-                        className="uk-offcanvas-close"
-                        type="button"
-                        uk-close={1}
-                    ></button>
 
-                    <h3>{import.meta.env.VITE_INSTITUTION} Foldy</h3>
+            <Drawer
+                title={`${import.meta.env.VITE_INSTITUTION} Foldy`}
+                placement="right"
+                onClose={() => setMobileDrawerOpen(false)}
+                open={mobileDrawerOpen}
+                styles={{
+                    body: { padding: '24px 0' }
+                }}
+            >
+                <div style={{ marginBottom: '24px', padding: '0 24px' }}>
                     <p>
                         {import.meta.env.VITE_INSTITUTION} Foldy is a web app for
                         predicting and using protein structures based on AlphaFold.
                     </p>
-
-                    <ul className="uk-nav uk-nav-primary uk-nav-center uk-margin-auto-vertical">
-                        <li className="uk-active">
-                            <a href="/">Dashboard</a>
-                        </li>
-                        {fullDecodedToken?.user_claims.type === "admin" ? (
-                            <li className="uk-parent">
-                                <a href={`${import.meta.env.VITE_BACKEND_URL}/rq/`}>RQ</a>
-                            </li>
-                        ) : null}
-                        {fullDecodedToken?.user_claims.type === "admin" ? (
-                            <li className="uk-parent">
-                                <a href={`${import.meta.env.VITE_BACKEND_URL}/admin/`}>DBs</a>
-                            </li>
-                        ) : null}
-                        {fullDecodedToken?.user_claims.type === "admin" ? (
-                            <li className="uk-parent">
-                                <a href="/sudopage">Sudo Page</a>
-                            </li>
-                        ) : null}
-                        <li className="uk-parent">
-                            <a href="/about">About</a>
-                        </li>
-                        <li>
-                            <LoginButton
-                                setToken={setToken}
-                                decodedToken={fullDecodedToken}
-                                isExpired={isExpired}
-                            />
-                        </li>
-                    </ul>
                 </div>
-            </div>
+
+                <Menu
+                    mode="vertical"
+                    items={menuItems}
+                    onClick={() => setMobileDrawerOpen(false)}
+                    style={{ border: 'none' }}
+                />
+
+                <div style={{ marginTop: '24px', padding: '0 24px' }}>
+                    <LoginButton
+                        setToken={setToken}
+                        decodedToken={fullDecodedToken}
+                        isExpired={isExpired}
+                    />
+                </div>
+            </Drawer>
 
             <div
-                className="uk-width-5-6@xl uk-container-center uk-align-center"
+                className={location.pathname.startsWith('/fold/') ?
+                    "uk-container-expand" :
+                    "uk-width-5-6@xl uk-container-center uk-align-center"
+                }
                 style={{
                     display: "flex",
                     flexDirection: "column",
@@ -304,6 +419,10 @@ function RoutedApp({ token, setToken }: {
                     <Route
                         path="/tag/:tagStringParam"
                         element={<TagView />}
+                    />
+                    <Route
+                        path="/tags"
+                        element={<TagsView />}
                     />
                     <Route
                         path="/newFold"
@@ -339,6 +458,8 @@ function RoutedApp({ token, setToken }: {
                     />
                 </Routes>
             </div>
+            {cartwheelingMascotList.length > 0 ? cartwheelingMascotList : null}
+            <FoldingAtTheDisco enabled={enableDisco} />
         </div>
     );
 }
@@ -381,8 +502,8 @@ function InitApp({
 
     // While we parse the URL and store the token, show a spinner/loader
     return (
-        <div className="uk-text-center">
-            <div uk-spinner="ratio: 4"></div>
+        <div style={{ textAlign: 'center', padding: '60px 0' }}>
+            <Spin size="large" />
         </div>
     );
 }

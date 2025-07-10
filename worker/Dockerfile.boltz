@@ -40,7 +40,8 @@ RUN /scripts/setup.sh
 # RUN /opt/conda/envs/worker/bin/python -m pip install boltz==1.0.0 --constraint /tmp/constraints.txt
 
 RUN /opt/conda/bin/conda create -y -n boltzenv python=3.11
-RUN /opt/conda/envs/boltzenv/bin/python -m pip install boltz==1.0.0
+# RUN /opt/conda/envs/boltzenv/bin/python -m pip install boltz==1.0.0
+RUN /opt/conda/envs/boltzenv/bin/python -m pip install boltz==2.1.1
 
 # # Chat suggested this, for when on a weird network.
 # RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \

@@ -143,6 +143,12 @@ function AuthenticatedDashboardView(props: {
         setFilter([newTerm]);
     };
 
+    const refetchData = () => {
+        if (authenticationService.currentJwtStringValue) {
+            debouncedGetFolds(filter[0]);
+        }
+    };
+
     return authenticationService.currentJwtStringValue ? (
         <div style={{ flexGrow: 1, overflowY: "scroll", padding: '24px' }}>
             <Space direction="vertical" size="large" style={{ width: '100%', justifyContent: 'space-between', display: 'flex' }}>
@@ -190,7 +196,11 @@ function AuthenticatedDashboardView(props: {
                     >
                         {/* Folds Table */}
                         <Card>
-                            {makeFoldTable(folds)}
+                            {makeFoldTable(folds, {
+                                editable: true,
+                                userType: props.decodedToken.user_claims.type,
+                                onTagsChange: refetchData
+                            })}
                         </Card>
 
                         {/* Total count and pagination */}
@@ -219,7 +229,9 @@ function AuthenticatedDashboardView(props: {
                     </div>
                 ) : (
                     <div style={{ textAlign: 'center', padding: '60px 0' }} key="unloadedDiv">
-                        <Spin size="large" tip="Loading folds..." />
+                        <Spin size="large" tip="Loading folds...">
+                            <div style={{ minHeight: '100px' }} />
+                        </Spin>
                     </div>
                 )}
             </Space>
@@ -231,7 +243,7 @@ function DashboardView(props: {
     decodedToken: DecodedJwt | null;
 }) {
     if (!props.decodedToken) {
-        return null; // <div uk-spinner="ratio: 4"></div>;
+        return null;
     }
     return (
         <AuthenticatedDashboardView

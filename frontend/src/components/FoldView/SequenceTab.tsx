@@ -1,16 +1,17 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { EditableTagList } from "../../util/editableTagList";
 import SeqViz from "seqviz";
-import { AiFillEdit } from "react-icons/ai";
 import { BoltzYamlHelper, ChainSequence, LigandData } from "../../util/boltzYamlHelper";
 import BoltzYamlBuilder from "../../util/boltzYamlBuilder";
 import UIkit from "uikit";
 import { Selection } from "./StructurePane";
 import { notify } from "../../services/NotificationService";
-import { TabContainer, SectionCard, CollapsibleSection, FormRow, FormField } from "../../util/tabComponents";
-import { CheckboxControl } from "../../util/controlComponents";
-import { Alert, Modal, Button as AntButton, Typography, Form, Input, Switch, Tag } from 'antd';
-import { QuestionCircleOutlined, EditOutlined } from '@ant-design/icons';
+import { TabContainer, SectionCard, CollapsibleSection } from "../../util/tabComponents";
+import { Alert, Modal, Button as AntButton, Typography, Input, Switch, Space } from 'antd';
+import { QuestionCircleOutlined, EditOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { getFile } from "../../api/fileApi";
+import { getFoldAffinityPrediction } from "../../api/foldApi";
+import { AffinityPrediction, RenderableAnnotations } from "src/types/types";
 
 const { Text, Paragraph, Title } = Typography;
 
@@ -20,6 +21,7 @@ export interface SubsequenceSelection {
     endResidue: number;
     subsequence: string;
 }
+
 
 interface SequenceTabProps {
     foldId: number;
@@ -33,15 +35,11 @@ interface SequenceTabProps {
 
     // Old AlphaFold inputs.
     sequence: string | null;
-    foldModelPreset: string | null;
-    foldDisableRelaxation: boolean | null;
 
-    colorScheme: string;
+    renderablePfamAnnotations: RenderableAnnotations | null;
 
     setPublic: (is_public: boolean) => void;
-    setDisableRelaxation: (disable_relaxation: boolean) => void;
     setFoldName: () => void;
-    setFoldModelPreset: () => void;
     addTag: (tagToAdd: string) => void;
     deleteTag: (tagToDelete: string) => void;
     handleTagClick: (tagToOpen: string) => void;
@@ -52,10 +50,85 @@ interface SequenceTabProps {
     setYamlConfig: (yaml: string) => void;
 }
 
+// Utility function to format molar concentration with appropriate units
+const formatMolarConcentration = (valueInMolar: number): string => {
+    if (valueInMolar >= 1) {
+        return `${(valueInMolar).toFixed(1)} M`;
+    } else if (valueInMolar >= 1e-3) {
+        return `${(valueInMolar * 1e3).toFixed(1)} mM`;
+    } else if (valueInMolar >= 1e-6) {
+        return `${(valueInMolar * 1e6).toFixed(1)} μM`;
+    } else if (valueInMolar >= 1e-9) {
+        return `${(valueInMolar * 1e9).toFixed(1)} nM`;
+    } else {
+        return `${(valueInMolar * 1e12).toFixed(1)} pM`;
+    }
+};
+
+// Convert RenderableAnnotations to SeqViz format
+const convertToSeqVizAnnotations = (renderableAnnotations: RenderableAnnotations | null, chainName: string) => {
+    if (!renderableAnnotations || !renderableAnnotations[chainName]) {
+        return [];
+    }
+
+    return renderableAnnotations[chainName].map(annotation => ({
+        name: annotation.type,
+        start: annotation.start,
+        end: annotation.end,
+        direction: 1 as const,
+        color: annotation.color
+    }));
+};
+
 const SequenceTab = React.memo((props: SequenceTabProps) => {
     const [showYamlSection, setShowYamlSection] = useState<boolean>(false);
+    const [affinityPrediction, setAffinityPrediction] = useState<AffinityPrediction | null>(null);
+
+    // Handler to color structure by pfam annotations
+    const colorStructureByPfam = () => {
+        if (!props.renderablePfamAnnotations) return;
+
+        const selectionData: {
+            struct_asym_id: string;
+            start_residue_number: number;
+            end_residue_number: number;
+            color: string;
+        }[] = [];
+
+        // Convert RenderableAnnotations to Selection format
+        for (const [chainName, annotations] of Object.entries(props.renderablePfamAnnotations)) {
+            annotations.forEach(annotation => {
+                selectionData.push({
+                    struct_asym_id: chainName,
+                    start_residue_number: annotation.start,
+                    end_residue_number: annotation.end,
+                    color: annotation.color
+                });
+            });
+        }
+
+        const selection: Selection = {
+            data: selectionData,
+            nonSelectedColor: "#CCCCCC" // Light gray for non-pfam regions
+        };
+
+        console.log("Setting structure selection for pfam coloring:", selection);
+        props.setSelectedSubsequence(selection);
+    };
 
     const configHelper = props.yamlConfig ? new BoltzYamlHelper(props.yamlConfig) : null;
+
+    // Add a memo to load affinity predictions
+    useMemo(async () => {
+        getFoldAffinityPrediction(props.foldId).then(
+            (affinityPrediction: AffinityPrediction) => {
+                setAffinityPrediction(affinityPrediction);
+            },
+            (e: any) => {
+                console.log(e);
+            }
+        )
+    }, [props.foldId]);
 
     var sequenceNames: string[];
     var sequences: string[];
@@ -71,10 +144,77 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
     }
 
     const renderSequenceViewer = () => {
+        // Get affinity binder if specified
+        const affinityProperties = configHelper?.getProperties() || [];
+        const affinityBinder = affinityProperties[0]?.affinity?.binder;
+
+        // Organize sequences by type
+        const ligands = configHelper?.getLigands() || [];
+        const proteins = configHelper?.getProteinSequences() || [];
+        const dnaSequences = configHelper?.getDNASequences() || [];
+        const rnaSequences = configHelper?.getRNASequences() || [];
+
+        // Find the affinity ligand if it exists
+        const affinityLigand = ligands.find(ligand =>
+            ligand.chain_ids.includes(affinityBinder || '')
+        );
+
         return <>
-            {sequences.map((ss: string, idx: number) => {
-                const chainName = sequenceNames[idx];
-                const chainSeq = ss;
+            {/* Render affinity ligand first if it exists */}
+            {affinityLigand && (
+                <div key="affinity-ligand" style={{
+                    marginBottom: "20px",
+                    backgroundColor: "#f0f8ff", // Light blue background
+                    padding: "15px",
+                    borderRadius: "8px",
+                    border: "1px solid #d1e8ff"
+                }}>
+                    <h3>{affinityLigand.chain_ids.join(", ")} (Ligand - Affinity Target)</h3>
+                    <div style={{ overflowWrap: "break-word" }}>
+                        {affinityLigand.smiles || affinityLigand.ccd}
+                    </div>
+                    {affinityPrediction && (
+                        <div style={{ marginTop: "10px" }}>
+                            <div>
+                                <strong>Predicted Affinity:</strong>{' '}
+                                {' '}
+                                {formatMolarConcentration(Math.pow(10, affinityPrediction.affinity_pred_value - 6))}
+                                {' '}
+                                ({((6 - affinityPrediction.affinity_pred_value) * 1.364).toFixed(2)} kJ/mol)
+                                <a
+                                    href="https://github.com/jwohlwend/boltz/blob/main/docs/prediction.md"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    <InfoCircleOutlined style={{ color: '#1890ff', marginLeft: '4px' }} />
+                                </a>
+                            </div>
+                            <div>
+                                <strong>Binding Probability:</strong>{' '}
+                                {(affinityPrediction.affinity_probability_binary * 100).toFixed(1)}%
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Render other ligands */}
+            {ligands
+                .filter(ligand => ligand !== affinityLigand)
+                .map((ligand: LigandData, idx: number) => (
+                    <div key={idx} style={{ marginBottom: "20px" }}>
+                        <h3>{ligand.chain_ids.join(", ")} (Ligand)</h3>
+                        <div style={{ overflowWrap: "break-word" }}>
+                            {ligand.smiles || ligand.ccd}
+                        </div>
+                    </div>
+                ))
+            }
+
+            {/* Render protein sequences */}
+            {proteins.map((ss: ChainSequence, idx: number) => {
+                const chainName = ss[0];
+                const chainSeq = ss[1];
 
                 const onSelectionHandler = (chainName: string, selection: any) => {
                     if (!configHelper) {
@@ -119,6 +259,7 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                             viewer="linear"
                             showComplement={false}
                             zoom={{ linear: 10 }}
+                            annotations={convertToSeqVizAnnotations(props.renderablePfamAnnotations, chainName)}
                             style={{
                                 width: "100%",
                                 marginBottom: "20px",
@@ -130,16 +271,10 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                     </div>
                 );
             })}
-            {configHelper?.getLigands().map((ligand: LigandData, idx: number) => {
-                return <div key={idx} style={{ marginBottom: "20px" }}>
-                    <h3>{ligand.chain_ids.join(", ")} (Ligand)</h3>
-                    <div>
-                        {ligand.smiles || ligand.ccd}
-                    </div>
-                </div>
-            })}
-            {configHelper?.getDNASequences().map((dna: ChainSequence, idx: number) => {
-                return <div key={idx} style={{ marginBottom: "20px" }}>
+
+            {/* Render DNA sequences */}
+            {dnaSequences.map((dna: ChainSequence, idx: number) => (
+                <div key={idx} style={{ marginBottom: "20px" }}>
                     <h3>{dna[0]} (DNA)</h3>
                     <div>
                         <SeqViz
@@ -156,9 +291,11 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                         />
                     </div>
                 </div>
-            })}
-            {configHelper?.getRNASequences().map((rna: ChainSequence, idx: number) => {
-                return <div key={idx} style={{ marginBottom: "20px" }}>
+            ))}
+
+            {/* Render RNA sequences */}
+            {rnaSequences.map((rna: ChainSequence, idx: number) => (
+                <div key={idx} style={{ marginBottom: "20px" }}>
                     <h3>{rna[0]} (RNA)</h3>
                     <div>
                         <SeqViz
@@ -176,7 +313,7 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                         {rna[1]}
                     </div>
                 </div>
-            })}
+            ))}
         </>
     };
 
@@ -189,6 +326,16 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
             {/* Sequence Viewer */}
             <SectionCard>
                 {renderSequenceViewer()}
+                {/* Color by Pfam button */}
+                {props.renderablePfamAnnotations && Object.keys(props.renderablePfamAnnotations).length > 0 && (
+                    <div style={{ marginBottom: '16px' }}>
+                        <AntButton
+                            onClick={colorStructureByPfam}
+                        >
+                            Color Structure by Pfam Domains
+                        </AntButton>
+                    </div>
+                )}
             </SectionCard>
 
             {/* YAML Builder Section - only show if user has permission */}
@@ -212,6 +359,8 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                                     notify.info("Updated YAML configuration. You can refold the protein from Actions > Refold.");
                                 });
                         }}
+                        foldName={props.foldName}
+                        setFoldName={null}
                     />
                 </CollapsibleSection>
             )}
@@ -225,7 +374,7 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                         <div>
                             <Paragraph>
                                 Configure basic protein properties, tags, and folding parameters.
-                                Use the edit buttons to modify name and model preset settings.
+                                Use the edit buttons to make changes.
                             </Paragraph>
                             <AntButton
                                 type="link"
@@ -265,14 +414,8 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
 
                         <Title level={4}>Visibility & Organization</Title>
                         <ul>
-                            <li><Text strong>Public:</Text> Make this fold visible to other users</li>
+                            <li><Text strong>Visibility:</Text> Make this fold visible to other users</li>
                             <li><Text strong>Tags:</Text> Add descriptive labels for organization and search</li>
-                        </ul>
-
-                        <Title level={4}>Folding Parameters</Title>
-                        <ul>
-                            <li><Text strong>Model Preset:</Text> Structure prediction algorithm configuration</li>
-                            <li><Text strong>Disable Relaxation:</Text> Skip energy minimization step (faster but less refined)</li>
                         </ul>
 
                         <Alert
@@ -289,7 +432,7 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                     {/* Row 1 */}
                     <div>
                         <Text strong style={{ display: 'block', marginBottom: '4px' }}>Name</Text>
-                        <Input.Group compact>
+                        <Space.Compact style={{ width: '100%' }}>
                             <Input
                                 value={props.foldName}
                                 disabled
@@ -303,7 +446,7 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                                 title="Edit name"
                                 size="small"
                             />
-                        </Input.Group>
+                        </Space.Compact>
                     </div>
 
                     <div>
@@ -336,7 +479,7 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
 
                     {/* Row 3 */}
                     <div>
-                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Public</Text>
+                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Visibility</Text>
                         <Switch
                             checked={props.foldPublic || false}
                             onChange={(checked) => props.setPublic(checked)}
@@ -346,53 +489,9 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                         />
                     </div>
 
-                    <div>
-                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Model Preset</Text>
-                        <Input.Group compact>
-                            <Input
-                                value={props.foldModelPreset || "unset"}
-                                disabled
-                                style={{ width: 'calc(100% - 40px)' }}
-                                size="small"
-                            />
-                            <AntButton
-                                icon={<EditOutlined />}
-                                onClick={props.setFoldModelPreset}
-                                title="Edit model preset"
-                                size="small"
-                            />
-                        </Input.Group>
-                    </div>
-
-                    {/* Row 4 - spans both columns */}
-                    <div style={{ gridColumn: '1 / -1' }}>
-                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Disable Relaxation</Text>
-                        <Switch
-                            checked={props.foldDisableRelaxation !== null ? props.foldDisableRelaxation : true}
-                            onChange={(checked) => props.setDisableRelaxation(checked)}
-                            checkedChildren="Disabled"
-                            unCheckedChildren="Enabled"
-                            size="small"
-                        />
-                    </div>
-
                     {/* Tags section - spans both columns */}
-                    <div style={{ gridColumn: '1 / -1' }}>
-                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Tags</Text>
-                        <div style={{ marginBottom: '8px' }}>
-                            {(props.foldTags || []).map(tag => (
-                                <Tag
-                                    key={tag}
-                                    closable={props.userType !== "viewer"}
-                                    onClose={() => props.deleteTag(tag)}
-                                    onClick={() => props.handleTagClick(tag)}
-                                    style={{ cursor: 'pointer', marginBottom: '4px' }}
-                                    size="small"
-                                >
-                                    {tag}
-                                </Tag>
-                            ))}
-                        </div>
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: '8px' }}>Tags</Text>
                         <EditableTagList
                             tags={props.foldTags || []}
                             addTag={props.addTag}

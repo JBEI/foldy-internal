@@ -20,7 +20,5 @@ FRONTEND_URL = env.str("FRONTEND_URL")
 EMAIL_USERNAME = env.str("EMAIL_USERNAME", "")
 EMAIL_PASSWORD = env.str("EMAIL_PASSWORD", "")
 
-RUN_AF2_PATH = env.str("RUN_AF2_PATH", "not_provided")
-DECOMPRESS_PKLS_PATH = env.str("DECOMPRESS_PKLS_PATH", "not_provided")
 RUN_ANNOTATE_PATH = env.str("RUN_ANNOTATE_PATH", "not_provided")
 RUN_DOCK = env.str("RUN_DOCK", "not_provided")

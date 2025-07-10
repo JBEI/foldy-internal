@@ -145,8 +145,9 @@ get_folds_fields = ns.model("GetFolds", {"filter": fields.String(required=False)
 
 def log_getattr(a, field, default, debuginfo):
     returnval = getattr(a, field, default)
-    logging.error(f"Got {returnval} for {field} ({debuginfo})")
+    # logging.error(f"Got {returnval} for {field} ({debuginfo})")
     return returnval
+
 
 fold_fields = ns.model(
     "Fold",
@@ -165,22 +166,26 @@ fold_fields = ns.model(
         "jobs": fields.List(fields.Nested(simple_invokation_fields)),
         "docks": fields.List(
             fields.Nested(dock_fields),
-            attribute=lambda x: ([] if log_getattr(x, "_skip_embedded_fields", False, 'docks') else x.docks),
+            attribute=lambda x: (
+                [] if log_getattr(x, "_skip_embedded_fields", False, "docks") else x.docks
+            ),
         ),
         "logits": fields.List(
             fields.Nested(logit_fields),
-            attribute=lambda x: ([] if log_getattr(x, "_skip_embedded_fields", False, 'logits') else x.logits),
+            attribute=lambda x: (
+                [] if log_getattr(x, "_skip_embedded_fields", False, "logits") else x.logits
+            ),
         ),
         "embeddings": fields.List(
             fields.Nested(embedding_fields),
             attribute=lambda x: (
-                [] if log_getattr(x, "_skip_embedded_fields", False, 'embeddings') else x.embeddings
+                [] if log_getattr(x, "_skip_embedded_fields", False, "embeddings") else x.embeddings
             ),
         ),
         "evolutions": fields.List(
             fields.Nested(evolution_fields),
             attribute=lambda x: (
-                [] if log_getattr(x, "_skip_embedded_fields", False, 'evolutions') else x.evolutions
+                [] if log_getattr(x, "_skip_embedded_fields", False, "evolutions") else x.evolutions
             ),
         ),
         # Old AF2 inputs.
@@ -196,6 +201,7 @@ new_folds_fields = ns.model(
         "start_fold_job": fields.Boolean(required=False),
         "email_on_completion": fields.Boolean(required=False),
         "skip_duplicate_entries": fields.Boolean(required=False),
+        "is_dry_run": fields.Boolean(required=False),
     },
 )
 
@@ -209,7 +215,7 @@ pagination_fields = ns.model(
         "pages": fields.Integer(required=False),
         "has_prev": fields.Boolean(required=False),
         "has_next": fields.Boolean(required=False),
-    }
+    },
 )
 
 # Pagination response model
@@ -217,8 +223,8 @@ paginated_folds_fields = ns.model(
     "PaginatedFolds",
     {
         "data": fields.List(fields.Nested(fold_fields, skip_none=True)),
-        "pagination": fields.Nested(pagination_fields)
-    }
+        "pagination": fields.Nested(pagination_fields),
+    },
 )
 
 
@@ -251,34 +257,6 @@ get_folds_parser.add_argument(
 
 @ns.route("/fold")
 class FoldsResource(Resource):
-    @ns.expect(get_folds_parser)
-    @ns.marshal_list_with(fold_fields, skip_none=True)
-    def get(self):
-        start_time = time.time()
-        args = get_folds_parser.parse_args()
-        print(args, flush=True)
-
-        filter = args.get("filter", None)
-        tag = args.get("tag", None)
-        page = args.get("page", None)
-        per_page = args.get("per_page", None)
-
-        only_public = not user_jwt_grants_edit_access(get_jwt()["user_claims"])
-
-        manager = FoldStorageManager()
-        manager.setup()
-
-        folds = manager.get_folds_with_state(filter, tag, only_public, page, per_page)
-        num_jobs = sum([len(fold.jobs) for fold in folds])
-        num_docks = sum([len(fold.docks) for fold in folds])
-        print(
-            f"Returning {len(folds)} folds with {num_jobs} jobs and {num_docks} docks in {time.time() - start_time} seconds",
-            flush=True,
-        )
-        for fold in folds:
-            fold._skip_embedded_fields = True
-        return folds
-
     # TODO(jbr): Figure out what is causing this call to fail and add validation.
     @ns.expect(new_folds_fields, validate=False)
     @verify_has_edit_access
@@ -291,6 +269,7 @@ class FoldsResource(Resource):
         start_fold_job = request.get_json()["start_fold_job"]
         email_on_completion = request.get_json().get("email_on_completion", False)
         skip_duplicate_entries = request.get_json().get("skip_duplicate_entries", False)
+        is_dry_run = request.get_json().get("is_dry_run", False)
 
         return make_new_folds(
             fsm,
@@ -299,7 +278,9 @@ class FoldsResource(Resource):
             start_fold_job,
             email_on_completion,
             skip_duplicate_entries,
+            is_dry_run,
         )
+
 
 @ns.route("/paginated_fold")
 class PaginatedFoldsResource(Resource):
@@ -324,9 +305,80 @@ class PaginatedFoldsResource(Resource):
         logging.error(
             f"Returning {len(folds['data'])} folds in {time.time() - start_time} seconds",
         )
-        for fold in folds['data']:
+        for fold in folds["data"]:
             fold._skip_embedded_fields = True
         return folds
+
+
+# Tags response model
+tag_info_fields = ns.model(
+    "TagInfo",
+    {
+        "tag": fields.String(required=True, description="The tag name"),
+        "fold_count": fields.Integer(required=True, description="Number of folds with this tag"),
+        "contributors": fields.List(
+            fields.String, description="Users who have folds with this tag"
+        ),
+        "recent_folds": fields.List(fields.String, description="Recent fold names with this tag"),
+    },
+)
+
+tags_response_fields = ns.model(
+    "TagsResponse", {"tags": fields.List(fields.Nested(tag_info_fields))}
+)
+
+
+@ns.route("/tags")
+class TagsResource(Resource):
+    @ns.marshal_with(tags_response_fields)
+    def get(self):
+        """Get all tags with their fold counts and contributors."""
+        only_public = not user_jwt_grants_edit_access(get_jwt()["user_claims"])
+
+        # Build query based on access permissions
+        query = db.session.query(Fold).join(Fold.user)
+        if only_public:
+            query = query.filter(Fold.is_public == True)
+
+        # Get all folds with tags
+        folds_with_tags = (
+            query.filter(Fold.tagstring != "").filter(Fold.tagstring.isnot(None)).all()
+        )
+
+        # Process tags
+        tag_info = {}
+        for fold in folds_with_tags:
+            if fold.tagstring:
+                tags = [tag.strip() for tag in fold.tagstring.split(",") if tag.strip()]
+                for tag in tags:
+                    if tag not in tag_info:
+                        tag_info[tag] = {
+                            "tag": tag,
+                            "fold_count": 0,
+                            "contributors": set(),
+                            "recent_folds": [],
+                        }
+
+                    tag_info[tag]["fold_count"] += 1
+                    # Only add non-None user names to contributors
+                    if fold.user.name is not None:
+                        tag_info[tag]["contributors"].add(fold.user.name)
+
+                    # Keep track of recent folds (limit to 5)
+                    if len(tag_info[tag]["recent_folds"]) < 5:
+                        tag_info[tag]["recent_folds"].append(fold.name)
+
+        # Convert sets to lists and sort by fold count
+        result = []
+        for tag_data in tag_info.values():
+            tag_data["contributors"] = sorted(list(tag_data["contributors"]))
+            result.append(tag_data)
+
+        # Sort by fold count (descending)
+        result.sort(key=lambda x: x["fold_count"], reverse=True)
+
+        return {"tags": result}
+
 
 @ns.route("/fold/<int:fold_id>")
 class FoldResource(Resource):
@@ -428,9 +480,13 @@ class PaeResource(Resource):
                     )
                     return make_response({"error": "PAE data not found"}, 404)
 
+                if isinstance(pae, np.lib.npyio.NpzFile):
+                    pae = pae["pae"]
+
                 if not isinstance(pae, np.ndarray):
-                    print(f"PAE data is not a numpy array: {type(pae)}", flush=True)
-                    return make_response({"error": "Invalid PAE data format"}, 500)
+                    message = f"PAE data is not a numpy array: {type(pae)} {pae.files}"
+                    print(message, flush=True)
+                    return make_response({"error": message}, 500)
 
                 if pae.ndim != 2 or pae.shape[0] != pae.shape[1]:
                     print(f"PAE data has invalid shape: {pae.shape}", flush=True)

@@ -43,6 +43,7 @@ class User(PkModel):
     # Id is created automatically.
 
     email = Column(db.String(80), unique=True, nullable=False)
+    name = Column(db.String(80), nullable=True)
     created_at = Column(db.DateTime, nullable=False, default=datetime.now(UTC))
     access_type = Column(db.String(80), nullable=True)
     attributes = Column(db.JSON, nullable=True, default=dict)  # Add this line

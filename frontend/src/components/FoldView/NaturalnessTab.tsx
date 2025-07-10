@@ -2,22 +2,21 @@ import React, { useState, useMemo } from 'react';
 import { Logit, Invokation } from 'src/types/types';
 import { FaDownload, FaEye, FaFileCode, FaRedo } from 'react-icons/fa';
 import { downloadFileStraightToFilesystem, getFile } from '../../api/fileApi';
-import { startLogits } from '../../api/embedApi';
 import Plot from 'react-plotly.js';
 import { Data } from 'plotly.js';
 import Papa from 'papaparse';
-import { ESMModelPicker } from './ESMModelPicker';
 import { Selection } from './StructurePane';
 import ReactDataGrid from 'react-data-grid';
 import { notify } from '../../services/NotificationService';
 import { BoltzYamlHelper } from '../../util/boltzYamlHelper';
-import { TabContainer, DescriptionSection, TableSection, CollapsibleSection, FormRow, FormField, ButtonGroup, ResponsiveTable } from '../../util/tabComponents';
-import { TextInputControl, CheckboxControl, NumberInputControl } from '../../util/controlComponents';
+import { TabContainer, DescriptionSection, TableSection, ButtonGroup, ResponsiveTable } from '../../util/tabComponents';
+import { CheckboxControl, NumberInputControl } from '../../util/controlComponents';
 import { DataTableContainer } from '../../util/plotComponents';
-import { Alert, Modal, Button as AntButton, Typography } from 'antd';
-import { QuestionCircleOutlined } from '@ant-design/icons';
+import { Button as AntButton, Typography } from 'antd';
+import { NaturalnessModal } from '../shared/NaturalnessModal';
+import { LogitParametersModal } from '../shared/LogitParametersModal';
+import { PlusOutlined } from '@ant-design/icons';
 
-const { Text, Paragraph, Title } = Typography;
 
 
 const NATURALNESS_COLUMN = 'probability';
@@ -76,7 +75,6 @@ const parseCsvDataIntoRowData = (logitCsvDataString: string, useWtMarginalAsScor
         const endsInHyphen = row['seq_id'].match(/.*-.*/);
         const endsInBar = row['seq_id'].match(/.*\|.*/);
         if (endsInSpecialCharacter || endsInDot || endsInHyphen || endsInBar) {
-            console.log(`Filtering out row: ${row['seq_id']}`);
             return false;
         }
         return true;
@@ -262,11 +260,10 @@ const LogitTable: React.FC<LogitTableProps> = ({
 };
 
 const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlConfig, jobs, logits, setSelectedSubsequence, openUpLogsForJob }) => {
-    const [runName, setRunName] = useState<string>('');
-    const [logitModel, setLogitModel] = useState<string>('esmc_600m');
-    const [useStructure, setUseStructure] = useState<boolean>(false);
-    const [getDepthTwoLogits, setGetDepthTwoLogits] = useState<boolean>(false);
-    const [showForm, setShowForm] = useState<boolean>(false);
+    const [showNaturalnessModal, setShowNaturalnessModal] = useState<boolean>(false);
+    const [showParametersModal, setShowParametersModal] = useState<boolean>(false);
+    const [selectedLogit, setSelectedLogit] = useState<Logit | null>(null);
+    const [templateLogit, setTemplateLogit] = useState<Logit | null>(null);
 
     const [displayedLogitId, setDisplayedLogitId] = useState<number | null>(null);
     const [logitCsvData, setLogitCsvData] = useState<string | null>(null);
@@ -274,21 +271,10 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
     const [zeroWildType, setZeroWildType] = useState<boolean>(false);
     const [showWTMarginalLikelihood, setShowWTMarginalLikelihood] = useState<boolean>(true);
 
-    const [maxMutationsPerLocus, setMaxMutationsPerLocus] = useState<number>(2);
+    const [maxMutationsPerLocus, setMaxMutationsPerLocus] = useState<number>(3);
     const [topPerformersToDisplay, setTopPerformersToDisplay] = useState<number>(24);
 
 
-    const handleStartLogit = async () => {
-        try {
-            notify.info('Starting naturalness run...');
-            const logitRun = await startLogits(foldId, runName, logitModel, useStructure, getDepthTwoLogits);
-            console.log(`logitRun: ${logitRun}`);
-            console.log(`logitRun keys: ${Object.keys(logitRun)}`);
-            notify.success(`Logit run started with id ${logitRun.id} and name ${logitRun.name}`);
-        } catch (error) {
-            notify.error(`Failed to start logit run: ${error}`);
-        }
-    };
 
     const getLogitStatus = (logit: Logit): string => {
         const job = jobs?.find(job => job.id === logit.invokation_id);
@@ -313,13 +299,14 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
         );
     };
 
-    const rerunLogit = async (logit: Logit) => {
-        notify.info(`Repopulating "New Logit Run" with parameters from ${logit.name}.`);
-        setRunName(logit.name);
-        setShowForm(true);
-        setLogitModel(logit.logit_model);
-        setUseStructure(logit.use_structure || false);
-        setGetDepthTwoLogits(logit.get_depth_two_logits || false);
+    const viewLogitParameters = (logit: Logit) => {
+        setSelectedLogit(logit);
+        setShowParametersModal(true);
+    };
+
+    const redoLogit = (logit: Logit) => {
+        setTemplateLogit(logit);
+        setShowNaturalnessModal(true);
     };
 
     const loadLogit = (logitId: number) => {
@@ -452,6 +439,7 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
         if (configHelper.getProteinSequences().length > 1) {
             notify.error('Cannot currently highlight residues on multimers.');
         }
+        let chainId = configHelper.getProteinSequences()[0][0];
 
         const tableData: RowData[] | null = parseCsvDataIntoRowData(logitCsvData, showWTMarginalLikelihood, zeroWildType, maxMutationsPerLocus, topPerformersToDisplay) || null;
         if (!tableData) return null;
@@ -466,7 +454,7 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
 
         const selection = uniqueLociToHighlight.map(locus => {
             return {
-                struct_asym_id: 'A',
+                struct_asym_id: chainId,
                 start_residue_number: locus,
                 end_residue_number: locus,
                 color: "#FFD700",
@@ -479,26 +467,38 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
         });
     }
 
-    const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
-
     return (
         <TabContainer>
             {/* Description Section */}
             <DescriptionSection title="Naturalness Overview">
-                    Naturalness (TODO: describe PLMs, naturalness, logits, etc)
-                    <ul>
-                        <li><code>logit model</code> which PLM you want to use to predict logits</li>
-                    </ul>
-                    <p>
-                        Once complete, you can download the "naturalness" scores for all mutants from the Files tab.
-                    </p>
-                    <p>
-                        <code>Estimated cost:</code>~$1 per run.
-                    </p>
+                Naturalness (TODO: describe PLMs, naturalness, logits, etc)
+                <ul>
+                    <li><code>logit model</code> which PLM you want to use to predict logits</li>
+                </ul>
+                <p>
+                    Once complete, you can download the "naturalness" scores for all mutants from the Files tab.
+                </p>
+                <p>
+                    <code>Estimated cost:</code>~$1 per run.
+                </p>
             </DescriptionSection>
 
             {/* Evolution Runs Table */}
-            <TableSection title="Logit Runs">
+            <TableSection
+                title="Naturalness Runs"
+                extra={
+                    <AntButton
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={() => {
+                            setTemplateLogit(null);
+                            setShowNaturalnessModal(true);
+                        }}
+                    >
+                        New
+                    </AntButton>
+                }
+            >
                 <ResponsiveTable>
                     <thead>
                         <tr>
@@ -528,8 +528,8 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
                                                     onClick={() => downloadLogitCsv(logit)} />
                                             </> : null
                                     }
-                                    <FaRedo uk-tooltip="Retry the logit run."
-                                        onClick={() => rerunLogit(logit)} />
+                                    <FaRedo uk-tooltip="Redo naturalness run"
+                                        onClick={() => redoLogit(logit)} />
                                 </td>
                             </tr>
                         ))}
@@ -540,7 +540,32 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
             {/* Display logit info, if requested. */}
             {
                 displayedLogitId ?
-                    <>
+                    <TableSection title={""} scrollable={false}>
+                        <div style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginBottom: "10px"
+                        }}>
+                            <h2 style={{ margin: 0, overflowWrap: 'anywhere' }}>
+                                {logits?.find(l => l.id === displayedLogitId)?.name || "Naturalness Results"}
+                            </h2>
+                            <button
+                                onClick={() => setDisplayedLogitId(null)}
+                                style={{
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    fontSize: "20px",
+                                    padding: "5px",
+                                    color: "#666"
+                                }}
+                                aria-label="Close"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
                         <CheckboxControl
                             label="Mask wild-type amino acids"
                             checked={maskWildType}
@@ -577,8 +602,7 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
                             topPerformersToDisplay={topPerformersToDisplay}
                         />
                         <ButtonGroup>
-                            <button
-                                className="uk-button uk-button-default"
+                            <AntButton
                                 onClick={() => {
                                     if (!logitCsvData) return;
 
@@ -595,138 +619,32 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
                                 }}
                             >
                                 Copy mutations to clipboard
-                            </button>
-                            <button className="uk-button uk-button-primary" onClick={() => highlightResiduesOnModel()}>
+                            </AntButton>
+                            <AntButton type="primary" onClick={() => highlightResiduesOnModel()}>
                                 Highlight residues on model
-                            </button>
+                            </AntButton>
                         </ButtonGroup>
-                    </>
+                    </TableSection>
                     : null
             }
 
-            {/* Collapsible New Run Section */}
-            <CollapsibleSection
-                title="New Naturalness Run"
-                isOpen={showForm}
-                onToggle={() => setShowForm(!showForm)}
-            >
-                {/* Help Alert */}
-                <Alert
-                    message="What is Naturalness?"
-                    description={
-                        <div>
-                            <Paragraph>
-                                Naturalness uses protein language models to score how "natural" each possible amino acid mutation looks.
-                                Higher scores indicate mutations that are more likely to maintain protein function.
-                            </Paragraph>
-                            <AntButton
-                                type="link"
-                                icon={<QuestionCircleOutlined />}
-                                onClick={() => setShowHelpModal(true)}
-                                style={{ padding: 0 }}
-                            >
-                                View detailed naturalness guide
-                            </AntButton>
-                        </div>
-                    }
-                    type="info"
-                    showIcon
-                    style={{ marginBottom: '20px' }}
-                />
 
-                {/* Detailed Help Modal */}
-                <Modal
-                    title="Naturalness Analysis Guide"
-                    open={showHelpModal}
-                    onCancel={() => setShowHelpModal(false)}
-                    footer={[
-                        <AntButton key="close" onClick={() => setShowHelpModal(false)}>
-                            Close
-                        </AntButton>
-                    ]}
-                    width={700}
-                >
-                    <div>
-                        <Title level={4}>What is Naturalness?</Title>
-                        <Paragraph>
-                            Naturalness analysis uses protein language models (PLMs) to evaluate how "natural" or likely
-                            each possible amino acid substitution appears based on evolutionary patterns learned from
-                            millions of protein sequences.
-                        </Paragraph>
+            {/* Naturalness Modal */}
+            <NaturalnessModal
+                key={templateLogit ? `template-${JSON.stringify(templateLogit)}` : 'new-embedding'}
+                open={showNaturalnessModal}
+                onClose={() => setShowNaturalnessModal(false)}
+                foldIds={[foldId]}
+                title={templateLogit ? "Redo Naturalness Run" : "New Naturalness Run"}
+                templateNaturalnessRun={templateLogit || undefined}
+            />
 
-                        <Title level={4}>How to Use</Title>
-                        <ul>
-                            <li><Text strong>Model Selection:</Text> Choose from different PLMs (ESM-C models recommended)</li>
-                            <li><Text strong>Structure Integration:</Text> Optionally include 3D structure information</li>
-                            <li><Text strong>Depth Two Logits:</Text> Advanced option for pair mutation analysis</li>
-                        </ul>
-
-                        <Title level={4}>Interpreting Results</Title>
-                        <Paragraph>
-                            The heatmap shows naturalness scores for each position-residue combination:
-                        </Paragraph>
-                        <ul>
-                            <li><Text strong>Higher scores:</Text> More "natural" mutations, likely to preserve function</li>
-                            <li><Text strong>Lower scores:</Text> Less natural mutations, may disrupt protein</li>
-                            <li><Text strong>Wild-type masking:</Text> Option to hide original residues for clearer visualization</li>
-                        </ul>
-
-                        <Alert
-                            message="Estimated Cost"
-                            description="~$1 per naturalness run"
-                            type="success"
-                            showIcon
-                            style={{ marginTop: '16px' }}
-                        />
-
-                        <Paragraph style={{ marginTop: '16px' }}>
-                            Results can be downloaded as CSV files containing naturalness scores for all single mutations.
-                        </Paragraph>
-                    </div>
-                </Modal>
-
-                <h3>Start New Naturalness Run</h3>
-                <FormRow>
-                    <FormField>
-                        <TextInputControl
-                            label="Name"
-                            value={runName}
-                            onChange={setRunName}
-                        />
-                    </FormField>
-
-                    <FormField>
-                        <ESMModelPicker
-                            value={logitModel}
-                            onChange={setLogitModel}
-                        />
-                    </FormField>
-
-                    <FormField>
-                        <CheckboxControl
-                            label="Use Structure (experimental)"
-                            checked={useStructure}
-                            onChange={setUseStructure}
-                        />
-                    </FormField>
-
-                    <FormField>
-                        <CheckboxControl
-                            label="Get Depth Two Logits (experimental)"
-                            checked={getDepthTwoLogits}
-                            onChange={setGetDepthTwoLogits}
-                        />
-                    </FormField>
-                </FormRow>
-
-                <button
-                    className="uk-button uk-button-primary uk-margin-top"
-                    onClick={handleStartLogit}
-                    disabled={runName === ''}
-                >
-                    Start Logit Run
-                </button>
-            </CollapsibleSection>
+            {/* Parameters Modal */}
+            <LogitParametersModal
+                open={showParametersModal}
+                onClose={() => setShowParametersModal(false)}
+                logit={selectedLogit}
+            />
         </TabContainer>
     );
 };

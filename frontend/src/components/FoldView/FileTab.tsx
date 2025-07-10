@@ -16,8 +16,8 @@ import { TabContainer, SectionCard } from "../../util/tabComponents";
 interface FileTabProps {
     foldId: number;
     foldName: string | null;
-    pdbString: string | null;
-    maybeDownloadPdb: () => void;
+    cifString: string | null;
+    maybeDownloadCif: () => void;
     files: FileInfo[];
 }
 
@@ -173,20 +173,20 @@ const FileTab = React.memo((props: FileTabProps) => {
                 <button
                     type="button"
                     className="uk-button uk-button-primary"
-                    onClick={props.maybeDownloadPdb}
-                    disabled={!(props.foldName && props.pdbString)}
+                    onClick={props.maybeDownloadCif}
+                    disabled={!(props.foldName && props.cifString)}
                 >
-                    Download Best PDB
+                    Download Best CIF
                 </button>
             </SectionCard>
 
             <SectionCard>
                 <h3 style={{ marginBottom: '15px' }}>Files</h3>
-                <div style={{ 
-                    height: "400px", 
-                    border: "1px solid #e0e0e0", 
-                    borderRadius: "8px", 
-                    overflow: "hidden" 
+                <div style={{
+                    height: "400px",
+                    border: "1px solid #e0e0e0",
+                    borderRadius: "8px",
+                    overflow: "hidden"
                 }}>
                     <FileBrowser
                         files={getImmediateChildren()}

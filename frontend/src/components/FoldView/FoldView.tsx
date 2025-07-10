@@ -1,14 +1,14 @@
 import jquery from "jquery";
-import ParsePdb, { ParsedPdb } from "parse-pdb";
 import React, { Component } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import UIkit from "uikit";
+import { Button, Card, Typography } from 'antd';
+
+const { Title } = Typography;
 import { notify } from "../../services/NotificationService";
 import { queueJob } from "../../api/commonApi";
 import { deleteDock } from "../../api/dockApi";
-import { getFoldPdb, getFoldPfam, getInvokation } from "../../api/foldApi";
-import { VariousColorSchemes } from "../../util/plots";
-import ContactTab from "./ContactTab";
+import { getFoldPfam, getInvokation } from "../../api/foldApi";
 import DockTab from "./DockTab";
 import "./FoldView.scss";
 import PaeTab from "./PaeTab";
@@ -18,8 +18,8 @@ import fileDownload from "js-file-download";
 import NaturalnessTab from "./NaturalnessTab";
 import EmbedTab from "./EmbedTab";
 import EvolveTab from "./EvolveTab";
-import { Annotations, FileInfo, Fold, FoldPdb, Invokation } from "../../types/types";
-import { getFileList } from "../../api/fileApi";
+import { Annotations, RenderableAnnotations, FileInfo, Fold, Invokation } from "../../types/types";
+import { getFile, getFileList } from "../../api/fileApi";
 import { getFold, updateFold } from "../../api/foldApi";
 import StructurePane, { Selection } from "./StructurePane";
 import FileTab from "./FileTab";
@@ -31,6 +31,7 @@ const REFRESH_STATE_MAX_ITERS = 200;
 interface FoldProps {
     foldId: number;
     userType: string | null;
+    navigate: ReturnType<typeof useNavigate>;
 }
 
 
@@ -40,16 +41,12 @@ interface FoldState {
     // Note that a subset of job data is also in foldData.
     files: FileInfo[];
     jobs: Invokation[] | null;
-    pdb: FoldPdb | null;
-    parsedPdb: ParsedPdb | null;
+    cifString: string | null;
+    pdbString: string | null;
 
-    // Defines our current color "mode".
-    colorScheme: string;
+    renderablePfamAnnotations: RenderableAnnotations | null;
 
-    pfamAnnotations: Annotations | null;
-    pfamColors: VariousColorSchemes | null;
-
-    pdbFailedToLoad: boolean;
+    structureFailedToLoad: boolean;
     paeIsOnScreen: boolean;
     contactIsOnScreen: boolean;
     showSplitScreen: boolean;
@@ -72,15 +69,12 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
             foldData: null,
             files: [],
             jobs: null,
-            pdb: null,
-            parsedPdb: null,
+            cifString: null,
+            pdbString: null,
 
-            colorScheme: "pfam",  // pLDDT
+            renderablePfamAnnotations: null,
 
-            pfamAnnotations: null,
-            pfamColors: null,
-
-            pdbFailedToLoad: false,
+            structureFailedToLoad: false,
             paeIsOnScreen: false,
             contactIsOnScreen: false,
             showSplitScreen: window.innerWidth >= WINDOW_WIDTH_FOR_SPLIT_SCREEN,
@@ -181,6 +175,36 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
         });
     };
 
+    // Generate colors for pfam annotations
+    generatePfamColors = (annotations: Annotations): RenderableAnnotations => {
+        const colors = [
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+            '#DDA0DD', '#FFB347', '#87CEEB', '#F0E68C', '#FA8072',
+            '#98FB98', '#F4A460', '#DEB887', '#20B2AA', '#87CEFA'
+        ];
+
+        const renderableAnnotations: RenderableAnnotations = {};
+        let colorIndex = 0;
+        const typeToColor: { [type: string]: string } = {};
+
+        for (const [chainName, chainAnnotations] of Object.entries(annotations)) {
+            renderableAnnotations[chainName] = chainAnnotations.map(annotation => {
+                // Assign consistent color per annotation type
+                if (!typeToColor[annotation.type]) {
+                    typeToColor[annotation.type] = colors[colorIndex % colors.length];
+                    colorIndex++;
+                }
+
+                return {
+                    ...annotation,
+                    color: typeToColor[annotation.type]
+                };
+            });
+        }
+
+        return renderableAnnotations;
+    };
+
     componentDidMount() {
         this.interval = setInterval(() => {
             if (
@@ -241,39 +265,52 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
 
                 getFoldPfam(this.props.foldId).then(
                     (pfam) => {
+                        console.log("Pfam annotations downloaded:", pfam);
                         if (!this.state.foldData) {
                             return;
                         }
+                        const renderableAnnotations = this.generatePfamColors(pfam);
+                        console.log("Generated renderable pfam annotations:", renderableAnnotations);
                         this.setState({
-                            pfamAnnotations: pfam,
+                            renderablePfamAnnotations: renderableAnnotations,
                         });
                     },
                     (e) => {
-                        console.log(e.toString());
+                        console.log("Error downloading pfam annotations:", e.toString());
                     }
                 );
 
-                // NOTE: This is where you can switch tabs to the structure view, once loaded up.
-                // const switcher = document.getElementById('tab');
-                // if (switcher) {
-                //   UIkit.tab(switcher).show(3);
-                // }
 
-                return getFoldPdb(this.props.foldId, 0).then(
-                    (pdb) => {
-                        const parsedPdb = ParsePdb(pdb.pdb_string);
-                        console.log(parsedPdb);
-
-                        this.setState({ parsedPdb: parsedPdb, pdb: pdb });
-
-                        if (!this.state.foldData || !this.state.foldData.id) {
-                            return;
-                        }
-
-                        console.log(`PDB is ${pdb.pdb_string.length} characters long.`);
+                getFile(this.props.foldId, `ranked_0.cif`).then(
+                    (fileBlob: Blob) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            try {
+                                const fileString = e.target?.result as string;
+                                this.setState({ cifString: fileString });
+                            } catch (err) {
+                                console.error("Error parsing CIF:", err);
+                                notify.error(`Failed to parse CIF: ${err}`);
+                            }
+                        };
+                        reader.readAsText(fileBlob);
                     },
-                    (e) => {
-                        this.setState({ pdbFailedToLoad: true });
+                    (e: any) => {
+                        console.log(`Fetching PDB because CIF failed: ${e}`);
+                        getFile(this.props.foldId, `ranked_0.pdb`).then(
+                            (fileBlob: Blob) => {
+                                const reader = new FileReader();
+                                reader.onload = (e) => {
+                                    const fileString = e.target?.result as string;
+                                    this.setState({ pdbString: fileString });
+                                };
+                                reader.readAsText(fileBlob);
+                            },
+                            (e: any) => {
+                                console.log(e);
+                                this.setState({ structureFailedToLoad: true });
+                            }
+                        );
                     }
                 );
             },
@@ -297,12 +334,14 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
         });
     }
 
+
     render() {
         var structurePane = (
             <div key="structure" style={{ height: "100%" }}>
                 <StructurePane
-                    pdbString={this.state.pdb?.pdb_string ?? null}
-                    pdbFailedToLoad={this.state.pdbFailedToLoad}
+                    cifString={this.state.cifString ?? null}
+                    pdbString={this.state.pdbString ?? null}
+                    structureFailedToLoad={this.state.structureFailedToLoad}
                     selection={this.state.selectedSubsequence}
                 />
             </div>
@@ -330,9 +369,9 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                 <li>
                     <a>PAE</a>
                 </li>
-                <li>
+                {/* <li>
                     <a>Contacts</a>
-                </li>
+                </li> */}
                 <li>
                     <a>Dock</a>
                 </li>
@@ -362,15 +401,11 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                             foldDiffusionSamples={this.state.foldData?.diffusion_samples}
                             foldCreateDate={this.state.foldData?.create_date}
                             foldPublic={this.state.foldData?.public}
-                            foldModelPreset={this.state.foldData?.af2_model_preset}
-                            foldDisableRelaxation={this.state.foldData?.disable_relaxation}
                             yamlConfig={this.state.foldData.yaml_config}
                             sequence={this.state.foldData.sequence}
-                            colorScheme={this.state.colorScheme}
+                            renderablePfamAnnotations={this.state.renderablePfamAnnotations}
                             setPublic={this.setPublic}
-                            setDisableRelaxation={this.setDisableRelaxation}
                             setFoldName={this.setFoldName}
-                            setFoldModelPreset={this.setFoldModelPreset}
                             setYamlConfig={this.setYamlConfig}
                             addTag={this.addTag}
                             deleteTag={this.deleteTag}
@@ -389,8 +424,8 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                     <FileTab
                         foldId={this.props.foldId}
                         foldName={this.state.foldData?.name || null}
-                        pdbString={this.state.pdb?.pdb_string || null}
-                        maybeDownloadPdb={this.maybeDownloadPdb}
+                        cifString={this.state.cifString || null}
+                        maybeDownloadCif={this.maybeDownloadCif}
                         files={this.state.files}
                     />
                 </li>
@@ -400,18 +435,19 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         <PaeTab
                             foldId={this.props.foldId}
                             foldSequence={this.state.foldData?.sequence || undefined}
+                            yamlConfig={this.state.foldData?.yaml_config || undefined}
                         />
                     ) : null}
                 </li>
 
-                <li key="contactli" id="contactli">
+                {/* <li key="contactli" id="contactli">
                     {this.state.contactIsOnScreen ? (
                         <ContactTab
                             foldId={this.props.foldId}
                             foldSequence={this.state.foldData?.sequence || undefined}
                         ></ContactTab>
                     ) : null}
-                </li>
+                </li> */}
 
                 <li key="dock">
                     <DockTab
@@ -428,7 +464,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         //     ])
                         // )}
                         ranks={{}}
-                        displayLigandPose={this.displayLigandPose}
+                        displayLigandPose={() => { }}
                         shiftFrame={this.shiftFrame}
                         deleteLigandPose={this.deleteLigandPose}
                     />
@@ -470,22 +506,37 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
 
                 <li key="actionsli">
                     <form>
-                        <fieldset className="uk-fieldset uk-margin">
-                            <h3>Job Management</h3>
+                        <Card style={{ marginBottom: '16px' }}>
+                            <Title level={4}>Job Management</Title>
                             {[...this.actionToStageName].map((actionAndStageName) => {
                                 return (
                                     <div key={actionAndStageName[1]}>
-                                        <button
-                                            type="button"
-                                            className="uk-button uk-button-primary uk-margin-left uk-margin-small-bottom uk-form-small"
+                                        <Button
+                                            type="primary"
+                                            size="small"
+                                            style={{ marginLeft: '8px', marginBottom: '8px' }}
                                             onClick={() => this.startStage(actionAndStageName[1])}
                                         >
                                             {actionAndStageName[0]}
-                                        </button>
+                                        </Button>
                                     </div>
                                 );
                             })}
-                        </fieldset>
+                        </Card>
+
+                        <Card style={{ marginBottom: '16px' }}>
+                            <Title level={4}>Fold Management</Title>
+                            <div>
+                                <Button
+                                    size="small"
+                                    style={{ marginLeft: '8px', marginBottom: '8px' }}
+                                    onClick={this.createSimilarFold}
+                                    disabled={this.props.userType === "viewer"}
+                                >
+                                    Create Similar Fold
+                                </Button>
+                            </div>
+                        </Card>
                     </form>
                 </li>
             </ul>
@@ -522,7 +573,8 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
 
                 <div
                     className="uk-grid uk-margin-top tool-panel-container"
-                    data-uk-tab="margin: 20"
+                    data-uk-tab="margin: 0"
+                    style={{ margin: "0px" }}
                 >
                     <div className="uk-width-1-1 uk-width-1-2@m structure-panel">
                         {structurePane}
@@ -548,18 +600,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
     ////////////////////////////////////////////////////////////////////////////////
     // UTILITY FUNCTIONS BELOW.
     ////////////////////////////////////////////////////////////////////////////////
-
-    getNglColorSchemeName = (colorScheme: string): string => {
-        if (colorScheme === "pLDDT") {
-            return "bFactor";
-        } else if (colorScheme === "chainname") {
-            return "chainname";
-        } else if (colorScheme === "pfam") {
-            return this.state.pfamColors?.nglColorscheme || "chainname";
-        }
-        console.error("Got invalid color scheme...");
-        return "unknown";
-    };
 
     renderBadge = (
         stageName: string,
@@ -609,21 +649,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
         );
     };
 
-    changeColor = () => {
-        var newColorScheme: string;
-        if (this.state.colorScheme === "pLDDT") {
-            newColorScheme = "chainname";
-        } else if (this.state.colorScheme === "chainname") {
-            newColorScheme = "pfam";
-        } else {
-            newColorScheme = "pLDDT";
-        }
-
-        var nglViewerColorScheme = this.getNglColorSchemeName(newColorScheme);
-
-        this.setState({ colorScheme: newColorScheme });
-    };
-
     startStage = (stage: string) => {
         queueJob(this.props.foldId, stage, true).then(
             () => {
@@ -635,11 +660,30 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
         );
     };
 
-    maybeDownloadPdb = () => {
-        if (!this.state.pdb || !this.state.foldData) {
+    createSimilarFold = () => {
+        if (!this.state.foldData) {
             return;
         }
-        fileDownload(this.state.pdb.pdb_string, `${this.state.foldData.name}.pdb`);
+
+        const copyName = `${this.state.foldData.name} Copy`;
+        const yamlConfig = this.state.foldData.yaml_config || '';
+        const tags = this.state.foldData.tags || [];
+
+        // Navigate to NewFoldView with prepopulated data
+        const params = new URLSearchParams({
+            name: encodeURIComponent(copyName),
+            yaml: encodeURIComponent(yamlConfig),
+            tags: encodeURIComponent(JSON.stringify(tags))
+        });
+
+        this.props.navigate(`/newFold?${params.toString()}`);
+    };
+
+    maybeDownloadCif = () => {
+        if (!this.state.cifString || !this.state.foldData) {
+            return;
+        }
+        fileDownload(this.state.cifString, `${this.state.foldData.name}.cif`);
     };
 
     actionToStageName = [
@@ -879,6 +923,8 @@ function FoldView(props: {
     userType: string | null;
 }) {
     let { foldId } = useParams();
+    const navigate = useNavigate();
+
     if (!foldId) {
         return null;
     }
@@ -886,6 +932,7 @@ function FoldView(props: {
         <InternalFoldView
             foldId={parseInt(foldId)}
             userType={props.userType}
+            navigate={navigate}
         />
     );
 }

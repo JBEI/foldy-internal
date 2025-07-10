@@ -72,6 +72,7 @@ class LocalBlob:
         """
         return os.path.getsize(self.file_path)
 
+
 class StorageAccessor:
     @abstractmethod
     def list_files(self, fold_id: int, subfolder: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -97,9 +98,13 @@ class StorageAccessor:
         raise NotImplementedError
 
     @abstractmethod
-    def delete_folder(self, fold_id: int, relative_folder_path: str, allow_list_suffixes: Optional[List[str]] = None) -> None:
+    def delete_folder(
+        self,
+        fold_id: int,
+        relative_folder_path: str,
+        allow_list_suffixes: Optional[List[str]] = None,
+    ) -> None:
         raise NotImplementedError
-
 
 
 class LocalStorageAccessor(StorageAccessor):
@@ -220,8 +225,12 @@ class LocalStorageAccessor(StorageAccessor):
                 out_file_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(local_file_path, out_file_path)
 
-
-    def delete_folder(self, fold_id: int, relative_folder_path: str, allow_list_suffixes: Optional[List[str]] = None) -> None:
+    def delete_folder(
+        self,
+        fold_id: int,
+        relative_folder_path: str,
+        allow_list_suffixes: Optional[List[str]] = None,
+    ) -> None:
         """Deletes a whole folder, like rm -r."""
         if self.local_directory is None:
             raise BadRequest("Local directory not initialized")
@@ -231,7 +240,9 @@ class LocalStorageAccessor(StorageAccessor):
 
         if os.path.exists(dir):
             for file in dir.glob("**/*"):
-                if allow_list_suffixes is None or not any(str(file).endswith(suffix) for suffix in allow_list_suffixes):
+                if allow_list_suffixes is None or not any(
+                    str(file).endswith(suffix) for suffix in allow_list_suffixes
+                ):
                     file.unlink()
 
 
@@ -390,7 +401,12 @@ class GcloudStorageAccessor(StorageAccessor):
                 blob = bucket.blob(gcloud_path)
                 blob.upload_from_filename(local_file_path)
 
-    def delete_folder(self, fold_id: int, relative_folder_path: str, allow_list_suffixes: Optional[List[str]] = None) -> None:
+    def delete_folder(
+        self,
+        fold_id: int,
+        relative_folder_path: str,
+        allow_list_suffixes: Optional[List[str]] = None,
+    ) -> None:
         """Deletes a whole folder, like rm -r."""
         if self.client is None or self.bucket_name is None:
             raise BadRequest("GCloud client not initialized")
@@ -405,7 +421,9 @@ class GcloudStorageAccessor(StorageAccessor):
         bucket = self.client.bucket(self.bucket_name)
         blobs: Iterable[Blob] = bucket.list_blobs(prefix=gcloud_path)
         for blob in blobs:
-            if allow_list_suffixes is None or not any(str(blob.name).endswith(suffix) for suffix in allow_list_suffixes):
+            if allow_list_suffixes is None or not any(
+                str(blob.name).endswith(suffix) for suffix in allow_list_suffixes
+            ):
                 blob.delete()
 
 
@@ -446,83 +464,6 @@ class FoldStorageManager:
 
         return fold
 
-    def get_folds_with_state(
-        self,
-        filter: Optional[str],
-        tag: Optional[str],
-        only_public: bool,
-        page: Optional[int],
-        per_page: Optional[int],
-    ) -> List[Fold]:
-        """Returns a list of folds with state populated."""
-
-        def get_tag_regex(term):
-            """Convert the tag into a regex for searching the tagstring CSV."""
-            return "(^|,)" + term + "(,|$)"
-
-        query = (
-            db.session.query(Fold).join(Fold.user)
-            # 2/13/25: Tried replacing joinedload with selectinload to try to speed up the query.
-            # Local testing actually shows that selectinload is slower than joinedload.
-            .options(joinedload(Fold.jobs), joinedload(Fold.docks))
-            # .options(selectinload(Fold.jobs), selectinload(Fold.docks))
-        )
-
-        if tag:
-            query = query.filter(Fold.tagstring.op("~")(get_tag_regex(tag)))
-
-        if filter:
-            for term in filter.split(" "):
-                if not term:
-                    continue
-                formatted_term = f"%{term}%"
-                query = query.filter(
-                    or_(
-                        Fold.name.ilike(formatted_term),
-                        # 2/13/25:  For now we don't search on sequence or yaml_config
-                        # because the Dashboard is taking >10 seconds to load which is no good.
-                        # We are not sure that this search is the cause of the problem,
-                        # an alternative hypothesis is the joins with jobs and docks is the issue.
-                        # But we exclude this search for now to see if it helps.
-                        # Fold.sequence.ilike(formatted_term),
-                        # Fold.yaml_config.ilike(formatted_term),
-                        User.email.ilike(formatted_term),
-                        Fold.tagstring.op("~")(get_tag_regex(term)),
-                    )
-                )
-
-        if only_public:
-            query = query.filter(Fold.public)
-
-        query = query.order_by(Fold.id.desc())
-
-        iterable = query
-        if page and per_page:
-            iterable = query.paginate(page=page, per_page=per_page).items
-
-        # folds = [fold for fold in iterable if fold is not None]
-        folds = []
-        for fold in iterable:
-            if not fold:
-                pass
-            # if not include_logs:
-            #   for job in fold.jobs:
-            #     # Since the log field is deferred, this will keep the
-            #     # response marshalling from accidentally triggering another
-            #     # sql query.
-            #     job.log = None
-            folds.append(fold)
-
-        # if not include_logs:
-        #   for job in fold.jobs:
-        #     # Since the log field is deferred, this will keep the
-        #     # response marshalling from accidentally triggering another
-        #     # sql query.
-        #     job.log = None
-
-        return folds
-
-
     def get_folds_with_pagination(
         self,
         filter: Optional[str],
@@ -538,7 +479,8 @@ class FoldStorageManager:
             return "(^|,)" + term + "(,|$)"
 
         query = (
-            db.session.query(Fold).join(Fold.user)
+            db.session.query(Fold)
+            .join(Fold.user)
             .options(joinedload(Fold.jobs), joinedload(Fold.docks))
         )
 
@@ -565,37 +507,40 @@ class FoldStorageManager:
 
         # Use pagination if page and per_page are provided
         if page and per_page:
-            logging.error(f"DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page}")
-            pagination = query.paginate(page=page, per_page=per_page, error_out=True, count=False)
+            logging.error(
+                f"DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page}"
+            )
+            pagination = query.paginate(page=page, per_page=per_page, error_out=True, count=True)
             folds = [fold for fold in pagination.items if fold is not None]
 
             return {
-                'data': folds,
-                'pagination': {
-                    'page': pagination.page,
-                    'per_page': pagination.per_page,
-                    'total': pagination.total,
-                    'pages': pagination.pages,
-                    'has_prev': pagination.has_prev,
-                    'has_next': pagination.has_next
-                }
+                "data": folds,
+                "pagination": {
+                    "page": pagination.page,
+                    "per_page": pagination.per_page,
+                    "total": pagination.total,
+                    "pages": pagination.pages,
+                    "has_prev": pagination.has_prev,
+                    "has_next": pagination.has_next,
+                },
             }
         else:
-            logging.error(f"NOT DOING PAGINATION {page} {per_page} NOT DOING PAGINATION {page} {per_page} NOT DOING PAGINATION {page} {per_page} NOT DOING PAGINATION {page} {per_page}")
+            logging.error(
+                f"NOT DOING PAGINATION {page} {per_page} NOT DOING PAGINATION {page} {per_page} NOT DOING PAGINATION {page} {per_page} NOT DOING PAGINATION {page} {per_page}"
+            )
             # If no pagination requested, return all results with basic pagination info
             all_folds = [fold for fold in query.all() if fold is not None]
             return {
-                'data': all_folds,
-                'pagination': {
-                    'page': 1,
-                    'per_page': len(all_folds),
-                    'total': len(all_folds),
-                    'pages': 1,
-                    'has_prev': False,
-                    'has_next': False
-                }
+                "data": all_folds,
+                "pagination": {
+                    "page": 1,
+                    "per_page": len(all_folds),
+                    "total": len(all_folds),
+                    "pages": 1,
+                    "has_prev": False,
+                    "has_next": False,
+                },
             }
-
 
     def write_fastas(self, id: int, yaml_config_str: str) -> None:
         """Raises an exception if writing fails."""
@@ -612,31 +557,11 @@ class FoldStorageManager:
         ]
         dna_contents = "\n\n".join(dna_fasta_entries)
 
-        # if ":" in sequence or ";" in sequence:
-        #     monomers = [m.split(":") for m in sequence.split(";")]
-        #     aa_fasta_entries = [f"> {m[0]}|protein\n{m[1]}" for m in monomers]
-        #     aa_contents = "\n\n".join(aa_fasta_entries)
-
-        #     dna_contents = "\n\n".join(
-        #         [f"> {m[0]}\n{back_translate(m[1])}" for m in monomers]
-        #     )
-        # else:
-        #     aa_contents = f"> {padded_fold_id}\n{sequence}"
-        #     dna_contents = f"> {padded_fold_id}\n{back_translate(sequence)}"
-
         if self.storage_manager is None:
             raise BadRequest("Storage manager not initialized")
 
         self.storage_manager.write_file(id, aa_blob_path, aa_contents)
         self.storage_manager.write_file(id, dna_blob_path, dna_contents)
-
-    def get_fold_pdb(self, fold_id: int, ranked_model_number: int) -> str:
-        if self.storage_manager is None:
-            raise BadRequest("Storage manager not initialized")
-
-        return self.storage_manager.get_binary(
-            fold_id, f"ranked_{ranked_model_number}.pdb"
-        ).decode()
 
     def get_fold_file_zip(
         self, fold_ids: List[int], relative_fpath: str, output_dirname: str
@@ -667,19 +592,13 @@ class FoldStorageManager:
         tmp.seek(0)
         return tmp
 
-    def get_fold_pkl(self, fold_id: int, ranked_model_number: int) -> bytes:
-        """Returns a byte string."""
-        if self.storage_manager is None:
-            raise BadRequest("Storage manager not initialized")
-
-        return self.storage_manager.get_binary(fold_id, f"ranked_{ranked_model_number}.pkl")
-
     def get_model_pae(self, fold_id: int, model_number: int) -> np.ndarray:
         if self.storage_manager is None:
             raise BadRequest("Storage manager not initialized")
 
         bytes_str = self.storage_manager.get_binary(
-            fold_id, f"boltz/boltz_results_input/predictions/input/pae_input_model_{model_number}.npz"
+            fold_id,
+            f"boltz/boltz_results_input/predictions/input/pae_input_model_{model_number}.npz",
         )
         try:
             result = np.load(io.BytesIO(bytes_str), allow_pickle=True)

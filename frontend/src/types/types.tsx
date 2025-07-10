@@ -27,16 +27,22 @@ export interface Fold extends FoldInput {
     evolutions: Evolution[] | null;
 }
 
-export interface FoldPdb {
-    pdb_string: string;
-}
-
 export interface FoldPae {
     pae: number[][];
 }
 
 export interface FoldContactProb {
     contact_prob: number[][];
+}
+
+
+export interface AffinityPrediction {
+    affinity_pred_value: number;             // Predicted binding affinity from the ensemble model
+    affinity_probability_binary: number;      // Predicted binding likelihood from the ensemble model
+    affinity_pred_value1: number;            // Predicted binding affinity from the first model
+    affinity_probability_binary1: number;     // Predicted binding likelihood from first model
+    affinity_pred_value2: number;            // Predicted binding affinity from the second model
+    affinity_probability_binary2: number;     // Predicted binding likelihood from second model
 }
 
 
@@ -52,40 +58,6 @@ export const getJobStatus = (fold: Fold, job_type: string): string | null => {
     return null;
 };
 
-
-export const describeFoldState = (fold: Fold) => {
-    const featuresState = getJobStatus(fold, "features");
-    const modelsState = getJobStatus(fold, "models");
-    const decompressState = getJobStatus(fold, "decompress_pkls");
-
-    // Special case: if anything hasn't been queued, just say unstarted.
-    if (
-        featuresState === null ||
-        modelsState === null ||
-        decompressState === null
-    ) {
-        return "unstarted";
-    }
-
-    // Another special case: before the beginning just say "queued".
-    if (featuresState === "queued") {
-        return "queued";
-    }
-
-    // Another special case: after the end just say "finished".
-    if (decompressState === "finished") {
-        return "finished";
-    }
-
-    // Normal case: print the state of the most recent stage.
-    if (featuresState !== "finished") {
-        return `features ${featuresState}`;
-    }
-    if (modelsState !== "finished") {
-        return `models ${modelsState}`;
-    }
-    return `decompress_pkls ${decompressState}`;
-};
 
 export const foldIsFinished = (fold: Fold): boolean => {
     return getJobStatus(fold, "models") === "finished";
@@ -131,6 +103,7 @@ export interface Embedding {
 export interface Evolution {
     id: number | undefined;
     name: string;
+    num_mutants: number;
     fold_id: number;
     invokation_id: number | undefined;
     mode: string;
@@ -138,7 +111,6 @@ export interface Evolution {
     naturalness_files: string | undefined;
     finetuning_model_checkpoint: string | undefined;
     few_shot_params: string | undefined;
-    num_mutants: number;
 }
 
 export interface Invokation {
@@ -158,6 +130,17 @@ export interface Annotations {
         start: number;
         end: number;
     }>;
+}
+
+export interface RenderableAnnotation {
+    type: string;
+    start: number;
+    end: number;
+    color: string;
+}
+
+export interface RenderableAnnotations {
+    [chainName: string]: Array<RenderableAnnotation>;
 }
 
 export interface FileInfo {

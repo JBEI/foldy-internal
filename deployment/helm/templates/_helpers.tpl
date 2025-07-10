@@ -149,9 +149,9 @@ spec:
 
         nodeSelector:
           iam.gke.io/gke-metadata-server-enabled: "true"
-        {{- if or (or (eq .RqQueueName "gpu") (eq .RqQueueName "biggpu")) (eq .RqQueueName "boltz") }}
+        {{- if or (eq .RqQueueName "gpu") (eq .RqQueueName "biggpu") }}
           cloud.google.com/gke-nodepool: spota100nodes
-        {{- else if (eq .RqQueueName "esm") }}
+        {{- else if or (eq .RqQueueName "esm") (eq .RqQueueName "boltz") }}
           cloud.google.com/gke-nodepool: ondemanda100nodes
         {{- else if (eq .RqQueueName "cpu") }}
           cloud.google.com/gke-nodepool: spothighmemnodes
@@ -171,10 +171,6 @@ spec:
           env:
           - name: FLASK_APP
             value: rq_worker_main.py
-          - name: RUN_AF2_PATH
-            value: /worker/run_alphafold.sh
-          - name: DECOMPRESS_PKLS_PATH
-            value: /worker/decompress_pkls.sh
           - name: RUN_ANNOTATE_PATH
             value: /worker/run_annotate.sh
           - name: RUN_DOCK

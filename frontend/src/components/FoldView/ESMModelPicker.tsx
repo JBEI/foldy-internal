@@ -1,10 +1,16 @@
 import React from 'react';
+import { Select, Typography } from 'antd';
+
+const { Text } = Typography;
 
 // Add this constant for model options
 const ESM_MODELS = [
     { value: 'esmc_600m', label: 'ESM-C (600M parameters, academic only)' },
     { value: 'esmc_300m', label: 'ESM-C (300M parameters, academic or commercial)' },
     { value: 'esm3-open', label: 'ESM-3 (works with structures, academic only)' },
+    { value: 'esm2_t6_8M_UR50D', label: 'ESM-2 (8M parameters)' },
+    { value: 'esm2_t12_35M_UR50D', label: 'ESM-2 (35M parameters)' },
+    { value: 'esm2_t30_150M_UR50D', label: 'ESM-2 (150M parameters)' },
     { value: 'esm2_t33_650M_UR50D', label: 'ESM-2 (650M parameters)' },
     { value: 'esm2_t36_3B_UR50D', label: 'ESM-2 (3B parameters)' },
     { value: 'esm2_t48_15B_UR50D', label: 'ESM-2 (15B parameters)' },
@@ -30,18 +36,15 @@ export const ESMModelPicker: React.FC<ESMModelPickerProps> = ({
 }) => {
     return (
         <div style={{ flex: 1, minWidth: '200px' }}>
-            <label className="uk-form-label">{label}</label>
-            <select
-                className="uk-select"
+            <Text strong style={{ marginBottom: '8px', display: 'block' }}>
+                {label}
+            </Text>
+            <Select
                 value={value}
-                onChange={(e) => onChange(e.target.value)}
-            >
-                {ESM_MODELS.map(model => (
-                    <option key={model.value} value={model.value}>
-                        {model.label}
-                    </option>
-                ))}
-            </select>
+                onChange={onChange}
+                style={{ width: '100%' }}
+                options={ESM_MODELS}
+            />
         </div>
     );
 };
