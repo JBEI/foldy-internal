@@ -430,16 +430,8 @@ class RandomForestFewShotModel(FewShotModel):
 
         # Calculate validation metrics if provided
         if test_activity_series is not None:
-            assert False, "TODO: IMPLEMENT"
-            # X_val, y_val = validation_data
-            # y_val_pred = get_ensemble_prediction(self.models, X_val, "median")
-            # self.metrics_.update(
-            #     {
-            #         "val_mse": mean_squared_error(y_val, y_val_pred),
-            #         "val_r2": r2_score(y_val, y_val_pred),
-            #         "val_mae": mean_absolute_error(y_val, y_val_pred),
-            #     }
-            # )
+            # TODO(jbr): Maybe utilize the test series?
+            pass
 
         # Add OOB score if available
         if hasattr(self.models, "oob_score_"):

@@ -11,10 +11,6 @@ from folde.data import get_available_proteingym_datasets
 from folde.types import FolDEModelConfig, ModelDiff, ModelEvaluation
 from folde.util import apply_diff_list_to_config
 
-# EMBEDDING_MODEL_ID = '300m_extras'
-EMBEDDING_MODEL_ID = "300m"
-NATURALNESS_MODEL_ID = "600m"
-
 evolvepro_dms_ids = [
     "A0A140D2T1_ZIKV_Sourisseau_2019",
     "A0A2Z5U3Z0_9INFA_Doud_2016",
@@ -38,7 +34,7 @@ folde_testing_dms_ids = [
     "PPM1D_HUMAN_Miller_2022",
     "SHOC2_HUMAN_Kwon_2022",
 ]
-i
+
 folde_eval_dms_ids = [
     "ADRB2_HUMAN_Jones_2020",
     "P53_HUMAN_Giacomelli_2018_Null_Nutlin",
@@ -62,7 +58,7 @@ folde_eval_dms_ids = [
 ]
 
 # Example configuration
-NAME = "250527-spg1-more"
+NAME = "250710-folde-testset"
 
 base_config = FolDEModelConfig(
     name="FolDE",
@@ -103,7 +99,7 @@ config_list = apply_diff_list_to_config(
             },
         ),
         ModelDiff(
-            name="Random->RandomForestCtrl",
+            name="Random-RandomForestCtrl",
             diffs={
                 "zero_shot_model_name": "RandomZeroShotModel",
                 "zero_shot_model_params": {},
@@ -129,20 +125,26 @@ config_list = apply_diff_list_to_config(
             },
         ),
         ModelDiff(
-            name="600m_embeddings",
+            name="600m-embeddings",
             diffs={
                 "embedding_model_id": "600m",
+                "few_shot_model_params.embedding_dim": 1152,
             },
         ),
         ModelDiff(
-            name="650m_embeddings",
+            name="650m-embeddings",
             diffs={
                 "embedding_model_id": "650m",
+                "few_shot_model_params.embedding_dim": 1280,
             },
         ),
     ],
 )
 
+
+# # EMBEDDING_MODEL_ID = '300m_extras'
+# EMBEDDING_MODEL_ID = "300m"
+# NATURALNESS_MODEL_ID = "600m"
 
 # print(f"Testing with embedding model: {EMBEDDING_MODEL_ID} and naturalness model: {NATURALNESS_MODEL_ID}")
 # available_datasets = get_available_proteingym_datasets(EMBEDDING_MODEL_ID, NATURALNESS_MODEL_ID)
