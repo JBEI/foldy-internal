@@ -23,7 +23,7 @@ evolvepro_dms_ids = [
     "PHOT_CHLRE_Chen_2023",
 ]
 
-folde_testing_dms_ids = [
+folde_train_dms_ids = [
     "ANCSZ_Hobbs_2022",
     "BLAT_ECOLX_Firnberg_2014",
     "CBS_HUMAN_Sun_2020",
@@ -35,7 +35,7 @@ folde_testing_dms_ids = [
     "SHOC2_HUMAN_Kwon_2022",
 ]
 
-folde_eval_dms_ids = [
+folde_test_dms_ids = [
     "ADRB2_HUMAN_Jones_2020",
     "P53_HUMAN_Giacomelli_2018_Null_Nutlin",
     "P53_HUMAN_Giacomelli_2018_WT_Nutlin",
@@ -58,7 +58,7 @@ folde_eval_dms_ids = [
 ]
 
 # Example configuration
-NAME = "250710-folde-testset"
+NAME = "250711-folde-testset-wCL"
 
 base_config = FolDEModelConfig(
     name="FolDE",
@@ -73,7 +73,6 @@ base_config = FolDEModelConfig(
         "pretrain": True,
         "pretrain_epochs": 50,
         "ensemble_size": 5,
-        "decision_mode": "ucb",
         "embedding_dim": 960,
         "hidden_dims": [100, 50],
         "dropout": 0.2,
@@ -83,6 +82,8 @@ base_config = FolDEModelConfig(
         "train_patience": 40,
         "val_frequency": 10,
         "do_validation_with_pair_fraction": 0.2,
+        "decision_mode": "constantliar",
+        "lie_noise_stddev_multiplier": 2.0,
     },
 )
 
@@ -159,7 +160,7 @@ print(config_list[0].model_dump_json(indent=2))
 VIRUS_IDS = ["A0A140D2T1_ZIKV_Sourisseau_2019", "A0A2Z5U3Z0_9INFA_Doud_2016"]
 results = simulate_campaigns_with_config_checkpoints(
     eval_prefix=NAME,
-    dms_ids=folde_eval_dms_ids,  # ['SPG1_STRSG_Olson_2014'],# [v for v in available_datasets['DMS_id'].values if v not in VIRUS_IDS],
+    dms_ids=folde_test_dms_ids,  # ['SPG1_STRSG_Olson_2014'],# [v for v in available_datasets['DMS_id'].values if v not in VIRUS_IDS],
     config_list=config_list,
     checkpoint_dir="notebooks/jacob/model_evals",
     round_size=16,
