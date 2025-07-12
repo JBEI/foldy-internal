@@ -1,29 +1,26 @@
-import io
+"""Defines API endpoints related to protein language models."""
+
 import logging
-import re
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import List
 
 from flask import (
     request,
 )
 from flask_jwt_extended import jwt_required
-from flask_jwt_extended.utils import get_jwt, get_jwt_identity
-from flask_restx import Namespace, Resource, fields, reqparse
+from flask_restx import Namespace, Resource
 from rq import Callback
 from sqlalchemy.sql.elements import and_
 from werkzeug.exceptions import BadRequest
 
-from app.authorization import user_jwt_grants_edit_access, verify_has_edit_access
-from app.extensions import db
-from app.helpers.fold_storage_manager import FoldStorageManager
+from app.authorization import verify_has_edit_access
 from app.helpers.rq_helpers import (
     add_meta_to_job,
     get_queue,
     send_failure_email,
     send_success_email,
 )
-from app.jobs import esm_jobs, other_jobs
-from app.models import Dock, Embedding, Fold, Invokation, Logit
+from app.jobs import esm_jobs
+from app.models import Embedding, Fold, Logit
 from app.util import get_job_type_replacement
 from app.views.other_views import embedding_fields, logit_fields
 
@@ -111,7 +108,7 @@ class CalculateEmbeddingsResource(Resource):
         enqueued_job = esm_q.enqueue(
             esm_jobs.get_esm_embeddings,
             embed_record.id,
-            job_timeout="12h",
+            job_timeout="24h",
             result_ttl=48 * 60 * 60,  # 2 days
             on_success=Callback(send_success_email, timeout="5s"),
             on_failure=Callback(send_failure_email, timeout="5s"),
@@ -178,7 +175,7 @@ class StartLogitsResource(Resource):
         enqueued_job = esm_q.enqueue(
             esm_jobs.get_esm_logits,
             logit_record.id,
-            job_timeout="12h",
+            job_timeout="24h",
             result_ttl=48 * 60 * 60,  # 2 days
             on_success=Callback(send_success_email, timeout="5s"),
             on_failure=Callback(send_failure_email, timeout="5s"),

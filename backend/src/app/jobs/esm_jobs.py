@@ -230,7 +230,6 @@ def get_esm_logits(logit_id: int):
 
         # Save both formats using FoldStorageManager
         logging.info("Saving logits to storage")
-        padded_fold_id = "%06d" % fold.id
         logits_path = f"naturalness/logits_{logit_name}.json"
         melted_path = f"naturalness/logits_{logit_name}_melted.csv"
 

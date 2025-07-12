@@ -37,7 +37,7 @@ const FEW_SHOT_PRESETS = {
     "val_frequency": 10,
     "do_validation_with_pair_fraction": 0.2,
     "decision_mode": "constantliar",
-    "lie_noise_stddev_multiplier": 4.0
+    "lie_noise_stddev_multiplier": 2.0
 }`
     },
     'evolvepro': {
@@ -49,7 +49,7 @@ const FEW_SHOT_PRESETS = {
     "min_samples_split": 2,
     "min_samples_leaf": 1,
     "min_weight_fraction_leaf": 0.0,
-    "max_features": 1.0,
+    "max_features": 1.0,mut
     "max_leaf_nodes": null,
     "min_impurity_decrease": 0.0,
     "bootstrap": true,
@@ -96,7 +96,7 @@ const parseCsvDataIntoRowData = (
         return null;
     }
 
-    const allRows = data.map((row) => {
+    const allRows = data.filter(row => row['selected'] == 'True').map((row) => {
         // Iterate over columns from model_0 upward until none is found, adding scores to a list.
         const predictions: number[] = [];
         for (let i = 0; i < 100; i++) {
