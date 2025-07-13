@@ -462,16 +462,15 @@ class RandomForestFewShotModel(FewShotModel):
 
             # Get feature importances if available
             if hasattr(first_model, "feature_importances_"):
-                feature_importances = {"mean": first_model.feature_importances_.tolist()}
-
-                # Add standard deviation if we have estimators
-                if hasattr(first_model, "estimators_") and len(first_model.estimators_) > 0:
-                    feature_importances["std"] = np.std(
-                        [tree.feature_importances_ for tree in first_model.estimators_],
-                        axis=0,
-                    ).tolist()
-
-                debug_info["feature_importances"] = feature_importances
+                # 7/13/25: Had to can the feature importances, it was way too big for model evals.
+                # feature_importances = {"mean": first_model.feature_importances_.tolist()}
+                # # Add standard deviation if we have estimators
+                # if hasattr(first_model, "estimators_") and len(first_model.estimators_) > 0:
+                #     feature_importances["std"] = np.std(
+                #         [tree.feature_importances_ for tree in first_model.estimators_],
+                #         axis=0,
+                #     ).tolist()
+                # debug_info["feature_importances"] = feature_importances
 
                 # Basic tree info (limit to first 5 trees to avoid excessive info)
                 if hasattr(first_model, "estimators_"):

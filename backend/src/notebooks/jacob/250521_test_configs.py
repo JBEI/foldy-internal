@@ -180,6 +180,33 @@ config_list = apply_diff_list_to_config(
             },
         ),
         ModelDiff(
+            name="Random-RandomForestCtrl-15b",
+            diffs={
+                "embedding_model_id": "15b",
+                "zero_shot_model_name": "RandomZeroShotModel",
+                "zero_shot_model_params": {},
+                "few_shot_model_name": "RandomForestFewShotModel",
+                "few_shot_model_params": {
+                    "n_estimators": 100,
+                    "criterion": "friedman_mse",
+                    "max_depth": None,
+                    "min_samples_split": 2,
+                    "min_samples_leaf": 1,
+                    "min_weight_fraction_leaf": 0.0,
+                    "max_features": 1.0,
+                    "max_leaf_nodes": None,
+                    "min_impurity_decrease": 0.0,
+                    "bootstrap": True,
+                    "oob_score": False,
+                    "n_jobs": None,
+                    "verbose": 0,
+                    "warm_start": False,
+                    "ccp_alpha": 0.0,
+                    "max_samples": None,
+                },
+            },
+        ),
+        ModelDiff(
             name="600m-embeddings",
             diffs={
                 "embedding_model_id": "600m",
@@ -191,6 +218,13 @@ config_list = apply_diff_list_to_config(
             diffs={
                 "embedding_model_id": "650m",
                 "few_shot_model_params.embedding_dim": 1280,
+            },
+        ),
+        ModelDiff(
+            name="15b-embeddings",
+            diffs={
+                "embedding_model_id": "15b",
+                "few_shot_model_params.embedding_dim": 5120,
             },
         ),
     ],
