@@ -154,7 +154,7 @@ const FileTab = React.memo((props: FileTabProps) => {
         keys.forEach(key => {
             const filePath = removeLeadingSlash(key);
             const newFileName = filePath.split('/').pop() || 'downloaded_file';
-            notify.info(`Getting ${key} from server...`);
+            notify.info(`Getting ${key} from server, do not close this window until the download is complete.`);
             downloadFileStraightToFilesystem(
                 props.foldId,
                 filePath,

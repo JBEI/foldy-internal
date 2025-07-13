@@ -288,7 +288,7 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
         }
         const logitPath = `naturalness/logits_${logit.name}_melted.csv`;
         const newFileName = `${foldName}_naturalness_${logit.name}.csv`;
-        console.log(`Downloading logits for ${logit.name} at path ${logitPath} to ${newFileName}`);
+        console.log(`Downloading logits for ${logit.name} at path ${logitPath} to ${newFileName}. Do not close this window until the download is complete.`);
         downloadFileStraightToFilesystem(
             logit.fold_id,
             logitPath,

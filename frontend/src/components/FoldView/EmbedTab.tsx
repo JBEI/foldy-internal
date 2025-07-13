@@ -33,7 +33,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
     const downloadEmbedding = (embedding: Embedding) => {
         const paddedFoldId = foldId.toString().padStart(6, '0');
         const embeddingPath = `embed/${paddedFoldId}_embeddings_${embedding.embedding_model}_${embedding.name}.csv`;
-        notify.info(`Downloading embedding ${embedding.id} at path ${embeddingPath}`);
+        notify.info(`Downloading embedding ${embedding.id} at path ${embeddingPath}, do not close this window until the download is complete.`);
 
         const newFileName = `${foldName || paddedFoldId}_embedding_${embedding.name}.csv`;
         downloadFileStraightToFilesystem(embedding.fold_id, embeddingPath, newFileName, (progress: number) => {
