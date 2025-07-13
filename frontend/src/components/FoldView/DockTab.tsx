@@ -1,11 +1,12 @@
 import fileDownload from "js-file-download";
 import React, { useMemo, useState } from "react";
-import { Button, Space, Tooltip } from 'antd';
+import { Button } from 'antd';
 import { LeftOutlined, RightOutlined, ClockCircleOutlined, DownloadOutlined, EyeOutlined, FrownOutlined, RedoOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { getDockSdf, postDock } from "../../api/dockApi";
 import { Dock, Invokation, DockInput } from "../../types/types";
 import { notify } from "../../services/NotificationService";
-import { TabContainer, DescriptionSection, TableSection, ResponsiveTable } from "../../util/tabComponents";
+import { TabContainer, DescriptionSection, TableSection } from "../../util/tabComponents";
+import { AntTable, createActionButtons, defaultExpandableContent } from "../../util/AntTable";
 import { DockModal } from "../shared/DockModal";
 
 interface DockTabProps {
@@ -23,16 +24,8 @@ interface DockTabProps {
     deleteLigandPose: (ligandId: number, ligandName: string) => void;
 }
 
-type SortConfig = {
-    key: keyof Dock | "fit" | null;
-    direction: "ascending" | "descending";
-};
 
 const DockTab = React.memo((props: DockTabProps) => {
-    const [sortConfig, setSortConfig] = useState<SortConfig>({
-        key: "ligand_name",
-        direction: "ascending",
-    });
     const [showDockModal, setShowDockModal] = useState(false);
 
     const getDockState = (dock: Dock, jobs: Invokation[] | null) => {
@@ -109,25 +102,10 @@ const DockTab = React.memo((props: DockTabProps) => {
     const sortedDocks = useMemo(() => {
         if (!props.docks) return null;
         return [...props.docks].sort(
-            compareValues(sortConfig.key || "ligand_name", sortConfig.direction)
+            compareValues("ligand_name", "ascending")
         );
-    }, [props.docks, sortConfig]);
+    }, [props.docks]);
 
-    const requestSort = (key: keyof Dock | "fit") => {
-        const direction =
-            sortConfig.key === key && sortConfig.direction === "ascending"
-                ? "descending"
-                : "ascending";
-        setSortConfig({ key, direction });
-    };
-
-    const getSortSymbol = (key: keyof Dock | "fit") => {
-        return sortConfig.key === key
-            ? sortConfig.direction === "ascending"
-                ? " ↑"
-                : " ↓"
-            : "";
-    };
 
     return (
         <TabContainer>
@@ -151,124 +129,132 @@ const DockTab = React.memo((props: DockTabProps) => {
                     </Button>
                 }
             >
-                <ResponsiveTable>
-                    <thead>
-                        <tr>
-                            <th onClick={() => requestSort("ligand_name")}>
-                                Name{getSortSymbol("ligand_name")}
-                            </th>
-                            <th onClick={() => requestSort("fit")}>
-                                Fit{getSortSymbol("fit")}
-                            </th>
-                            <th>Rank</th>
-                            <th onClick={() => requestSort("tool")}>
-                                Tool{getSortSymbol("tool")}
-                            </th>
-                            <th>Bounding Box</th>
-                            <th onClick={() => requestSort("ligand_smiles")}>
-                                SMILES{getSortSymbol("ligand_smiles")}
-                            </th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {sortedDocks?.map((dock) => (
-                            <tr key={dock.id}>
-                                <td>{dock.ligand_name}</td>
-                                <td>{getFit(dock)}</td>
-                                <td>{props.ranks[dock.ligand_name]}</td>
-                                <td>{dock.tool}</td>
-                                <td>
-                                    {dock.bounding_box_residue && dock.bounding_box_radius_angstrom
-                                        ? `${dock.bounding_box_residue} (${dock.bounding_box_radius_angstrom} Å)`
-                                        : "N/A"}
-                                </td>
-                                <td>
-                                    <span
-                                        style={{
-                                            whiteSpace: "nowrap",
-                                            overflow: "hidden",
-                                            textOverflow: "ellipsis",
-                                            display: "block",
-                                            maxWidth: "200px",
-                                        }}
-                                        title={dock.ligand_smiles} // Tooltip with full SMILES
-                                    >
-                                        {dock.ligand_smiles}
-                                    </span>
-                                </td>
-                                <td>
-                                    <Space>
-                                        {getDockState(dock, props.jobs) === "queued" ||
-                                            getDockState(dock, props.jobs) === "running" ? (
-                                            <Tooltip title={`Docking is currently ${getDockState(dock, props.jobs)}`}>
-                                                <Button type="text" icon={<ClockCircleOutlined />} size="small" />
-                                            </Tooltip>
-                                        ) : getDockState(dock, props.jobs) === "failed" ? (
-                                            <Tooltip title="Docking failed. Consider rerunning this docking job.">
-                                                <Button type="text" icon={<FrownOutlined />} size="small" />
-                                            </Tooltip>
-                                        ) : (
-                                            <Tooltip title="View this ligand's pose in the visualization pane.">
-                                                <Button
-                                                    type="text"
-                                                    icon={<EyeOutlined />}
-                                                    size="small"
-                                                    onClick={() => props.displayLigandPose(dock.ligand_name)}
-                                                />
-                                            </Tooltip>
-                                        )}
-                                        {props.displayedLigandNames.includes(dock.ligand_name) && (
-                                            <>
-                                                <Tooltip title="View the previous pose prediction for this ligand.">
-                                                    <Button
-                                                        type="text"
-                                                        icon={<LeftOutlined />}
-                                                        size="small"
-                                                        onClick={() => props.shiftFrame(dock.ligand_name, -1)}
-                                                    />
-                                                </Tooltip>
-                                                <Tooltip title="View the next pose prediction for this ligand.">
-                                                    <Button
-                                                        type="text"
-                                                        icon={<RightOutlined />}
-                                                        size="small"
-                                                        onClick={() => props.shiftFrame(dock.ligand_name, 1)}
-                                                    />
-                                                </Tooltip>
-                                            </>
-                                        )}
-                                        <Tooltip title="Delete this docking result.">
-                                            <Button
-                                                type="text"
-                                                icon={<DeleteOutlined />}
-                                                size="small"
-                                                danger
-                                                onClick={() => props.deleteLigandPose(dock.id, dock.ligand_name)}
-                                            />
-                                        </Tooltip>
-                                        <Tooltip title="Rerun this docking job.">
-                                            <Button
-                                                type="text"
-                                                icon={<RedoOutlined />}
-                                                size="small"
-                                                onClick={() => rerunDock(dock)}
-                                            />
-                                        </Tooltip>
-                                        <Tooltip title="Download the SDF file for this ligand pose.">
-                                            <Button
-                                                type="text"
-                                                icon={<DownloadOutlined />}
-                                                size="small"
-                                                onClick={() => downloadLigandPose(dock.ligand_name)}
-                                            />
-                                        </Tooltip>
-                                    </Space>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </ResponsiveTable>
+                <AntTable<Dock>
+                    dataSource={sortedDocks || []}
+                    rowKey="id"
+                    expandableContent={defaultExpandableContent}
+                    columns={[
+                        {
+                            key: 'ligand_name',
+                            title: 'Name',
+                            dataIndex: 'ligand_name',
+                            sortable: true,
+                            sorter: (a, b) => a.ligand_name.localeCompare(b.ligand_name),
+                        },
+                        {
+                            key: 'fit',
+                            title: 'Fit',
+                            sortable: true,
+                            sorter: (a, b) => {
+                                const aFit = getFit(a) || 0;
+                                const bFit = getFit(b) || 0;
+                                return aFit - bFit;
+                            },
+                            render: (_, dock) => getFit(dock),
+                        },
+                        {
+                            key: 'rank',
+                            title: 'Rank',
+                            render: (_, dock) => props.ranks[dock.ligand_name],
+                        },
+                        {
+                            key: 'tool',
+                            title: 'Tool',
+                            dataIndex: 'tool',
+                            sortable: true,
+                            sorter: (a, b) => (a.tool || '').localeCompare(b.tool || ''),
+                        },
+                        {
+                            key: 'bounding_box',
+                            title: 'Bounding Box',
+                            render: (_, dock) => (
+                                dock.bounding_box_residue && dock.bounding_box_radius_angstrom
+                                    ? `${dock.bounding_box_residue} (${dock.bounding_box_radius_angstrom} Å)`
+                                    : "N/A"
+                            ),
+                        },
+                        {
+                            key: 'ligand_smiles',
+                            title: 'SMILES',
+                            dataIndex: 'ligand_smiles',
+                            ellipsis: true,
+                            width: 200,
+                            sortable: true,
+                            sorter: (a, b) => a.ligand_smiles.localeCompare(b.ligand_smiles),
+                            render: (smiles) => (
+                                <span title={smiles}>{smiles}</span>
+                            ),
+                        },
+                        {
+                            key: 'actions',
+                            title: 'Actions',
+                            width: 250,
+                            render: (_, dock) => {
+                                const dockState = getDockState(dock, props.jobs);
+                                const buttons = [];
+
+                                // Status button
+                                if (dockState === "queued" || dockState === "running") {
+                                    buttons.push({
+                                        icon: <ClockCircleOutlined />,
+                                        onClick: () => {},
+                                        tooltip: `Docking is currently ${dockState}`,
+                                        disabled: true,
+                                    });
+                                } else if (dockState === "failed") {
+                                    buttons.push({
+                                        icon: <FrownOutlined />,
+                                        onClick: () => {},
+                                        tooltip: 'Docking failed. Consider rerunning this docking job.',
+                                        disabled: true,
+                                    });
+                                } else {
+                                    buttons.push({
+                                        icon: <EyeOutlined />,
+                                        onClick: () => props.displayLigandPose(dock.ligand_name),
+                                        tooltip: 'View this ligand\'s pose in the visualization pane.',
+                                    });
+                                }
+
+                                // Navigation buttons (if ligand is displayed)
+                                if (props.displayedLigandNames.includes(dock.ligand_name)) {
+                                    buttons.push({
+                                        icon: <LeftOutlined />,
+                                        onClick: () => props.shiftFrame(dock.ligand_name, -1),
+                                        tooltip: 'View the previous pose prediction for this ligand.',
+                                    });
+                                    buttons.push({
+                                        icon: <RightOutlined />,
+                                        onClick: () => props.shiftFrame(dock.ligand_name, 1),
+                                        tooltip: 'View the next pose prediction for this ligand.',
+                                    });
+                                }
+
+                                // Action buttons
+                                buttons.push({
+                                    icon: <DeleteOutlined />,
+                                    onClick: () => props.deleteLigandPose(dock.id, dock.ligand_name),
+                                    tooltip: 'Delete this docking result.',
+                                    danger: true,
+                                });
+
+                                buttons.push({
+                                    icon: <RedoOutlined />,
+                                    onClick: () => rerunDock(dock),
+                                    tooltip: 'Rerun this docking job.',
+                                });
+
+                                buttons.push({
+                                    icon: <DownloadOutlined />,
+                                    onClick: () => downloadLigandPose(dock.ligand_name),
+                                    tooltip: 'Download the SDF file for this ligand pose.',
+                                });
+
+                                return createActionButtons(buttons);
+                            },
+                        },
+                    ]}
+                />
             </TableSection>
 
             {/* Dock Modal */}

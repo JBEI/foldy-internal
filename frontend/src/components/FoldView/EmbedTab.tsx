@@ -3,7 +3,8 @@ import { Embedding, Invokation } from '../../types/types';
 import { FaDownload, FaFileCode, FaRedo } from 'react-icons/fa';
 import { downloadFileStraightToFilesystem } from '../../api/fileApi';
 import { notify } from '../../services/NotificationService';
-import { TabContainer, DescriptionSection, TableSection, ResponsiveTable } from '../../util/tabComponents';
+import { TabContainer, DescriptionSection, TableSection } from '../../util/tabComponents';
+import { AntTable, createActionButtons, defaultExpandableContent } from '../../util/AntTable';
 import { Button as AntButton } from 'antd';
 import { EmbeddingModal } from '../shared/EmbeddingModal';
 import { EmbeddingParametersModal } from '../shared/EmbeddingParametersModal';
@@ -76,41 +77,52 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
                     </AntButton>
                 }
             >
-                <ResponsiveTable>
-                    <thead>
-                        <tr>
-                            <th>Batch Name</th>
-                            <th>Batch Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {embeddings?.map(embedding => (
-                            <tr key={embedding.id}>
-                                <td>{embedding.name}</td>
-                                <td>{getEmbeddingStatus(embedding)}</td>
-                                <td>
-
-                                    <FaFileCode
-                                        uk-tooltip="View logs"
-                                        onClick={() => openUpLogsForJob(embedding.invokation_id || undefined)}
-                                    />
+                <AntTable<Embedding>
+                    dataSource={embeddings || []}
+                    rowKey="id"
+                    expandableContent={defaultExpandableContent}
+                    columns={[
+                        {
+                            key: 'name',
+                            title: 'Batch Name',
+                            dataIndex: 'name',
+                        },
+                        {
+                            key: 'status',
+                            title: 'Batch Status',
+                            render: (_, embedding) => getEmbeddingStatus(embedding),
+                        },
+                        {
+                            key: 'actions',
+                            title: 'Actions',
+                            width: 120,
+                            render: (_, embedding) => {
+                                const buttons = [
                                     {
-                                        getEmbeddingStatus(embedding) == 'finished' ?
-                                            <FaDownload
-                                                uk-tooltip="Download embeddings CSV."
-                                                onClick={() => downloadEmbedding(embedding)} />
-                                            : null
-                                    }
-                                    <FaRedo
-                                        uk-tooltip="Redo embedding run"
-                                        onClick={() => redoEmbedding(embedding)} />
-                                </td>
-                            </tr>
-                        ))
-                            || <tr><td colSpan={2}>No embeddings available</td></tr>}
-                    </tbody>
-                </ResponsiveTable>
+                                        icon: <FaFileCode />,
+                                        onClick: () => openUpLogsForJob(embedding.invokation_id || undefined),
+                                        tooltip: 'View logs',
+                                    },
+                                    {
+                                        icon: <FaRedo />,
+                                        onClick: () => redoEmbedding(embedding),
+                                        tooltip: 'Redo embedding run',
+                                    },
+                                ];
+
+                                if (getEmbeddingStatus(embedding) === 'finished') {
+                                    buttons.splice(1, 0, {
+                                        icon: <FaDownload />,
+                                        onClick: () => downloadEmbedding(embedding),
+                                        tooltip: 'Download embeddings CSV',
+                                    });
+                                }
+
+                                return createActionButtons(buttons);
+                            },
+                        },
+                    ]}
+                />
             </TableSection>
 
 
