@@ -9,7 +9,8 @@ import { Selection } from './StructurePane';
 import ReactDataGrid from 'react-data-grid';
 import { notify } from '../../services/NotificationService';
 import { BoltzYamlHelper } from '../../util/boltzYamlHelper';
-import { TabContainer, DescriptionSection, TableSection, ButtonGroup, ResponsiveTable } from '../../util/tabComponents';
+import { TabContainer, DescriptionSection, TableSection, ButtonGroup } from '../../util/tabComponents';
+import { AntTable, createActionButtons, defaultExpandableContent } from '../../util/AntTable';
 import { CheckboxControl, NumberInputControl } from '../../util/controlComponents';
 import { DataTableContainer } from '../../util/plotComponents';
 import { Button as AntButton, Typography } from 'antd';
@@ -288,7 +289,7 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
         }
         const logitPath = `naturalness/logits_${logit.name}_melted.csv`;
         const newFileName = `${foldName}_naturalness_${logit.name}.csv`;
-        console.log(`Downloading logits for ${logit.name} at path ${logitPath} to ${newFileName}`);
+        console.log(`Downloading logits for ${logit.name} at path ${logitPath} to ${newFileName}. Do not close this window until the download is complete.`);
         downloadFileStraightToFilesystem(
             logit.fold_id,
             logitPath,
@@ -499,42 +500,57 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
                     </AntButton>
                 }
             >
-                <ResponsiveTable>
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {logits?.map(logit => (
-                            <tr key={logit.id}>
-                                <td>{logit.name}</td>
-                                <td>{getLogitStatus(logit)}</td>
-                                <td>
-                                    <FaFileCode
-                                        uk-tooltip="View logs"
-                                        onClick={() => openUpLogsForJob(logit.invokation_id || undefined)}
-                                    />
+                <AntTable<Logit>
+                    dataSource={logits || []}
+                    rowKey="id"
+                    expandableContent={defaultExpandableContent}
+                    columns={[
+                        {
+                            key: 'name',
+                            title: 'Name',
+                            dataIndex: 'name',
+                        },
+                        {
+                            key: 'status',
+                            title: 'Status',
+                            render: (_, logit) => getLogitStatus(logit),
+                        },
+                        {
+                            key: 'actions',
+                            title: 'Actions',
+                            width: 120,
+                            render: (_, logit) => {
+                                const buttons = [
                                     {
-                                        getLogitStatus(logit) == 'finished' ?
-                                            <>
-                                                <FaEye
-                                                    uk-tooltip="View results"
-                                                    onClick={() => loadLogit(logit.id)} />
-                                                <FaDownload
-                                                    uk-tooltip="Download logit CSV."
-                                                    onClick={() => downloadLogitCsv(logit)} />
-                                            </> : null
-                                    }
-                                    <FaRedo uk-tooltip="Redo naturalness run"
-                                        onClick={() => redoLogit(logit)} />
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </ResponsiveTable>
+                                        icon: <FaFileCode />,
+                                        onClick: () => openUpLogsForJob(logit.invokation_id || undefined),
+                                        tooltip: 'View logs',
+                                    },
+                                    {
+                                        icon: <FaRedo />,
+                                        onClick: () => redoLogit(logit),
+                                        tooltip: 'Redo naturalness run',
+                                    },
+                                ];
+
+                                if (getLogitStatus(logit) === 'finished') {
+                                    buttons.splice(1, 0, {
+                                        icon: <FaEye />,
+                                        onClick: () => loadLogit(logit.id),
+                                        tooltip: 'View results',
+                                    });
+                                    buttons.splice(2, 0, {
+                                        icon: <FaDownload />,
+                                        onClick: () => downloadLogitCsv(logit),
+                                        tooltip: 'Download logit CSV',
+                                    });
+                                }
+
+                                return createActionButtons(buttons);
+                            },
+                        },
+                    ]}
+                />
             </TableSection>
 
             {/* Display logit info, if requested. */}

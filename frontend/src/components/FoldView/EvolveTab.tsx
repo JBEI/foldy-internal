@@ -12,7 +12,8 @@ import ReactDataGrid from 'react-data-grid';
 import { BoltzYamlHelper } from '../../util/boltzYamlHelper';
 import { Selection } from './StructurePane';
 import Plot from 'react-plotly.js';
-import { TabContainer, DescriptionSection, TableSection, CollapsibleSection, FormRow, FormField, ButtonGroup, ResponsiveTable } from '../../util/tabComponents';
+import { TabContainer, DescriptionSection, TableSection, CollapsibleSection, FormRow, FormField, ButtonGroup } from '../../util/tabComponents';
+import { AntTable, createActionButtons, defaultExpandableContent } from '../../util/AntTable';
 import { TextInputControl, TextAreaControl, SelectControl, FileUploadControl, MultiSelectControl, NumberInputControl } from '../../util/controlComponents';
 import { DataTableContainer, PlotContainer } from '../../util/plotComponents';
 import { Row, Col, Form, Input, Select, Upload, Button as AntButton, Card, Divider, InputNumber, Alert, Modal, Typography, Spin } from 'antd';
@@ -37,7 +38,7 @@ const FEW_SHOT_PRESETS = {
     "val_frequency": 10,
     "do_validation_with_pair_fraction": 0.2,
     "decision_mode": "constantliar",
-    "lie_noise_stddev_multiplier": 4.0
+    "lie_noise_stddev_multiplier": 2.0
 }`
     },
     'evolvepro': {
@@ -49,7 +50,7 @@ const FEW_SHOT_PRESETS = {
     "min_samples_split": 2,
     "min_samples_leaf": 1,
     "min_weight_fraction_leaf": 0.0,
-    "max_features": 1.0,
+    "max_features": 1.0,mut
     "max_leaf_nodes": null,
     "min_impurity_decrease": 0.0,
     "bootstrap": true,
@@ -96,7 +97,7 @@ const parseCsvDataIntoRowData = (
         return null;
     }
 
-    const allRows = data.map((row) => {
+    const allRows = data.filter(row => row['selected'] == 'True').map((row) => {
         // Iterate over columns from model_0 upward until none is found, adding scores to a list.
         const predictions: number[] = [];
         for (let i = 0; i < 100; i++) {
@@ -934,47 +935,65 @@ const EvolveTab: React.FC<EvolveTabProps> = ({ foldId, yamlConfig, jobs, files, 
 
             {/* Evolution Runs Table */}
             <TableSection title="Evolution Runs">
-                <ResponsiveTable>
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {evolutions?.map(evolution => (
-                            <tr key={evolution.id}>
-                                <td style={{ overflowX: 'hidden' }}><p uk-tooltip={evolution.name}>{evolution.name}</p></td>
-                                <td>{getEvolutionStatus(evolution)}</td>
-                                <td style={{ width: '200px', paddingLeft: '2px', paddingRight: '2px' }}>
-
-                                    <FaFileCode
-                                        uk-tooltip="View logs"
-                                        onClick={() => openUpLogsForJob(evolution.invokation_id || undefined)}
-                                    />
+                <AntTable<Evolution>
+                    dataSource={evolutions || []}
+                    rowKey="id"
+                    expandableContent={defaultExpandableContent}
+                    columns={[
+                        {
+                            key: 'name',
+                            title: 'Name',
+                            dataIndex: 'name',
+                            ellipsis: true,
+                            render: (name) => <span title={name}>{name}</span>,
+                        },
+                        {
+                            key: 'status',
+                            title: 'Status',
+                            render: (_, evolution) => getEvolutionStatus(evolution),
+                        },
+                        {
+                            key: 'actions',
+                            title: 'Actions',
+                            width: 200,
+                            render: (_, evolution) => {
+                                const buttons = [
                                     {
-                                        getEvolutionStatus(evolution) == 'finished' ?
-                                            <>
-                                                <FaEye
-                                                    uk-tooltip="View results"
-                                                    onClick={() => loadEvolution(evolution.id)} />
-                                                <FaDownload
-                                                    uk-tooltip="Download predicted activity CSV."
-                                                    onClick={() => downloadPredictedActivity(evolution)} />
-                                            </> :
-                                            null
-                                    }
-                                    <FaRedo uk-tooltip="Retry the evolution run."
-                                        onClick={() => rerunEvolution(evolution)} />
-                                    <FaTrash
-                                        uk-tooltip="Delete evolution run."
-                                        onClick={() => deleteEvolutionHelper(evolution.id)} />
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </ResponsiveTable>
+                                        icon: <FaFileCode />,
+                                        onClick: () => openUpLogsForJob(evolution.invokation_id || undefined),
+                                        tooltip: 'View logs',
+                                    },
+                                    {
+                                        icon: <FaRedo />,
+                                        onClick: () => rerunEvolution(evolution),
+                                        tooltip: 'Retry the evolution run',
+                                    },
+                                    {
+                                        icon: <FaTrash />,
+                                        onClick: () => deleteEvolutionHelper(evolution.id || 0),
+                                        tooltip: 'Delete evolution run',
+                                        danger: true,
+                                    },
+                                ];
+
+                                if (getEvolutionStatus(evolution) === 'finished') {
+                                    buttons.splice(1, 0, {
+                                        icon: <FaEye />,
+                                        onClick: () => loadEvolution(evolution.id || 0),
+                                        tooltip: 'View results',
+                                    });
+                                    buttons.splice(2, 0, {
+                                        icon: <FaDownload />,
+                                        onClick: () => downloadPredictedActivity(evolution),
+                                        tooltip: 'Download predicted activity CSV',
+                                    });
+                                }
+
+                                return createActionButtons(buttons);
+                            },
+                        },
+                    ]}
+                />
             </TableSection>
 
 
