@@ -226,7 +226,6 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                         console.log(`Could not find chain ${chainName} in boltz config: ${configHelper?.getProteinSequences()}`);
                         return;
                     }
-                    const chainId = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[chainIndex]
                     if (selection.start && selection.end) {
                         console.log(selection);
                         var start = Math.min(selection.start, selection.end);
@@ -238,7 +237,7 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                         console.log(`${start}, ${end}`)
                         props.setSelectedSubsequence({
                             data: [{
-                                struct_asym_id: chainId,
+                                struct_asym_id: chainName,
                                 start_residue_number: start + 1,
                                 end_residue_number: end,
                                 color: "white",
