@@ -341,9 +341,13 @@ def apply_diff_to_dict_recursive(
 def apply_diff_list_to_config(
     folde_model_config_base: FolDEModelConfig,
     model_diffs: List[ModelDiff],
+    exclude_base_config: bool = False,
 ) -> List[FolDEModelConfig]:
     original_config = folde_model_config_base.model_copy(deep=True, update={"name": folde_model_config_base.name + '-base'})
-    config_list = [original_config]
+    if exclude_base_config:
+        config_list = []
+    else:
+        config_list = [original_config]
     for model_diff in model_diffs:
         folde_model_config_dict = folde_model_config_base.model_dump()
         for param_path, new_value in model_diff.diffs.items():
