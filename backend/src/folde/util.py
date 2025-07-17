@@ -1,4 +1,6 @@
+import json
 import logging
+from pathlib import Path
 from typing import Any, List, Tuple, Union, cast
 
 import numpy as np
@@ -13,6 +15,52 @@ from scipy.special import softmax
 from sklearn.metrics import recall_score
 
 from folde.types import FolDEModelConfig, ModelDiff, ModelEvaluation
+
+DMS_SHORTNAMES = {
+    #   'A0A140D2T1_ZIKV_Sourisseau_2019': "A0A140D2T1_ZIKV",
+    #   'A0A2Z5U3Z0_9INFA_Doud_2016': "A0A2Z5U3Z0_9INFA",
+    #   'ADRB2_HUMAN_Jones_2020': "ADRB2",
+    #   'BLAT_ECOLX_Stiffler_2015': "BLAT_ECOLX",
+    #   'C6KNH7_9INFA_Lee_2018': "C6KNH7",
+    #   'IF1_ECOLI_Kelsic_2016': "IF1_ECOLI",
+    #   'MK01_HUMAN_Brenan_2016': "MK01_HUMAN",
+    #   'P53_HUMAN_Giacomelli_2018_Null_Etoposide': "P53",
+    #   'PHOT_CHLRE_Chen_2023': "PHOT_CHLRE",
+    "BLAT_ECOLX_Firnberg_2014": "BLAT_ECOLX",
+    "ANCSZ_Hobbs_2022": "ANCSZ",
+    "HXK4_HUMAN_Gersing_2022_activity": "HXK4_HUMAN",
+    "OXDA_RHOTO_Vanella_2023_activity": "OXDA_RHOTO",
+    "SHOC2_HUMAN_Kwon_2022": "SHOC2_HUMAN",
+    "ADRB2_HUMAN_Jones_2020": "ADRB2_HUMAN",
+    "CBS_HUMAN_Sun_2020": "CBS_HUMAN",
+    "P53_HUMAN_Giacomelli_2018_Null_Nutlin": "P53_Null",
+    "HSP82_YEAST_Flynn_2019": "HSP82_YEAST",
+    "P53_HUMAN_Giacomelli_2018_WT_Nutlin": "P53_WT",
+    # "MK01_HUMAN_Brenan_2016": "MK01_HUMAN",
+    "HEM3_HUMAN_Loggerenberg_2023": "HEM3_HUMAN",
+    "PPM1D_HUMAN_Miller_2022": "PPM1D_HUMAN",
+    "SPG1_STRSG_Olson_2014": "SPG1",
+    # VALIDATION TARGETS
+    "ADRB2_HUMAN_Jones_2020": "ADRB2_HUMAN",
+    "P53_HUMAN_Giacomelli_2018_Null_Nutlin": "P53_HUMAN_Null",
+    "P53_HUMAN_Giacomelli_2018_WT_Nutlin": "P53_HUMAN_WT",
+    "MK01_HUMAN_Brenan_2016": "MK01_HUMAN",
+    "KCNJ2_MOUSE_Coyote-Maestas_2022_function": "KCNJ2_MOUSE",
+    "CAS9_STRP1_Spencer_2017_positive": "CAS9_STRP1",
+    "SC6A4_HUMAN_Young_2021": "SC6A4_HUMAN",
+    # 'OXDA_RHOTO_Vanella_2023_expression',
+    # 'HSP82_YEAST_Mishra_2016',
+    "PTEN_HUMAN_Mighell_2018": "PTEN_HUMAN",
+    "S22A1_HUMAN_Yee_2023_activity": "S22A1_HUMAN",
+    "KKA2_KLEPN_Melnikov_2014": "KKA2_KLEPN",
+    # Include some "easy to engineer" targets.
+    "PPARG_HUMAN_Majithia_2016": "PPARG_HUMAN",
+    # 'P53_HUMAN_Giacomelli_2018_Null_Etoposide',
+    "MET_HUMAN_Estevam_2023": "MET_HUMAN",
+    "MTHR_HUMAN_Weile_2021": "MTHR_HUMAN",
+    "LGK_LIPST_Klesmith_2015": "LGK_LIPST",
+    "AMIE_PSEAE_Wrenbeck_2017": "AMIE_PSEAE",
+}
 
 
 def get_consensus_scores(pred_list: List[pd.Series], decision_mode: str) -> pd.Series:
@@ -102,9 +150,9 @@ def constant_liar_sample(
     seq_ids: np.ndarray,
     q_slate_size: int,
     lie_noise_stddev_multiplier: float,
-    choice_of_baseline: str = 'min',
-    ucb_beta: float = 2.0
-    ) -> list[str]:
+    choice_of_baseline: str = "min",
+    ucb_beta: float = 2.0,
+) -> list[str]:
     """
     The "Constant Liar” approximation to the parallel EI acquisition function.
 
@@ -120,30 +168,38 @@ def constant_liar_sample(
     if ensemble_preds.ndim != 2:
         raise ValueError(f"ensemble_preds must be a 2D array, got shape {ensemble_preds.shape}")
     if ensemble_preds.shape[0] != len(seq_ids):
-        raise ValueError(f"ensemble_preds must have the same number of rows as seq_ids, got {ensemble_preds.shape[0]} and {len(seq_ids)}")
+        raise ValueError(
+            f"ensemble_preds must have the same number of rows as seq_ids, got {ensemble_preds.shape[0]} and {len(seq_ids)}"
+        )
     if ensemble_preds.shape[0] > MAX_POINTS_TO_CONSIDER:
-        raise ValueError(f"ensemble_preds must have at most {MAX_POINTS_TO_CONSIDER} rows, got {ensemble_preds.shape[0]}")
+        raise ValueError(
+            f"ensemble_preds must have at most {MAX_POINTS_TO_CONSIDER} rows, got {ensemble_preds.shape[0]}"
+        )
     if ensemble_preds.shape[0] < q_slate_size:
-        raise ValueError(f"ensemble_preds must have at least q_slate_size rows, got {ensemble_preds.shape[0]} vs {q_slate_size}")
+        raise ValueError(
+            f"ensemble_preds must have at least q_slate_size rows, got {ensemble_preds.shape[0]} vs {q_slate_size}"
+        )
     if ensemble_preds.shape[1] < 3:
-        raise ValueError(f'Calculating a good variance requires at least 3 models, got {ensemble_preds.shape[1]}')
+        raise ValueError(
+            f"Calculating a good variance requires at least 3 models, got {ensemble_preds.shape[1]}"
+        )
 
-    pred_tensor = torch.tensor(ensemble_preds.T, dtype=torch.float64)        # (S, N)
+    pred_tensor = torch.tensor(ensemble_preds.T, dtype=torch.float64)  # (S, N)
 
     S, N = pred_tensor.shape
     lie_noise_variance = (lie_noise_stddev_multiplier * pred_tensor.std(dim=0).median().item()) ** 2
 
     # ────────────────────── compute empirical prior mean/covariance ─────────────
-    prior_mean = pred_tensor.mean(dim=0)               # μ₀, shape (N,)
-    devs = pred_tensor - prior_mean                    # centred matrix (S, N)
-    Cov = (devs.T @ devs) / S                # empirical covariance, rank ≤ S
-    Cov += lie_noise_variance * torch.eye(N)           # ← “nugget” ensures PSD & noise floor
+    prior_mean = pred_tensor.mean(dim=0)  # μ₀, shape (N,)
+    devs = pred_tensor - prior_mean  # centred matrix (S, N)
+    Cov = (devs.T @ devs) / S  # empirical covariance, rank ≤ S
+    Cov += lie_noise_variance * torch.eye(N)  # ← “nugget” ensures PSD & noise floor
 
-    if choice_of_baseline == 'min':
+    if choice_of_baseline == "min":
         L = prior_mean.min().item()
-    elif choice_of_baseline == 'mean':
+    elif choice_of_baseline == "mean":
         L = prior_mean.mean().item()
-    elif choice_of_baseline == 'max':
+    elif choice_of_baseline == "max":
         L = prior_mean.max().item()
     else:
         raise ValueError(f"Invalid choice of baseline {choice_of_baseline}")
@@ -153,38 +209,40 @@ def constant_liar_sample(
     sigmas = vars.sqrt()
 
     # ───────────────────────────── constant-liar loop ───────────────────────────
-    selected = []                              # indices of chosen items
+    selected = []  # indices of chosen items
 
     for _ in range(q_slate_size):
 
         # 1) Upper-confidence-bound score for every unpicked item
-        ucb                 = prior_mean + ucb_beta * sigmas
-        ucb[selected]       = -torch.inf                # mask already-selected indices
+        ucb = prior_mean + ucb_beta * sigmas
+        ucb[selected] = -torch.inf  # mask already-selected indices
 
         # 2) Greedily take the arg-max
-        idx                 = int(torch.argmax(ucb))
+        idx = int(torch.argmax(ucb))
         selected.append(idx)
         # print(f"Picked {seq_ids[idx]}  with UCB={ucb[idx]:.3f}")
-        logging.info(f'Selecting {seq_ids[idx]} (original rank {idx+1}), score: {ucb[idx]} = {prior_mean[idx]} + {ucb_beta} * {sigmas[idx]}')
+        logging.info(
+            f"Selecting {seq_ids[idx]} (original rank {idx+1}), score: {ucb[idx]} = {prior_mean[idx]} + {ucb_beta} * {sigmas[idx]}"
+        )
 
         # 3) Single-point GP update with *fake* observation y=L at index idx
-        k_i                 = Cov[:, idx].clone()       # column vector k(·, x_i)
-        v_i                 = vars[idx].item()          # marginal var at x_i  (≥ σ_n²)
+        k_i = Cov[:, idx].clone()  # column vector k(·, x_i)
+        v_i = vars[idx].item()  # marginal var at x_i  (≥ σ_n²)
 
         # Posterior mean:   μ ← μ + k_i (L − μ_i) / v_i
-        delta               = (L - prior_mean[idx]) / v_i
-        prior_mean          = prior_mean + k_i * delta
+        delta = (L - prior_mean[idx]) / v_i
+        prior_mean = prior_mean + k_i * delta
 
         # Posterior covariance (rank-1 Downdate):  Σ ← Σ − k_i k_iᵀ / v_i
-        Cov                 = Cov - torch.outer(k_i, k_i) / v_i
-        Cov                 = 0.5 * (Cov + Cov.T)       # re-symmetrise to kill FP drift
+        Cov = Cov - torch.outer(k_i, k_i) / v_i
+        Cov = 0.5 * (Cov + Cov.T)  # re-symmetrise to kill FP drift
 
         # Refresh variance/std-dev
-        vars                = Cov.diag()
-        sigmas              = vars.sqrt()
+        vars = Cov.diag()
+        sigmas = vars.sqrt()
 
     # ─────────────────────────── map indices back to IDs ────────────────────────
-    constant_liar_chosen_seq_ids = seq_ids[selected]                  # final slate of length Q
+    constant_liar_chosen_seq_ids = seq_ids[selected]  # final slate of length Q
     return constant_liar_chosen_seq_ids.tolist()
 
 
@@ -197,20 +255,22 @@ def top_k_mask(series: pd.Series, percentile: float) -> pd.Series:
 
 
 def get_top_percentile_recall_score(target: np.ndarray, pred: np.ndarray, pct: float) -> float:
-    target = np.asarray(target).ravel()      # <-- makes it 1-D
-    pred   = np.asarray(pred).ravel()
+    target = np.asarray(target).ravel()  # <-- makes it 1-D
+    pred = np.asarray(pred).ravel()
     assert target.size == pred.size, "arrays must be same length"
 
     n = target.size
     k = max(1, int(np.ceil(n * pct / 100)))
-    assert k <= n, f'k must be less than or equal to n, got k={k} and n={n}. target shape {target.shape}, pred shape {pred.shape} pct {pct}'
+    assert (
+        k <= n
+    ), f"k must be less than or equal to n, got k={k} and n={n}. target shape {target.shape}, pred shape {pred.shape} pct {pct}"
 
-
-    top_tgt = np.argpartition(target, n - k)[n - k:]
-    top_prd = np.argpartition(pred,   n - k)[n - k:]
+    top_tgt = np.argpartition(target, n - k)[n - k :]
+    top_prd = np.argpartition(pred, n - k)[n - k :]
 
     # recall = |intersection| / k
     return np.intersect1d(top_tgt, top_prd).size / k
+
 
 def convert_compaign_result_collection_to_df(
     model_evaluation: ModelEvaluation,
@@ -283,39 +343,68 @@ def get_training_loss_df(results: ModelEvaluation, round_idx: int) -> pd.DataFra
     for campaign_results in results.campaign_results:
         for config_results in campaign_results.config_results:
             for sim_idx, sim_result in enumerate(config_results.simulation_results):
-                few_shot_info = sim_result.round_metrics[round_idx].misc['few_shot_debug_info']
-                for model_idx in range(len(few_shot_info['pretrain_metrics'])):
-                    pretrain_train_loss_list = few_shot_info['pretrain_metrics'][model_idx]['train_loss']
-                    pretrain_val_loss_list = few_shot_info['pretrain_metrics'][model_idx]['val_loss']
-                    finetune_train_loss_list = few_shot_info['finetune_metrics'][model_idx]['train_loss']
-                    finetune_val_loss_list = few_shot_info['finetune_metrics'][model_idx]['val_loss']
-                    finetune_test_recall_1pct_list = few_shot_info['finetune_metrics'][model_idx]['test_recall_1pct']
-                    model_train_df = pd.concat([pd.DataFrame({
-                        'loss_type': 'pretrain_train',
-                        'log_step': list(range(len(pretrain_train_loss_list))),
-                        'loss': pretrain_train_loss_list,
-                    }), pd.DataFrame({
-                        'loss_type': 'pretrain_val',
-                        'log_step': list(range(len(pretrain_val_loss_list))),
-                        'loss': pretrain_val_loss_list,
-                    }), pd.DataFrame({
-                        'loss_type': 'finetune_train',
-                        'log_step': list(range(len(finetune_train_loss_list))),
-                        'loss': finetune_train_loss_list,
-                    }), pd.DataFrame({
-                        'loss_type': 'finetune_val',
-                        'log_step': list(range(len(finetune_val_loss_list))),
-                        'loss': finetune_val_loss_list,
-                    }), pd.DataFrame({
-                        'loss_type': 'finetune_recall_1pct',
-                        'log_step': list(range(len(finetune_test_recall_1pct_list))),
-                        'loss': finetune_test_recall_1pct_list,
-                    })], ignore_index=True)
+                few_shot_info = sim_result.round_metrics[round_idx].misc["few_shot_debug_info"]
+                for model_idx in range(len(few_shot_info["pretrain_metrics"])):
+                    pretrain_train_loss_list = few_shot_info["pretrain_metrics"][model_idx][
+                        "train_loss"
+                    ]
+                    pretrain_val_loss_list = few_shot_info["pretrain_metrics"][model_idx][
+                        "val_loss"
+                    ]
+                    finetune_train_loss_list = few_shot_info["finetune_metrics"][model_idx][
+                        "train_loss"
+                    ]
+                    finetune_val_loss_list = few_shot_info["finetune_metrics"][model_idx][
+                        "val_loss"
+                    ]
+                    finetune_test_recall_1pct_list = few_shot_info["finetune_metrics"][model_idx][
+                        "test_recall_1pct"
+                    ]
+                    model_train_df = pd.concat(
+                        [
+                            pd.DataFrame(
+                                {
+                                    "loss_type": "pretrain_train",
+                                    "log_step": list(range(len(pretrain_train_loss_list))),
+                                    "loss": pretrain_train_loss_list,
+                                }
+                            ),
+                            pd.DataFrame(
+                                {
+                                    "loss_type": "pretrain_val",
+                                    "log_step": list(range(len(pretrain_val_loss_list))),
+                                    "loss": pretrain_val_loss_list,
+                                }
+                            ),
+                            pd.DataFrame(
+                                {
+                                    "loss_type": "finetune_train",
+                                    "log_step": list(range(len(finetune_train_loss_list))),
+                                    "loss": finetune_train_loss_list,
+                                }
+                            ),
+                            pd.DataFrame(
+                                {
+                                    "loss_type": "finetune_val",
+                                    "log_step": list(range(len(finetune_val_loss_list))),
+                                    "loss": finetune_val_loss_list,
+                                }
+                            ),
+                            pd.DataFrame(
+                                {
+                                    "loss_type": "finetune_recall_1pct",
+                                    "log_step": list(range(len(finetune_test_recall_1pct_list))),
+                                    "loss": finetune_test_recall_1pct_list,
+                                }
+                            ),
+                        ],
+                        ignore_index=True,
+                    )
 
-                    model_train_df['model_idx'] = model_idx
-                    model_train_df['sim_idx'] = sim_idx
-                    model_train_df['dms_id'] = campaign_results.dms_id
-                    model_train_df['config_name'] = config_results.config.name
+                    model_train_df["model_idx"] = model_idx
+                    model_train_df["sim_idx"] = sim_idx
+                    model_train_df["dms_id"] = campaign_results.dms_id
+                    model_train_df["config_name"] = config_results.config.name
                     train_df = pd.concat([train_df, model_train_df])
     return train_df
 
@@ -342,7 +431,9 @@ def apply_diff_list_to_config(
     folde_model_config_base: FolDEModelConfig,
     model_diffs: List[ModelDiff],
 ) -> List[FolDEModelConfig]:
-    original_config = folde_model_config_base.model_copy(deep=True, update={"name": folde_model_config_base.name + '-base'})
+    original_config = folde_model_config_base.model_copy(
+        deep=True, update={"name": folde_model_config_base.name + "-base"}
+    )
     config_list = [original_config]
     for model_diff in model_diffs:
         folde_model_config_dict = folde_model_config_base.model_dump()
@@ -385,7 +476,7 @@ def cluster_sort_seq_ids(
         return chosen_pred_df.index.tolist()
 
     # 1. Pair-wise Pearson r between mutants (rows)
-    corr = chosen_pred_df.T.corr()          # (n_mutants × n_mutants)
+    corr = chosen_pred_df.T.corr()  # (n_mutants × n_mutants)
 
     # 2. Convert to condensed distance vector: d = 1 − r
     dist_condensed = squareform(1.0 - corr.values, checks=False)
@@ -394,5 +485,66 @@ def cluster_sort_seq_ids(
     Z = linkage(dist_condensed, method=method, optimal_ordering=True)
 
     # 4. Leaf order → index positions → seq_id list
-    leaf_order = leaves_list(Z)             # ndarray of row indices
+    leaf_order = leaves_list(Z)  # ndarray of row indices
     return chosen_pred_df.index[leaf_order].tolist()
+
+
+def load_checkpointed_model_eval(
+    checkpoint_dir,
+    eval_prefix: str,
+    other_eval_prefixes: list[str] = [],
+) -> ModelEvaluation:
+    """Load a model evaluation from a checkpoint directory.
+
+    Args:
+        checkpoint_dir: The directory containing the checkpoint files.
+        eval_prefix: The prefix of the checkpoint files.
+        other_eval_prefixes: A list of other prefixes to load.
+    """
+    result_list = []
+    for json_path in Path(checkpoint_dir).glob(f"{eval_prefix}*"):
+        with open(json_path, "r") as f:
+            result_list.append(ModelEvaluation(**json.load(f)))
+
+    for other_eval_prefix in other_eval_prefixes:
+        for json_path in Path(checkpoint_dir).glob(f"{other_eval_prefix}*"):
+            with open(json_path, "r") as f:
+                result_list.append(ModelEvaluation(**json.load(f)))
+    if len(result_list) == 0:
+        raise ValueError(f"Failed to find any matching files.")
+
+    all_dms_ids = set()
+    for result in result_list:
+        for campaign_result in result.campaign_results:
+            all_dms_ids.add(campaign_result.dms_id)
+    print(f"Loading results for DMSs: {all_dms_ids}")
+
+    composite_result = None
+    for single_result in result_list:
+        single_result_dms_list = [cr.dms_id for cr in single_result.campaign_results]
+        single_result_has_all_dms = all(dms_id in single_result_dms_list for dms_id in all_dms_ids)
+        if not single_result_has_all_dms:
+            print(f"Skipping {single_result.name} because it is missing some DMS IDs.")
+            continue
+
+        if composite_result is None:
+            composite_result = single_result
+            continue
+
+        # Insert all campaign results into the appropriate list.
+        for single_campaign_result in single_result.campaign_results:
+            for composite_campaign_result in composite_result.campaign_results:
+                if single_campaign_result.dms_id == composite_campaign_result.dms_id:
+                    composite_campaign_result.config_results.extend(
+                        single_campaign_result.config_results
+                    )
+                    break
+            else:
+                raise ValueError(
+                    f"This should not have happened. We started with one of the results that had all DMSs. But one of the following results had a new DMS id: {single_campaign_result.dms_id}"
+                )
+
+    if not composite_result:
+        raise ValueError(f"Failed to find any matching files.")
+
+    return composite_result
