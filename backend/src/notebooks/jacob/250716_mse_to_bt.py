@@ -24,40 +24,72 @@ folde_train_dms_ids = [
 
 
 # Example configuration
-NAME = "250716-r1-explore-exploit-tension"
+NAME = "250716-mse-to-bt"
 
-# config_list = apply_diff_list_to_config(
-#     FolDEModelConfig(
-#         name="MLP",
-#         # Required parameters
-#         naturalness_model_id="600m",  # ESM-2 650M model
-#         embedding_model_id="300m",  # Same model for embeddings
-#         zero_shot_model_name="MUSTBEFILLEDOUT",
-#         zero_shot_model_params={},
-#         # Few-shot model configuration (used after first round)
-#         few_shot_model_name="TorchMLPFewShotModel",
-#         few_shot_model_params={
-#             "pretrain": False,
-#             "pretrain_epochs": 50,
-#             "ensemble_size": 1,
-#             "embedding_dim": 960,
-#             "hidden_dims": [100, 50],
-#             "dropout": 0.2,
-#             "learning_rate": 3e-4,
-#             "weight_decay": 1e-5,
-#             "train_epochs": 200,
-#             "train_patience": 40,
-#             "val_frequency": 10,
-#             "do_validation_with_pair_fraction": 0.2,
-#         },
-#     ),
-#     [
-#         ModelDiff(name="randomZeroShot", diffs={
-#             "zero_shot_model_name": "RandomZeroShotModel"
-#         }),
-#     ],
-#     exclude_base_config=True,
-# )
+random_forest_config = FolDEModelConfig(
+    name="RandomToRandomForest",
+    naturalness_model_id="600m",
+    embedding_model_id="300m",
+    zero_shot_model_name="RandomZeroShotModel",
+    zero_shot_model_params={},
+    few_shot_model_name="RandomForestFewShotModel",
+    few_shot_model_params={
+                "n_estimators": 100,
+                "criterion": "friedman_mse",
+                "max_depth": None,
+                "min_samples_split": 2,
+                "min_samples_leaf": 1,
+                "min_weight_fraction_leaf": 0.0,
+                "max_features": 1.0,
+                "max_leaf_nodes": None,
+                "min_impurity_decrease": 0.0,
+                "bootstrap": True,
+                "oob_score": False,
+                "n_jobs": None,
+                "verbose": 0,
+                "warm_start": False,
+                "ccp_alpha": 0.0,
+                "max_samples": None,
+            },
+)
+
+mlp_config_list = apply_diff_list_to_config(
+    FolDEModelConfig(
+        name="MLP",
+        # Required parameters
+        naturalness_model_id="600m",  # ESM-2 650M model
+        embedding_model_id="300m",  # Same model for embeddings
+        zero_shot_model_name="RandomZeroShotModel",
+        zero_shot_model_params={},
+        # Few-shot model configuration (used after first round)
+        few_shot_model_name="TorchMLPFewShotModel",
+        few_shot_model_params={
+            "pretrain": False,
+            "pretrain_epochs": 50,
+            "ensemble_size": 1,
+            "embedding_dim": 960,
+            "hidden_dims": [100, 50],
+            "dropout": 0.2,
+            "learning_rate": 3e-4,
+            "weight_decay": 1e-5,
+            "train_epochs": 200,
+            "train_patience": 40,
+            "val_frequency": 10,
+            "do_validation_with_pair_fraction": 0.2,
+        },
+    ),
+    [
+        ModelDiff(name="MSE", diffs={
+            "few_shot_model_params.use_mse_loss": True
+        }),
+        ModelDiff(name="BT", diffs={
+            "few_shot_model_params.use_mse_loss": False
+        }),
+    ],
+    exclude_base_config=True,
+)
+
+config_list = [random_forest_config] + mlp_config_list
 
 print(f"Config 1/{len(config_list)}:")
 print(config_list[0].model_dump_json(indent=2))
