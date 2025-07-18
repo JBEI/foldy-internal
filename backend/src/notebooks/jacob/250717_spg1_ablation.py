@@ -126,6 +126,9 @@ mlp_config_list = apply_diff_list_to_config(
         ModelDiff(name="less-naturalnessTraining-5epochs", diffs={
             "few_shot_model_params.pretrain_epochs": 5,
         }),
+        ModelDiff(name="less-naturalnessTraining-1epochs", diffs={
+            "few_shot_model_params.pretrain_epochs": 1,
+        }),
     ],
 )
 
