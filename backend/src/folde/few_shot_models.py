@@ -515,7 +515,7 @@ class TorchMLPFewShotModel(FewShotModel):
         dropout: float = 0.1,
         device: str | None = None,
         ensemble_size: int = 1,
-        disable_ensemble_normalization: bool = False,
+        enable_ensemble_devariancing: bool = False,
         learning_rate: float = 1e-4,
         weight_decay: float = 1e-5,
         pretrain: bool = False,
@@ -544,7 +544,7 @@ class TorchMLPFewShotModel(FewShotModel):
         self.dropout = dropout
         self.device = device
         self.ensemble_size = ensemble_size
-        self.disable_ensemble_normalization = disable_ensemble_normalization
+        self.enable_ensemble_devariancing = enable_ensemble_devariancing
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.should_pretrain = pretrain
@@ -799,8 +799,9 @@ class TorchMLPFewShotModel(FewShotModel):
         pred_series_list = []
         for _, t in self.finetuned_model_and_trainer_list:
             score_array = t.predict_scores(X)
-            if not self.disable_ensemble_normalization:
-                score_array = score_array - score_array.mean(axis=0)  #  / score_array.std(axis=0)
+            score_array = score_array - score_array.mean(axis=0)  #  / score_array.std(axis=0)
+            if self.enable_ensemble_devariancing:
+                score_array = score_array / score_array.std(axis=0)
             pred_series_list.append(pd.Series(score_array, index=embedding_series.index))
         return pred_series_list
 
