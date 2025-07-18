@@ -117,6 +117,15 @@ mlp_config_list = apply_diff_list_to_config(
             "few_shot_model_params.train_epochs": 600,
             "few_shot_model_params.decision_mode": "mean"
         }),
+        ModelDiff(name="with-Devariancing", diffs={
+            "few_shot_model_params.enable_ensemble_devariancing": True
+        }),
+        ModelDiff(name="less-naturalnessTraining-20epochs", diffs={
+            "few_shot_model_params.pretrain_epochs": 20,
+        }),
+        ModelDiff(name="less-naturalnessTraining-5epochs", diffs={
+            "few_shot_model_params.pretrain_epochs": 5,
+        }),
     ],
 )
 
