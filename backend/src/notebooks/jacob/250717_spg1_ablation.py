@@ -104,6 +104,18 @@ mlp_config_list = apply_diff_list_to_config(
             "few_shot_model_params.ensemble_size": 1,
             "few_shot_model_params.decision_mode": "mean"
         }),
+        ModelDiff(name="long-training", diffs={
+            "few_shot_model_params.train_epochs": 600,
+        }),
+        ModelDiff(name="no-naturalnessTraining-or-ensemble", diffs={
+            "few_shot_model_params.train_epochs": 600,
+            "few_shot_model_params.ensemble_size": 1,
+            "few_shot_model_params.decision_mode": "mean"
+        }),
+        ModelDiff(name="no-naturalnessTraining-or-constantLiar", diffs={
+            "few_shot_model_params.train_epochs": 600,
+            "few_shot_model_params.decision_mode": "mean"
+        }),
     ],
 )
 
