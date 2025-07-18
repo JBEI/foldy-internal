@@ -106,6 +106,7 @@ mlp_config_list = apply_diff_list_to_config(
         }),
         ModelDiff(name="long-training", diffs={
             "few_shot_model_params.train_epochs": 600,
+            "few_shot_model_params.train_patience": 120,
         }),
         ModelDiff(name="no-naturalnessTraining-or-ensemble", diffs={
             "few_shot_model_params.train_epochs": 600,
