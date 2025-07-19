@@ -19,6 +19,7 @@ from sklearn.ensemble import RandomForestRegressor as SklearnRandomForestRegress
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold
 from sklearn.neural_network import MLPRegressor as SklearnMLPRegressor
+import torch
 
 from app.helpers.preference_ranking import (
     BradleyTerryMLP,
@@ -522,6 +523,7 @@ class TorchMLPFewShotModel(FewShotModel):
         pretrain_epochs: int = 10,
         pretrain_patience: int = 20,
         pretrain_val_frequency: int = 5,
+        shrink_and_perturb_params: tuple[float, float] | None = None,
         train_epochs: int = 50,
         train_patience: int | None = None,
         val_frequency: int = 10,
@@ -551,6 +553,7 @@ class TorchMLPFewShotModel(FewShotModel):
         self.pretrain_epochs = pretrain_epochs
         self.pretrain_patience = pretrain_patience
         self.pretrain_val_frequency = pretrain_val_frequency
+        self.shrink_and_perturb_params = shrink_and_perturb_params
         self.train_epochs = train_epochs
         self.train_patience = train_patience
         self.val_frequency = val_frequency
@@ -702,6 +705,12 @@ class TorchMLPFewShotModel(FewShotModel):
                 )
             for idx, (model, trainer) in enumerate(self.finetuned_model_and_trainer_list):
                 model.load_state_dict(self.pretrained_model_state_dicts[idx])
+
+                if self.shrink_and_perturb_params:
+                    beta, sigma = self.shrink_and_perturb_params
+                    for p in model.parameters():
+                        p.data.mul_(beta)  # shrink
+                        p.data.add_(torch.randn_like(p) * sigma)  # perturb
 
         kf_splits = None
         if self.do_holdout_validation:
