@@ -617,8 +617,27 @@ def simulate_campaigns_with_config_checkpoints(
                 raise ValueError(f"Checkpoint {cp_path} exists but contains no campaign_results.")
             stored_cfg = eval_obj.campaign_results[0].config_results[0].config
             if stored_cfg.model_dump() != cfg.model_dump():
+                # Get the model dumps for comparison
+                stored_dump = stored_cfg.model_dump()
+                current_dump = cfg.model_dump()
+                
+                # Find differences
+                differences = []
+                all_keys = set(stored_dump.keys()) | set(current_dump.keys())
+                
+                for key in sorted(all_keys):
+                    if key not in stored_dump:
+                        differences.append(f"  - '{key}': missing in stored config, current value: {current_dump[key]}")
+                    elif key not in current_dump:
+                        differences.append(f"  - '{key}': missing in current config, stored value: {stored_dump[key]}")
+                    elif stored_dump[key] != current_dump[key]:
+                        differences.append(f"  - '{key}': stored={stored_dump[key]}, current={current_dump[key]}")
+                
+                diff_msg = "\n".join(differences) if differences else "No specific differences found (possibly nested object differences)"
+                
                 raise ValueError(
-                    f"Config mismatch for checkpoint {cp_path}. "
+                    f"Config mismatch for checkpoint {cp_path}.\n"
+                    f"Differences found:\n{diff_msg}\n"
                     "Pass overwrite=True or pick a new prefix."
                 )
 

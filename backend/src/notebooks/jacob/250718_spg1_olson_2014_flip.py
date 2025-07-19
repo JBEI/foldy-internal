@@ -15,7 +15,7 @@ dms_ids = [
 ]
 
 # Example configuration
-NAME = "250717-spg1-ablation"
+NAME = "250718-spg1-olson-2014-flip"
 
 random_config = FolDEModelConfig(
     name="Random",
@@ -81,64 +81,32 @@ folde_config = FolDEModelConfig(
     },
 )
 
-mlp_config_list = apply_diff_list_to_config(
-    folde_config,
-    [
-        ModelDiff(name="no-constantliar", diffs={
-            "few_shot_model_params.decision_mode": "mean"
-        }),
-        ModelDiff(name="no-BTLoss", diffs={
-            "few_shot_model_params.use_mse_loss": True
-        }),
-        ModelDiff(name="no-naturalnessTraining", diffs={
-            "few_shot_model_params.pretrain": False
-        }),
-        ModelDiff(name="no-zeroShot", diffs={
-            "zero_shot_model_name": "RandomZeroShotModel"
-        }),
-        ModelDiff(name="no-MLP", diffs={
-            "few_shot_model_name": "RandomForestFewShotModel",
-            "few_shot_model_params": random_forest_config.few_shot_model_params.copy()
-        }),
-        ModelDiff(name="no-ensemble", diffs={
-            "few_shot_model_params.ensemble_size": 1,
-            "few_shot_model_params.decision_mode": "mean"
-        }),
-        ModelDiff(name="long-training", diffs={
-            "few_shot_model_params.train_epochs": 600,
-            "few_shot_model_params.train_patience": 120,
-        }),
-        ModelDiff(name="no-naturalnessTraining-or-ensemble", diffs={
-            "few_shot_model_params.train_epochs": 600,
-            "few_shot_model_params.ensemble_size": 1,
-            "few_shot_model_params.decision_mode": "mean"
-        }),
-        ModelDiff(name="no-naturalnessTraining-or-constantLiar", diffs={
-            "few_shot_model_params.train_epochs": 600,
-            "few_shot_model_params.decision_mode": "mean"
-        }),
-        ModelDiff(name="with-Devariancing", diffs={
-            "few_shot_model_params.enable_ensemble_devariancing": True
-        }),
-        ModelDiff(name="less-naturalnessTraining-20epochs", diffs={
-            "few_shot_model_params.pretrain_epochs": 20,
-        }),
-        ModelDiff(name="less-naturalnessTraining-5epochs", diffs={
-            "few_shot_model_params.pretrain_epochs": 5,
-        }),
-        ModelDiff(name="less-naturalnessTraining-1epochs", diffs={
-            "few_shot_model_params.pretrain_epochs": 1,
-        }),
-        ModelDiff(name="shrink-and-perturb-06-01", diffs={
-            "few_shot_model_params.shrink_and_perturb_params": [0.6, 0.1],
-        }),
-        ModelDiff(name="shrink-and-perturb-02-01", diffs={
-            "few_shot_model_params.shrink_and_perturb_params": [0.2, 0.1],
-        }),
-    ],
+config_list = (
+    apply_diff_list_to_config(
+        random_config,
+        [
+            ModelDiff(name="1-vs-rest", diffs={
+                "data_split_mode": "1-VS-REST"
+            }),
+        ],
+    ) +
+    apply_diff_list_to_config(
+        random_forest_config,
+        [
+            ModelDiff(name="1-vs-rest", diffs={
+                "data_split_mode": "1-VS-REST"
+            }),
+        ],
+    ) +
+    apply_diff_list_to_config(
+        folde_config,
+        [
+            ModelDiff(name="1-vs-rest", diffs={
+                "data_split_mode": "1-VS-REST"
+            }),
+        ],
+    )
 )
-
-config_list = [random_config, random_forest_config] + mlp_config_list
 
 print(f"Config 1/{len(config_list)}:")
 print(config_list[0].model_dump_json(indent=2))
@@ -151,7 +119,7 @@ results = simulate_campaigns_with_config_checkpoints(
     round_size=16,
     number_of_simulations=10,
     activity_column="DMS_score",
-    max_rounds=10,
+    max_rounds=6,
     random_seed=42,
     num_workers=5,
 )
