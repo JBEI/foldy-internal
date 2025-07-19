@@ -504,10 +504,15 @@ def simulate_campaign(
                 else:
                     full_seq_id_list = list(activity_df.index.values)
 
+                world_size = int(len(full_seq_id_list) * 0.5)
+
+                if world_size < max_rounds * round_size:
+                    raise ValueError(f"World size {world_size} is less than max_rounds * round_size {max_rounds * round_size}")
+
                 rng = np.random.RandomState(random_seed + 1000 * sim_idx)
                 bootstrapped_seq_ids = rng.choice(
                     full_seq_id_list,
-                    size=int(len(activity_df) * 0.5),
+                    size=world_size,
                     replace=False,
                 )
 
