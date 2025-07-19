@@ -253,7 +253,9 @@ def _run_single_simulation(
                 type(golden_activity) == float or type(golden_activity) == np.float64
             ), f"golden_activity must be a float, got {type(golden_activity)}"
             percentile = all_percentiles.loc[top_seq_id]
-            predicted_activity_stddev = float(np.std([pa.loc[top_seq_id] for pa in predicted_activity_ensemble]))
+            predicted_activity_stddev = float(
+                np.std([pa.loc[top_seq_id] for pa in predicted_activity_ensemble])
+            )
             mutant_metrics_list.append(
                 MutantMetrics(
                     seq_id=top_seq_id,
@@ -307,14 +309,14 @@ def _run_single_simulation(
             )
             return held_out_stat_recall, held_out_stat_auc
 
-
         def get_held_out_stats_for_percentile(percentile):
             """Returns some stats on the held out predictions for a percentile, zero to 100 (eg 1.0 for top 1 percent)."""
 
-
             assert held_out_activity_series.index.equals(consensus_held_out_predictions.index)
             held_out_stat_recall = get_top_percentile_recall_score(
-                held_out_activity_series.to_numpy(), consensus_held_out_predictions.to_numpy(),  percentile,
+                held_out_activity_series.to_numpy(),
+                consensus_held_out_predictions.to_numpy(),
+                percentile,
             )
 
             held_out_stat_auc = roc_auc_score(
@@ -325,8 +327,6 @@ def _run_single_simulation(
 
         held_out_1pct_recall, held_out_1pct_auc = get_held_out_stats_for_percentile(1)
         held_out_10pct_recall, held_out_10pct_auc = get_held_out_stats_for_percentile(10)
-
-
 
         old_held_out_1pct_recall, old_held_out_1pct_auc = old_get_held_out_stats_for_percentile(1)
 
@@ -345,9 +345,9 @@ def _run_single_simulation(
         )
 
         if round_num == 1:
-            round_metrics.misc['zero_shot_debug_info'] = zero_shot_model.get_debug_info()
+            round_metrics.misc["zero_shot_debug_info"] = zero_shot_model.get_debug_info()
         else:
-            round_metrics.misc['few_shot_debug_info'] = few_shot_model.get_debug_info()
+            round_metrics.misc["few_shot_debug_info"] = few_shot_model.get_debug_info()
 
         results.rounds = round_num
         results.round_metrics.append(round_metrics)
@@ -475,15 +475,42 @@ def simulate_campaign(
 
         single_model_campaign_results = None
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        # with ThreadPoolExecutor() as executor:
+            # with ThreadPoolExecutor() as executor:
             futures = []
             for sim_idx in range(number_of_simulations):
+                if model_config.data_split_mode:
+                    if model_config.data_split_mode == "1-VS-REST":
+                        max_mutations_in_training_seqs = 1
+                    elif model_config.data_split_mode == "2-VS-REST":
+                        max_mutations_in_training_seqs = 2
+                    elif model_config.data_split_mode == "3-VS-REST":
+                        max_mutations_in_training_seqs = 3
+                    elif model_config.data_split_mode == "4-VS-REST":
+                        max_mutations_in_training_seqs = 4
+                    elif model_config.data_split_mode == "5-VS-REST":
+                        max_mutations_in_training_seqs = 5
+                    elif model_config.data_split_mode == "6-VS-REST":
+                        max_mutations_in_training_seqs = 6
+                    elif model_config.data_split_mode == "7-VS-REST":
+                        max_mutations_in_training_seqs = 7
+                    else:
+                        raise ValueError(f"Invalid data split mode: {model_config.data_split_mode}")
+
+                    full_seq_id_list = [
+                        sid
+                        for sid in activity_df.index.values
+                        if len(sid.split("_")) <= max_mutations_in_training_seqs
+                    ]
+                else:
+                    full_seq_id_list = list(activity_df.index.values)
+
                 rng = np.random.RandomState(random_seed + 1000 * sim_idx)
                 bootstrapped_seq_ids = rng.choice(
-                    activity_df.index.values,
+                    full_seq_id_list,
                     size=int(len(activity_df) * 0.5),
                     replace=False,
                 )
+
                 futures.append(
                     executor.submit(
                         run_single_sim_parallel,
@@ -517,7 +544,6 @@ def simulate_campaigns(name: str, dms_ids: List[str], **kwargs) -> ModelEvaluati
     for dms_id in dms_ids:
         results.campaign_results.append(simulate_campaign(dms_id, **kwargs))
     return results
-
 
 
 # --------------------------------------------------------------------------- #
@@ -588,9 +614,7 @@ def simulate_campaigns_with_config_checkpoints(
 
             # Sanity‑check that the stored config matches exactly
             if not eval_obj.campaign_results:
-                raise ValueError(
-                    f"Checkpoint {cp_path} exists but contains no campaign_results."
-                )
+                raise ValueError(f"Checkpoint {cp_path} exists but contains no campaign_results.")
             stored_cfg = eval_obj.campaign_results[0].config_results[0].config
             if stored_cfg.model_dump() != cfg.model_dump():
                 raise ValueError(
@@ -624,17 +648,13 @@ def simulate_campaigns_with_config_checkpoints(
                 f"{len(dms_ids)} DMS datasets complete."
             )
         else:
-            eval_obj = ModelEvaluation(
-                name=f"{eval_prefix}_{cfg_name}", campaign_results=[]
-            )
+            eval_obj = ModelEvaluation(name=f"{eval_prefix}_{cfg_name}", campaign_results=[])
             completed_dms: set[str] = set()
 
         # Inner loop over DMS datasets
         for dms_id in dms_ids:
             if dms_id in completed_dms:
-                logger.info(
-                    f"[{cfg_name}] Skipping already‑completed DMS '{dms_id}'."
-                )
+                logger.info(f"[{cfg_name}] Skipping already‑completed DMS '{dms_id}'.")
                 continue
 
             logger.info(f"[{cfg_name}] Simulating DMS '{dms_id}'.")

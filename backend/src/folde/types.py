@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class FolDEModelConfig(BaseModel):
     name: str
-    data_split_mode: Optional[str] = None  # ""
+    data_split_mode: Optional[str] = None  # Can be "1-VS-REST" or "2-VS-REST" etc.
     naturalness_model_id: str
     embedding_model_id: str
     embedding_column: Optional[str] = None
