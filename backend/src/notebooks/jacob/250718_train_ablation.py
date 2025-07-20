@@ -126,6 +126,15 @@ mlp_config_list = apply_diff_list_to_config(
         ModelDiff(name="with-sp-06-01", diffs={
             "few_shot_model_params.shrink_and_perturb_params": [0.6, 0.1],
         }),
+        ModelDiff(name="with-sp-08-01", diffs={
+            "few_shot_model_params.shrink_and_perturb_params": [0.6, 0.1],
+        }),
+        ModelDiff(name="with-sp-06-0001", diffs={
+            "few_shot_model_params.shrink_and_perturb_params": [0.6, 0.001],
+        }),
+        ModelDiff(name="with-sp-08-0001", diffs={
+            "few_shot_model_params.shrink_and_perturb_params": [0.8, 0.001],
+        }),
     ],
 )
 
