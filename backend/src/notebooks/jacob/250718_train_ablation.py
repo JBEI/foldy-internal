@@ -127,13 +127,34 @@ mlp_config_list = apply_diff_list_to_config(
             "few_shot_model_params.shrink_and_perturb_params": [0.6, 0.1],
         }),
         ModelDiff(name="with-sp-08-01", diffs={
-            "few_shot_model_params.shrink_and_perturb_params": [0.6, 0.1],
+            "few_shot_model_params.shrink_and_perturb_params": [0.8, 0.1],
+        }),
+        ModelDiff(name="with-sp-04-001", diffs={
+            "few_shot_model_params.shrink_and_perturb_params": [0.6, 0.01],
+        }),
+        ModelDiff(name="with-sp-06-001", diffs={
+            "few_shot_model_params.shrink_and_perturb_params": [0.6, 0.01],
+        }),
+        ModelDiff(name="with-sp-08-001", diffs={
+            "few_shot_model_params.shrink_and_perturb_params": [0.8, 0.01],
+        }),
+        ModelDiff(name="with-sp-04-0001", diffs={
+            "few_shot_model_params.shrink_and_perturb_params": [0.6, 0.001],
         }),
         ModelDiff(name="with-sp-06-0001", diffs={
             "few_shot_model_params.shrink_and_perturb_params": [0.6, 0.001],
         }),
         ModelDiff(name="with-sp-08-0001", diffs={
             "few_shot_model_params.shrink_and_perturb_params": [0.8, 0.001],
+        }),
+        ModelDiff(name="with-sp-04-00001", diffs={
+            "few_shot_model_params.shrink_and_perturb_params": [0.6, 0.0001],
+        }),
+        ModelDiff(name="with-sp-06-00001", diffs={
+            "few_shot_model_params.shrink_and_perturb_params": [0.6, 0.0001],
+        }),
+        ModelDiff(name="with-sp-08-00001", diffs={
+            "few_shot_model_params.shrink_and_perturb_params": [0.8, 0.0001],
         }),
     ],
 )
