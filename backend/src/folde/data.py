@@ -45,14 +45,21 @@ def get_dms_metadata() -> pd.DataFrame:
     dms_metadata = pd.read_csv(DMS_METADATA_FILE)
     logger.info(f"Loaded metadata for {len(dms_metadata)} DMS datasets")
 
-    dms_metadata = pd.concat([
-        dms_metadata,
-        pd.DataFrame({
-            'DMS_id': ['FLIP-AAV'],
-            'DMS_filename': [None],
-            'target_seq': ['MAADGYLPDWLEDTLSEGIRQWWKLKPGPPPPKPAERHKDDSRGLVLPGYKYLGPFNGLDKGEPVNEADAAALEHDKAYDRQLDSGDNPYLKYNHADAEFQERLKEDTSFGGNLGRAVFQAKKRVLEPLGLVEEPVKTAPGKKRPVEHSPVEPDSSSGTGKAGQQPARKRLNFGQTGDADSVPDPQPLGQPPAAPSGLGTNTMATGSGAPMADNNEGADGVGNSSGNWHCDSTWMGDRVITTSTRTWALPTYNNHLYKQISSQSGASNDNHYFGYSTPWGYFDFNRFHCHFSPRDWQRLINNNWGFRPKRLNFKLFNIQVKEVTQNDGTTTIANNLTSTVQVFTDSEYQLPYVLGSAHQGCLPPFPADVFMVPQYGYLTLNNGSQAVGRSSFYCLEYFPSQMLRTGNNFTFSYTFEDVPFHSSYAHSQSLDRLMNPLIDQYLYYLSRTNTPSGTTTQSRLQFSQAGASDIRDQSRNWLPGPCYRQQRVSKTSADNNNSEYSWTGATKYHLNGRDSLVNPGPAMASHKDDEEKFFPQSGVLIFGKQGSEKTNVDIEKVMITDEEEIRTTNPVATEQYGSVSTNLQRGNRQAATADVNTQGVLPGMVWQDRDVYLQGPIWAKIPHTDGHFHPSPLMGGFGLKHPPPQILIKNTPVPANPSTTFSAAKFASFITQYSTGQVSVEIEWELQKENSKRWNPEIQYTSNYNKSVNVDFTVDTNGVYSEPRPIGTRYLTRNL'],
-        })
-    ], ignore_index=True)
+    dms_metadata = pd.concat(
+        [
+            dms_metadata,
+            pd.DataFrame(
+                {
+                    "DMS_id": ["FLIP-AAV"],
+                    "DMS_filename": [None],
+                    "target_seq": [
+                        "MAADGYLPDWLEDTLSEGIRQWWKLKPGPPPPKPAERHKDDSRGLVLPGYKYLGPFNGLDKGEPVNEADAAALEHDKAYDRQLDSGDNPYLKYNHADAEFQERLKEDTSFGGNLGRAVFQAKKRVLEPLGLVEEPVKTAPGKKRPVEHSPVEPDSSSGTGKAGQQPARKRLNFGQTGDADSVPDPQPLGQPPAAPSGLGTNTMATGSGAPMADNNEGADGVGNSSGNWHCDSTWMGDRVITTSTRTWALPTYNNHLYKQISSQSGASNDNHYFGYSTPWGYFDFNRFHCHFSPRDWQRLINNNWGFRPKRLNFKLFNIQVKEVTQNDGTTTIANNLTSTVQVFTDSEYQLPYVLGSAHQGCLPPFPADVFMVPQYGYLTLNNGSQAVGRSSFYCLEYFPSQMLRTGNNFTFSYTFEDVPFHSSYAHSQSLDRLMNPLIDQYLYYLSRTNTPSGTTTQSRLQFSQAGASDIRDQSRNWLPGPCYRQQRVSKTSADNNNSEYSWTGATKYHLNGRDSLVNPGPAMASHKDDEEKFFPQSGVLIFGKQGSEKTNVDIEKVMITDEEEIRTTNPVATEQYGSVSTNLQRGNRQAATADVNTQGVLPGMVWQDRDVYLQGPIWAKIPHTDGHFHPSPLMGGFGLKHPPPQILIKNTPVPANPSTTFSAAKFASFITQYSTGQVSVEIEWELQKENSKRWNPEIQYTSNYNKSVNVDFTVDTNGVYSEPRPIGTRYLTRNL"
+                    ],
+                }
+            ),
+        ],
+        ignore_index=True,
+    )
     return dms_metadata
 
 
@@ -119,7 +126,9 @@ def get_proteingym_dataset(
     dms_metadata = get_dms_metadata()
     dms_metadata = dms_metadata[dms_metadata["DMS_id"] == dms_id]
     if len(dms_metadata) != 1:
-        raise ValueError(f"Did not find one row for DMS {dms_id} in metadata file at {DMS_METADATA_FILE}")
+        raise ValueError(
+            f"Did not find one row for DMS {dms_id} in metadata file at {DMS_METADATA_FILE}"
+        )
     wt_aa_seq = dms_metadata["target_seq"].iloc[0]
 
     if dms_id == "FLIP-AAV":
@@ -157,7 +166,9 @@ def get_proteingym_dataset(
     # LOAD NATURALNESS DATA ######################################
     # AUGMENT SINGLE MUTANT NATURALNESS FOR MULTI MUTANTS ########
     incomplete_naturalness_df = pd.read_csv(naturalness_file_path)
-    logger.info(f"Loaded naturalness scores for {dms_id} with {len(incomplete_naturalness_df)} rows")
+    logger.info(
+        f"Loaded naturalness scores for {dms_id} with {len(incomplete_naturalness_df)} rows"
+    )
     incomplete_naturalness_df["seq_id"] = incomplete_naturalness_df["seq_id"].apply(
         lambda x: maybe_modify_seq_id(dms_id, x)
     )
@@ -177,7 +188,9 @@ def get_proteingym_dataset(
     logger.info(f"Loaded activity data for {dms_id} with {len(incomplete_activity_df)} rows")
 
     # Convert 'mutant' column to 'seq_id' by replacing ':' with '_'
-    incomplete_activity_df["seq_id"] = incomplete_activity_df["mutant"].apply(lambda x: allele_set_to_seq_id(set(x.split(':'))))
+    incomplete_activity_df["seq_id"] = incomplete_activity_df["mutant"].apply(
+        lambda x: allele_set_to_seq_id(set(x.split(":")))
+    )
     incomplete_activity_df = incomplete_activity_df.set_index("seq_id", drop=False)
     seq_ids_with_activity = set(incomplete_activity_df.index)
     activity_df = incomplete_activity_df.reindex(embedding_df.index)
@@ -186,25 +199,43 @@ def get_proteingym_dataset(
     # LOAD CATEGORY DATA ######################################
     if dms_id == "FLIP-AAV":
         category_df = pd.read_csv(FLIP_AAV_DATA_FILE)
-        category_df = category_df[['homolog_seq_id'] + [c for c in category_df.columns if c.endswith('_split')]]
-        category_df = category_df.set_index('homolog_seq_id')
+        category_df = category_df[
+            ["homolog_seq_id"] + [c for c in category_df.columns if c.endswith("_split")]
+        ]
+        category_df = category_df.set_index("homolog_seq_id")
         # Replace all elements of category df with a bool whereever the string equals 'train'
-        category_df = (category_df == 'train').astype(bool)
+        category_df = (category_df == "train").astype(bool)
         category_df = category_df.reindex(embedding_df.index)
         category_df = category_df.fillna(False)
-    elif dms_id == 'SPG1_STRSG_Olson_2014':
-        category_df = pd.DataFrame({
-            'one_vs_many_split': ['train' if '_' not in seq_id else 'test' for seq_id in embedding_df.index],
-        }, index=embedding_df.index)
-    elif dms_id == 'SPG1_STRSG_Wu_2016':
-        category_df = pd.DataFrame({
-            'one_vs_many_split': ['train' if len(seq_id.split('_')) > 1 else 'test' for seq_id in embedding_df.index],
-            'two_vs_many_split': ['train' if len(seq_id.split('_')) > 2 else 'test' for seq_id in embedding_df.index],
-            'three_vs_many_split': ['train' if len(seq_id.split('_')) > 3 else 'test' for seq_id in embedding_df.index],
-        }, index=embedding_df.index)
+    elif dms_id == "SPG1_STRSG_Olson_2014":
+        category_df = pd.DataFrame(
+            {
+                "one_vs_many_split": [
+                    "train" if "_" not in seq_id else "test" for seq_id in embedding_df.index
+                ],
+            },
+            index=embedding_df.index,
+        )
+    elif dms_id == "SPG1_STRSG_Wu_2016":
+        category_df = pd.DataFrame(
+            {
+                "one_vs_many_split": [
+                    "train" if len(seq_id.split("_")) > 1 else "test"
+                    for seq_id in embedding_df.index
+                ],
+                "two_vs_many_split": [
+                    "train" if len(seq_id.split("_")) > 2 else "test"
+                    for seq_id in embedding_df.index
+                ],
+                "three_vs_many_split": [
+                    "train" if len(seq_id.split("_")) > 3 else "test"
+                    for seq_id in embedding_df.index
+                ],
+            },
+            index=embedding_df.index,
+        )
     else:
         category_df = pd.DataFrame(index=embedding_df.index)
-
 
     # Convert embedding column from string to numpy array if needed
     for col in embedding_df.columns:
@@ -223,9 +254,11 @@ def get_proteingym_dataset(
     )
     common_seq_ids = sort_seq_id_list(wt_aa_seq, common_seq_ids)
 
-    logging.info(f'Going foward with {len(common_seq_ids)} common seq ids')
+    logging.info(f"Going foward with {len(common_seq_ids)} common seq ids")
     if activity_df.shape[0] > len(common_seq_ids):
-        logging.warning(f'Dropping seq ids from activity df such as {activity_df[~activity_df.index.isin(common_seq_ids)].index[:3].tolist()}')
+        logging.warning(
+            f"Dropping seq ids from activity df such as {activity_df[~activity_df.index.isin(common_seq_ids)].index[:3].tolist()}"
+        )
 
     return (
         wt_aa_seq,
