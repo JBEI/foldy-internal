@@ -4,8 +4,8 @@ import { FaDownload, FaFileCode, FaRedo } from 'react-icons/fa';
 import { downloadFileStraightToFilesystem } from '../../api/fileApi';
 import { notify } from '../../services/NotificationService';
 import { TabContainer, DescriptionSection, TableSection } from '../../util/tabComponents';
-import { AntTable, createActionButtons, defaultExpandableContent } from '../../util/AntTable';
-import { Button as AntButton } from 'antd';
+import { AntTable, createActionButtons } from '../../util/AntTable';
+import { Button as AntButton, Table } from 'antd';
 import { EmbeddingModal } from '../shared/EmbeddingModal';
 import { EmbeddingParametersModal } from '../shared/EmbeddingParametersModal';
 import { PlusOutlined } from '@ant-design/icons';
@@ -18,9 +18,78 @@ interface EmbedTabProps {
     openUpLogsForJob: (jobId: number | undefined) => void;
 }
 
+// Custom expandable content for embeddings with text wrapping and line limits
+const embeddingExpandableContent = <T extends Record<string, any>>(record: T): React.ReactNode => {
+    const entries = Object.entries(record).filter(([key, value]) =>
+        value !== null && value !== undefined && value !== ''
+    );
+
+    const detailColumns = [
+        {
+            title: 'Property',
+            dataIndex: 'key',
+            key: 'key',
+            width: 200,
+            render: (key: string) => <strong>{key}</strong>,
+        },
+        {
+            title: 'Value',
+            dataIndex: 'value',
+            key: 'value',
+            render: (value: any) => {
+                if (typeof value === 'object') {
+                    return <pre style={{ margin: 0, fontSize: '12px' }}>{JSON.stringify(value, null, 2)}</pre>;
+                }
+                if (typeof value === 'boolean') {
+                    return value ? 'true' : 'false';
+                }
+
+                const stringValue = String(value);
+                // For long strings, apply wrapping and height constraints
+                if (stringValue.length > 100) {
+                    return (
+                        <div style={{
+                            maxHeight: '5rem', // Approximately 5 lines
+                            overflowY: 'auto',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            fontSize: '12px',
+                            lineHeight: '1rem',
+                            padding: '4px',
+                            backgroundColor: '#f5f5f5',
+                            border: '1px solid #d9d9d9',
+                            borderRadius: '4px'
+                        }}>
+                            {stringValue}
+                        </div>
+                    );
+                }
+
+                return stringValue;
+            },
+        },
+    ];
+
+    const detailData = entries.map(([key, value]) => ({
+        key,
+        value,
+    }));
+
+    return (
+        <Table
+            columns={detailColumns}
+            dataSource={detailData}
+            pagination={false}
+            size="small"
+            bordered
+            rowKey="key"
+            style={{ margin: '16px 0' }}
+        />
+    );
+};
+
 const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings, openUpLogsForJob }) => {
     const [showEmbeddingModal, setShowEmbeddingModal] = useState<boolean>(false);
-    const [showParametersModal, setShowParametersModal] = useState<boolean>(false);
     const [selectedEmbedding, setSelectedEmbedding] = useState<Embedding | null>(null);
     const [templateEmbedding, setTemplateEmbedding] = useState<Embedding | null>(null);
 
@@ -40,11 +109,6 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
         downloadFileStraightToFilesystem(embedding.fold_id, embeddingPath, newFileName, (progress: number) => {
             console.log(`Downloading ${embeddingPath}: ${progress}%`);
         });
-    };
-
-    const viewEmbeddingParameters = (embedding: Embedding) => {
-        setSelectedEmbedding(embedding);
-        setShowParametersModal(true);
     };
 
     const redoEmbedding = (embedding: Embedding) => {
@@ -80,7 +144,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
                 <AntTable<Embedding>
                     dataSource={embeddings || []}
                     rowKey="id"
-                    expandableContent={defaultExpandableContent}
+                    expandableContent={embeddingExpandableContent}
                     columns={[
                         {
                             key: 'name',
@@ -134,13 +198,6 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
                 foldIds={[foldId]}
                 title={templateEmbedding ? "Redo Embedding Run" : "New Embedding Run"}
                 templateEmbedding={templateEmbedding || undefined}
-            />
-
-            {/* Parameters Modal */}
-            <EmbeddingParametersModal
-                open={showParametersModal}
-                onClose={() => setShowParametersModal(false)}
-                embedding={selectedEmbedding}
             />
         </TabContainer>
     );

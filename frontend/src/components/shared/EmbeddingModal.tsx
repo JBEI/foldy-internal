@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Modal, Alert, Button as AntButton, Typography } from 'antd';
-import { QuestionCircleOutlined } from '@ant-design/icons';
+import { Modal, Alert, Button as AntButton, Typography, Upload } from 'antd';
+import { QuestionCircleOutlined, UploadOutlined } from '@ant-design/icons';
 import { startEmbeddings } from '../../api/embedApi';
 import { notify } from '../../services/NotificationService';
 import { ESMModelPicker } from '../FoldView/ESMModelPicker';
@@ -30,6 +30,8 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
     const [batchName, setBatchName] = useState<string>(templateEmbedding?.name || '');
     const [dmsStartingSeqIds, setDmsStartingSeqIds] = useState<string>(templateEmbedding?.dms_starting_seq_ids ? templateEmbedding.dms_starting_seq_ids.split(',').join('\n') : 'WT');
     const [extraSequenceIDs, setExtraSequenceIDs] = useState<string>(templateEmbedding?.extra_seq_ids ? templateEmbedding.extra_seq_ids.split(',').join('\n') : '');
+    const [homologFasta, setHomologFasta] = useState<string | null>(templateEmbedding?.homolog_fasta || null);
+    const [homologFile, setHomologFile] = useState<File | null>(null);
     const [extraLayers, setExtraLayers] = useState<string>(templateEmbedding?.extra_layers || '');
     const [model, setModel] = useState<string>(templateEmbedding?.embedding_model || 'esmc_300m');
     const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
@@ -58,7 +60,7 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
 
         try {
             const promises = foldIds.map(foldId =>
-                startEmbeddings(foldId, batchName, dmsStartingSeqIdsArray, extraIDsArray, extraLayersArray, model)
+                startEmbeddings(foldId, batchName, dmsStartingSeqIdsArray, extraIDsArray, extraLayersArray, model, homologFasta)
             );
 
             await Promise.all(promises);
@@ -71,12 +73,28 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
             setExtraSequenceIDs('');
             setExtraLayers('');
             setModel('esmc_300m');
+            setHomologFasta(null);
+            setHomologFile(null);
 
             onClose();
         } catch (error) {
             notify.error(`Failed to start embedding runs: ${error}`);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleHomologFileChange = (file: File | null) => {
+        setHomologFile(file);
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const content = e.target?.result as string;
+                setHomologFasta(content);
+            };
+            reader.readAsText(file);
+        } else {
+            setHomologFasta(null);
         }
     };
 
@@ -164,6 +182,61 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
                     onChange={setModel}
                 />
 
+                <div style={{ marginBottom: '24px' }}></div>
+
+                <div style={{ marginBottom: '16px' }}>
+                    <Typography.Text strong style={{ marginBottom: '8px', display: 'block' }}>
+                        Homolog FASTA File (Optional)
+                    </Typography.Text>
+                    <Upload
+                        beforeUpload={(file) => {
+                            handleHomologFileChange(file);
+                            return false; // Prevent auto upload
+                        }}
+                        accept=".fasta,.fa,.txt"
+                        maxCount={1}
+                        fileList={homologFile ? [{
+                            uid: '1',
+                            name: homologFile.name,
+                            status: 'done'
+                        }] : []}
+                        onRemove={() => handleHomologFileChange(null)}
+                    >
+                        <AntButton icon={<UploadOutlined />}>
+                            Select FASTA File
+                        </AntButton>
+                    </Upload>
+                </div>
+                {homologFasta && (
+                    <>
+                        <div style={{ fontSize: '12px', color: '#666', marginTop: '-8px', marginBottom: '8px' }}>
+                            Upload a FASTA file containing homolog sequences with IDs like HOM-name (e.g., HOM-ortho1, HOM-para2)
+                        </div>
+                        {homologFasta && (
+                            <div style={{
+                                marginBottom: '16px',
+                                padding: '8px',
+                                backgroundColor: '#f5f5f5',
+                                border: '1px solid #d9d9d9',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                fontFamily: 'monospace',
+                                color: '#666',
+                                maxHeight: '120px',
+                                overflow: 'hidden'
+                            }}>
+                                <div style={{ marginBottom: '4px', fontSize: '10px', fontWeight: 500, textTransform: 'uppercase' }}>
+                                    FASTA Preview (first 5 lines)
+                                </div>
+                                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                    {homologFasta.split('\n').slice(0, 5).join('\n')}
+                                    {homologFasta.split('\n').length > 5 && '\n...'}
+                                </pre>
+                            </div>
+                        )}
+                    </>
+                )}
+
                 <TextAreaControl
                     label="Extra Layers"
                     value={extraLayers}
@@ -233,6 +306,17 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
                         showIcon
                         style={{ marginTop: '12px', marginBottom: '12px' }}
                     />
+
+                    <Title level={4}>Homolog FASTA Files (Optional)</Title>
+                    <Paragraph>
+                        You can optionally include homolog sequences (orthologs, paralogs) to enhance the embedding generation:
+                    </Paragraph>
+                    <ul>
+                        <li><Text strong>Format:</Text> Standard FASTA format with sequence IDs prefixed with "HOM-" (e.g., HOM-ortho1, HOM-para2)</li>
+                        <li><Text strong>Purpose:</Text> Provides evolutionary context that can improve embedding quality for related sequences</li>
+                        <li><Text strong>Usage:</Text> These sequences will be embedded alongside your target sequences</li>
+                        <li><Text strong>File types:</Text> Accepts .fasta, .fa, or .txt files</li>
+                    </ul>
 
                     <Title level={4}>Model Selection</Title>
                     <Paragraph>

@@ -145,6 +145,7 @@ db_creation_resources.yaml
 backend/src/integration_tests/testdata/
 backend/src/notebooks/jacob/data/*
 backend/src/notebooks/jacob/sarah/*
+backend/src/notebooks/jacob/flip-aav.csv
 backend/src/integration_tests/testdata/*/evolve/*
 backend/src/folde/data/*
 .boltz/

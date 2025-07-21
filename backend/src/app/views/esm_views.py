@@ -13,12 +13,14 @@ from sqlalchemy.sql.elements import and_
 from werkzeug.exceptions import BadRequest
 
 from app.authorization import verify_has_edit_access
+from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.rq_helpers import (
     add_meta_to_job,
     get_queue,
     send_failure_email,
     send_success_email,
 )
+from app.helpers.sequence_util import VALID_AMINO_ACIDS, maybe_get_seq_id_error_message
 from app.jobs import esm_jobs
 from app.models import Embedding, Fold, Logit
 from app.util import get_job_type_replacement
@@ -71,6 +73,7 @@ class CalculateEmbeddingsResource(Resource):
         extra_seq_ids_str: str = req.get("extra_seq_ids", "")
         dms_starting_seq_ids_str: str = req.get("dms_starting_seq_ids", "")
         extra_layers_str: str = req.get("extra_layers", "")
+        homolog_fasta: str = req.get("homolog_fasta", None)
 
         extra_seq_ids: list[str] = [
             seq_id.strip() for seq_id in extra_seq_ids_str.split(",") if seq_id.strip()
@@ -88,9 +91,21 @@ class CalculateEmbeddingsResource(Resource):
             )
 
         fold = Fold.get_by_id(fold_id)
-
         if not fold:
-            raise BadRequest(f"Fold with ID {fold_id} not found")
+            raise BadRequest(f"Could not find fold {fold_id}")
+        if not fold.yaml_config:
+            raise ValueError("Fold does not have a YAML config!")
+        boltz_yaml_helper = BoltzYamlHelper(fold.yaml_config)
+        if len(boltz_yaml_helper.get_protein_sequences()) > 1:
+            raise ValueError(
+                "Fold has multiple protein sequences, which is not supported for ESM embeddings yet."
+            )
+        wt_aa_seq = boltz_yaml_helper.get_protein_sequences()[0][1]
+
+        homolog_id_to_seq_map = esm_jobs.load_fasta_to_dict(homolog_fasta)
+        esm_jobs.validate_embedding_inputs(
+            wt_aa_seq, extra_seq_ids, dms_starting_seq_ids, homolog_id_to_seq_map
+        )
 
         new_invokation_id = get_job_type_replacement(fold, f"embed_{embedding_name}")
 
@@ -101,6 +116,7 @@ class CalculateEmbeddingsResource(Resource):
             extra_seq_ids=",".join(extra_seq_ids),
             dms_starting_seq_ids=",".join(dms_starting_seq_ids),
             extra_layers=",".join(extra_layers),
+            homolog_fasta=homolog_fasta,
             invokation_id=new_invokation_id,
         )
 

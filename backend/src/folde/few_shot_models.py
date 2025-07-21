@@ -13,13 +13,13 @@ from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
 
 import numpy as np
 import pandas as pd
+import torch
 from numpy.typing import NDArray
 from pandas import DataFrame, Series
 from sklearn.ensemble import RandomForestRegressor as SklearnRandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold
 from sklearn.neural_network import MLPRegressor as SklearnMLPRegressor
-import torch
 
 from app.helpers.preference_ranking import (
     BradleyTerryMLP,
@@ -600,33 +600,33 @@ class TorchMLPFewShotModel(FewShotModel):
         if self.is_pretrained:
             raise ValueError("Model is already pretrained.")
 
-        is_single_mutant = naturalness_series.index.map(lambda sid: "_" not in sid)
+        has_naturalness_data = ~naturalness_series.isna()  # index.map(lambda sid: "_" not in sid)
 
         logging.info(
-            f"Pretraining model with naturalness data with {sum(is_single_mutant)} single mutants."
+            f"Pretraining model with naturalness data with {sum(has_naturalness_data)} naturalness measurements."
         )
 
-        single_mutant_naturalness = naturalness_series[is_single_mutant]
-        single_mutant_embeddings = embedding_series[is_single_mutant]
+        naturalness_series_with_data = naturalness_series[has_naturalness_data]
+        embedding_series_with_data = embedding_series[has_naturalness_data]
 
         # Create pretrained version of each model.
         for ii, (model, trainer) in enumerate(self._create_model_ensemble()):
             rng = np.random.RandomState(self.base_random_state + ii)
             validation_seqids = rng.choice(
-                single_mutant_embeddings.index,
-                size=int(single_mutant_embeddings.shape[0] * 0.2),
+                embedding_series_with_data.index,
+                size=int(embedding_series_with_data.shape[0] * 0.2),
                 replace=False,
             )
-            train_seqids = np.setdiff1d(single_mutant_embeddings.index, validation_seqids)
+            train_seqids = np.setdiff1d(embedding_series_with_data.index, validation_seqids)
 
             X_train = np.array(
-                [np.array(emb) for emb in single_mutant_embeddings[train_seqids].values]
+                [np.array(emb) for emb in embedding_series_with_data[train_seqids].values]
             )
             X_val = np.array(
-                [np.array(emb) for emb in single_mutant_embeddings[validation_seqids].values]
+                [np.array(emb) for emb in embedding_series_with_data[validation_seqids].values]
             )
-            y_train = single_mutant_naturalness[train_seqids].to_numpy()
-            y_val = single_mutant_naturalness[validation_seqids].to_numpy()
+            y_train = naturalness_series_with_data[train_seqids].to_numpy()
+            y_val = naturalness_series_with_data[validation_seqids].to_numpy()
 
             self.pretrain_metrics.append(
                 trainer.train(
@@ -648,14 +648,6 @@ class TorchMLPFewShotModel(FewShotModel):
                 )
             )
             self.pretrained_model_state_dicts.append(model.state_dict())
-
-        # def train_single_model(idx):
-        # Use ThreadPoolExecutor to run in parallel
-        # with ThreadPoolExecutor(max_workers=min(self.ensemble_size, 5)) as executor:
-        #     self.pretrain_metrics = list(executor.map(
-        #         train_single_model,
-        #         range(self.ensemble_size)
-        #     ))
 
         self.is_pretrained = True
 

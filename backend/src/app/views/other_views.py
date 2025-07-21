@@ -119,6 +119,7 @@ embedding_fields = ns.model(
         "id": fields.Integer(required=False),
         "extra_seq_ids": fields.String(required=False),
         "dms_starting_seq_ids": fields.String(required=False),
+        "homolog_fasta": fields.String(required=False),
         "extra_layers": fields.String(required=False),
         "invokation_id": fields.Integer(required=False),
     },
@@ -340,9 +341,12 @@ class TagsResource(Resource):
         if only_public:
             query = query.filter(Fold.public == True)
 
-        # Get all folds with tags
+        # Get all folds with tags, ordered by creation date (newest first)
         folds_with_tags = (
-            query.filter(Fold.tagstring != "").filter(Fold.tagstring.isnot(None)).all()
+            query.filter(Fold.tagstring != "")
+            .filter(Fold.tagstring.isnot(None))
+            .order_by(Fold.create_date.desc())
+            .all()
         )
 
         # Process tags
@@ -357,6 +361,7 @@ class TagsResource(Resource):
                             "fold_count": 0,
                             "contributors": set(),
                             "recent_folds": [],
+                            "most_recent_fold_date": fold.create_date,
                         }
 
                     tag_info[tag]["fold_count"] += 1
@@ -364,18 +369,30 @@ class TagsResource(Resource):
                     if fold.user.name is not None:
                         tag_info[tag]["contributors"].add(fold.user.name)
 
+                    # Update most recent fold date for this tag
+                    if fold.create_date > tag_info[tag]["most_recent_fold_date"]:
+                        tag_info[tag]["most_recent_fold_date"] = fold.create_date
+
                     # Keep track of recent folds (limit to 5)
                     if len(tag_info[tag]["recent_folds"]) < 5:
                         tag_info[tag]["recent_folds"].append(fold.name)
 
-        # Convert sets to lists and sort by fold count
+        # Convert sets to lists
         result = []
         for tag_data in tag_info.values():
             tag_data["contributors"] = sorted(list(tag_data["contributors"]))
             result.append(tag_data)
 
-        # Sort by fold count (descending)
-        result.sort(key=lambda x: x["fold_count"], reverse=True)
+        # Sort by most recent fold date (descending), then by fold count
+        try:
+            result.sort(
+                key=lambda x: (tag_info[x["tag"]]["most_recent_fold_date"], x["fold_count"]),
+                reverse=True,
+            )
+        except Exception as e:
+            print("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF ")
+            print(tag_info, flush=True)
+            raise e
 
         return {"tags": result}
 

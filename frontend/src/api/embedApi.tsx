@@ -24,7 +24,8 @@ export const startEmbeddings = async (
     dmsStartingSeqIds: string[],
     extraSeqIds: string[],
     extraLayers: string[],
-    embeddingModel: string
+    embeddingModel: string,
+    homologFasta: string | null = null
 ): Promise<boolean> => {
     const response = await axiosInstance.post(
         `/api/embeddings`,
@@ -35,6 +36,7 @@ export const startEmbeddings = async (
             dms_starting_seq_ids: dmsStartingSeqIds.join(','),
             extra_seq_ids: extraSeqIds.join(','),
             extra_layers: extraLayers.join(','),
+            homolog_fasta: homologFasta || undefined,
         }
     );
     return response.data;

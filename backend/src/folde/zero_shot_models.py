@@ -12,9 +12,11 @@ from typing import Any, Dict, List, Optional, Tuple, Type, cast
 
 import numpy as np
 import pandas as pd
-from folde.util import get_consensus_scores, internal_sample_n_indices
 from numpy.typing import NDArray
 from pandas import DataFrame, Series
+
+from app.helpers.sequence_util import is_homolog_seq_id
+from folde.util import get_consensus_scores, internal_sample_n_indices
 
 # Registry of available zero-shot models
 _ZERO_SHOT_MODELS = {}
@@ -174,13 +176,34 @@ class NaturalnessZeroShotModel(ZeroShotModel):
         """Predict using naturalness scores.
 
         Args:
-            naturalness_df: DataFrame containing 'wt_marginal' column
-            embedding_df: Not used by this model, but included for API consistency
+            naturalness_series: Series containing naturalness scores, some of which may be NAN.
+            embedding_series: Optional Series containing protein embeddings
 
         Returns:
             Array of prediction scores based on naturalness
         """
-        return [naturalness_series]
+
+        def get_naturalness(seq_id, direct_naturalness) -> float:
+            """Try computing naturalness for mutants even if none was provided by extrapolating for multimutants."""
+            if direct_naturalness is not None and direct_naturalness != np.nan:
+                return direct_naturalness
+
+            if is_homolog_seq_id(seq_id):
+                return np.nan
+
+            # Break it down into single mutants.
+            seq_id_parts = seq_id.split("_")
+            if len(seq_id_parts) == 1:
+                return np.nan
+
+            # Get the naturalness of the single mutants.
+            return naturalness_series.loc[seq_id_parts].prod()
+
+        computed_naturalness_series = naturalness_series.reset_index(name="seq_id").apply(
+            lambda r: get_naturalness(r.seq_id, r.wt_marginal), axis=1
+        )
+        computed_naturalness_series.index = naturalness_series.index
+        return [computed_naturalness_series]
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information about the model.

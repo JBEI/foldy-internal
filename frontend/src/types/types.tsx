@@ -96,6 +96,7 @@ export interface Embedding {
     embedding_model: string;
     extra_seq_ids: string | null;
     dms_starting_seq_ids: string | null;
+    homolog_fasta: string | null;
     extra_layers: string | null;
     invokation_id: number | null;
 }

@@ -231,7 +231,7 @@ class Embedding(PkModel):
     embedding_model = Column(db.String, nullable=False)
     extra_seq_ids = Column(db.String)
     dms_starting_seq_ids = Column(db.String)
-
+    homolog_fasta = Column(db.String, nullable=True)
     extra_layers = Column(db.String, nullable=True)
 
     # State tracking.

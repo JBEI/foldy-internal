@@ -123,8 +123,8 @@ def _run_single_simulation(
     """Run a single campaign simulation.
 
     Args:
-        golden_activity_series: Series with ground truth activity data
-        naturalness_series: Series with naturalness scores
+        golden_activity_series: Series with ground truth activity data (some of which may be NAN)
+        naturalness_series: Series with naturalness scores (some of which may be NAN)
         embedding_series: Series with embeddings
         round_size: Number of variants to test in each round
         config: Model configuration
@@ -147,11 +147,24 @@ def _run_single_simulation(
     whole_world_activity_series = entire_activity_series.loc[available_seq_ids]
     whole_world_naturalness_series = entire_naturalness_series.loc[available_seq_ids]
     whole_world_embedding_series = entire_embedding_series.loc[available_seq_ids]
+    assert (
+        not whole_world_activity_series.isna().any()
+    ), f'{whole_world_activity_series.isna().sum()} activity values in the "whole world" set are NAN'
     world_state = CampaignWorldState(
         whole_world_activity_series,
         whole_world_naturalness_series,
         whole_world_embedding_series,
     )
+
+    pretraining_naturalness_series = entire_naturalness_series[
+        entire_naturalness_series.index.isin(available_seq_ids) | (entire_activity_series.isna())
+    ]
+    pretraining_embedding_series = entire_embedding_series[
+        entire_embedding_series.index.isin(available_seq_ids) | (entire_activity_series.isna())
+    ]
+    assert (
+        not pretraining_naturalness_series.isna().any()
+    ), f'{pretraining_naturalness_series.isna().sum()} naturalness values in the "pretraining" set are NAN'
 
     held_out_series = ~entire_activity_series.index.isin(available_seq_ids)
     held_out_activity_series = entire_activity_series.loc[held_out_series]
@@ -185,8 +198,8 @@ def _run_single_simulation(
         )
 
         few_shot_model.pretrain(
-            whole_world_naturalness_series,
-            whole_world_embedding_series,
+            pretraining_naturalness_series,
+            pretraining_embedding_series,
         )
 
         # First round: always use zero-shot model
@@ -449,7 +462,7 @@ def simulate_campaign(
 
                 print(traceback.format_exc(), flush=True)
                 raise e
-        wt_aa_seq, naturalness_df, embedding_df, activity_df = df_cache[cache_key]
+        wt_aa_seq, naturalness_df, embedding_df, activity_df, category_df = df_cache[cache_key]
         naturalness_series = naturalness_df[
             (
                 "wt_marginal"
@@ -472,6 +485,9 @@ def simulate_campaign(
         campaign_result.min_activity = activity_df[activity_column].min()
         campaign_result.median_activity = activity_df[activity_column].median()
         campaign_result.max_activity = activity_df[activity_column].max()
+        assert not np.isnan(campaign_result.min_activity)
+        assert not np.isnan(campaign_result.median_activity)
+        assert not np.isnan(campaign_result.max_activity)
 
         single_model_campaign_results = None
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
@@ -479,35 +495,24 @@ def simulate_campaign(
             futures = []
             for sim_idx in range(number_of_simulations):
                 if model_config.data_split_mode:
-                    if model_config.data_split_mode == "1-VS-REST":
-                        max_mutations_in_training_seqs = 1
-                    elif model_config.data_split_mode == "2-VS-REST":
-                        max_mutations_in_training_seqs = 2
-                    elif model_config.data_split_mode == "3-VS-REST":
-                        max_mutations_in_training_seqs = 3
-                    elif model_config.data_split_mode == "4-VS-REST":
-                        max_mutations_in_training_seqs = 4
-                    elif model_config.data_split_mode == "5-VS-REST":
-                        max_mutations_in_training_seqs = 5
-                    elif model_config.data_split_mode == "6-VS-REST":
-                        max_mutations_in_training_seqs = 6
-                    elif model_config.data_split_mode == "7-VS-REST":
-                        max_mutations_in_training_seqs = 7
-                    else:
-                        raise ValueError(f"Invalid data split mode: {model_config.data_split_mode}")
-
-                    full_seq_id_list = [
-                        sid
-                        for sid in activity_df.index.values
-                        if len(sid.split("_")) <= max_mutations_in_training_seqs
-                    ]
+                    if not model_config.data_split_mode in category_df.columns:
+                        raise ValueError(
+                            f"Data split mode {model_config.data_split_mode} not found in category_df.columns: {category_df.columns}"
+                        )
+                    full_seq_id_list = list(
+                        category_df[
+                            category_df[model_config.data_split_mode] == "train"
+                        ].index.values
+                    )
                 else:
                     full_seq_id_list = list(activity_df.index.values)
 
                 world_size = int(len(full_seq_id_list) * 0.5)
 
                 if world_size < max_rounds * round_size:
-                    raise ValueError(f"World size {world_size} is less than max_rounds * round_size {max_rounds * round_size}")
+                    raise ValueError(
+                        f"World size {world_size} is less than max_rounds * round_size {max_rounds * round_size}"
+                    )
 
                 rng = np.random.RandomState(random_seed + 1000 * sim_idx)
                 bootstrapped_seq_ids = rng.choice(
@@ -625,21 +630,31 @@ def simulate_campaigns_with_config_checkpoints(
                 # Get the model dumps for comparison
                 stored_dump = stored_cfg.model_dump()
                 current_dump = cfg.model_dump()
-                
+
                 # Find differences
                 differences = []
                 all_keys = set(stored_dump.keys()) | set(current_dump.keys())
-                
+
                 for key in sorted(all_keys):
                     if key not in stored_dump:
-                        differences.append(f"  - '{key}': missing in stored config, current value: {current_dump[key]}")
+                        differences.append(
+                            f"  - '{key}': missing in stored config, current value: {current_dump[key]}"
+                        )
                     elif key not in current_dump:
-                        differences.append(f"  - '{key}': missing in current config, stored value: {stored_dump[key]}")
+                        differences.append(
+                            f"  - '{key}': missing in current config, stored value: {stored_dump[key]}"
+                        )
                     elif stored_dump[key] != current_dump[key]:
-                        differences.append(f"  - '{key}': stored={stored_dump[key]}, current={current_dump[key]}")
-                
-                diff_msg = "\n".join(differences) if differences else "No specific differences found (possibly nested object differences)"
-                
+                        differences.append(
+                            f"  - '{key}': stored={stored_dump[key]}, current={current_dump[key]}"
+                        )
+
+                diff_msg = (
+                    "\n".join(differences)
+                    if differences
+                    else "No specific differences found (possibly nested object differences)"
+                )
+
                 raise ValueError(
                     f"Config mismatch for checkpoint {cp_path}.\n"
                     f"Differences found:\n{diff_msg}\n"

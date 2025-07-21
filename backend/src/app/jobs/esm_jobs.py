@@ -13,6 +13,7 @@ from io import BytesIO, StringIO
 from pathlib import Path
 
 import pandas as pd
+from Bio import SeqIO
 from flask import current_app
 from werkzeug.exceptions import BadRequest
 
@@ -28,13 +29,59 @@ from app.helpers.jobs_util import (
     get_torch_cuda_is_available_and_add_logs,
 )
 from app.helpers.sequence_util import (
+    VALID_AMINO_ACIDS,
     get_loci_set,
     get_seq_ids_for_deep_mutational_scan,
+    is_homolog_seq_id,
     maybe_get_seq_id_error_message,
     process_and_validate_evolve_input_files,
     seq_id_to_seq,
 )
 from app.models import Dock, Embedding, Evolution, Fold, Invokation, Logit
+
+
+def load_fasta_to_dict(homolog_fasta: str) -> dict[str, str]:
+    homolog_id_to_seq_map = {}
+    if homolog_fasta:
+        try:
+            fasta_io = SeqIO.parse(StringIO(homolog_fasta), "fasta")
+            for record in fasta_io:
+                homolog_id_to_seq_map[record.id] = str(record.seq)
+        except Exception as e:
+            raise ValueError(f"Invalid homolog fasta: {e}")
+    return homolog_id_to_seq_map
+
+
+def validate_embedding_inputs(
+    wt_aa_seq, extra_seq_ids, dms_starting_seq_ids, homolog_id_to_seq_map: dict[str, str]
+) -> None:
+    if ":" in wt_aa_seq or ";" in wt_aa_seq:
+        raise KeyError(
+            f"Fold seems to be a multimer which is not supported for ESM embeddings yet."
+        )
+
+    # Validate homolog IDs.
+    for seq_id, homolog_seq in homolog_id_to_seq_map.items():
+        if not is_homolog_seq_id(seq_id):
+            raise ValueError(f"Invalid homolog ID {seq_id}: must start with HOM-")
+        for aa in homolog_seq:
+            if aa not in VALID_AMINO_ACIDS:
+                raise ValueError(
+                    f"The Fasta is invalid: {seq_id} with sequence {homolog_seq}: {aa} is not a valid amino acid"
+                )
+
+    for extra_seq_id in extra_seq_ids:
+        if is_homolog_seq_id(extra_seq_id):
+            if extra_seq_id not in homolog_id_to_seq_map:
+                raise ValueError(f"Homolog sequence {extra_seq_id} not found in homolog fasta.")
+
+        seq_id_errors = maybe_get_seq_id_error_message(wt_aa_seq, extra_seq_id)
+        if seq_id_errors:
+            raise ValueError(f"Invalid extra seq id {extra_seq_id}: {seq_id_errors}")
+    for dms_starting_seq_id in dms_starting_seq_ids:
+        seq_id_errors = maybe_get_seq_id_error_message(wt_aa_seq, dms_starting_seq_id)
+        if seq_id_errors:
+            raise ValueError(f"Invalid DMS starting seq id {dms_starting_seq_id}: {seq_id_errors}")
 
 
 def get_esm_embeddings(
@@ -48,33 +95,38 @@ def get_esm_embeddings(
     # 1. Get records.
     embed_record = Embedding.get_by_id(embed_id)
     if not embed_record:
-        raise KeyError(f"Embedding ID {embed_id} ({embed_id}) not found!")
-
+        raise KeyError(f"Embedding ID {embed_id} not found!")
     embed_name = embed_record.name
     embedding_model = embed_record.embedding_model
-    dms_starting_seq_ids = (
-        embed_record.dms_starting_seq_ids.split(",") if embed_record.dms_starting_seq_ids else []
-    )
-    extra_seq_ids = embed_record.extra_seq_ids.split(",") if embed_record.extra_seq_ids else []
-    extra_layers = (
-        [int(ii) for ii in embed_record.extra_layers.split(",")]
-        if embed_record.extra_layers
-        else []
-    )
 
-    fold = embed_record.fold
-    if not fold:
-        raise KeyError(f"Embedding ID {embed_id} ({embed_name}) does not have an associated fold!")
     invokation = Invokation.get_by_id(embed_record.invokation_id)
     if not invokation:
         raise KeyError(
             f"Embedding ID {embed_id} ({embed_name}) does not have an associated invokation!"
         )
-
     with LoggingRecorder(invokation):
         logging.info(
             "Starting embedding...",
         )
+
+        dms_starting_seq_ids = (
+            embed_record.dms_starting_seq_ids.split(",")
+            if embed_record.dms_starting_seq_ids
+            else []
+        )
+        extra_seq_ids = embed_record.extra_seq_ids.split(",") if embed_record.extra_seq_ids else []
+        extra_layers = (
+            [int(ii) for ii in embed_record.extra_layers.split(",")]
+            if embed_record.extra_layers
+            else []
+        )
+        homolog_fasta = embed_record.homolog_fasta
+
+        fold = embed_record.fold
+        if not fold:
+            raise KeyError(
+                f"Embedding ID {embed_id} ({embed_name}) does not have an associated fold!"
+            )
 
         # 3. Validate seq_ids.
         if not fold.yaml_config:
@@ -86,22 +138,10 @@ def get_esm_embeddings(
             )
         wt_aa_seq = boltz_yaml_helper.get_protein_sequences()[0][1]
 
-        for extra_seq_id in extra_seq_ids:
-            error = maybe_get_seq_id_error_message(wt_aa_seq, extra_seq_id)
-            if error:
-                raise ValueError(f"Invalid seq_id in extra seq_ids: '{extra_seq_id}': {error}")
-        for dms_starting_seq_id in dms_starting_seq_ids:
-            error = maybe_get_seq_id_error_message(wt_aa_seq, dms_starting_seq_id)
-            if error:
-                raise ValueError(
-                    f"Invalid seq_id in DMS starting seq_ids: '{dms_starting_seq_id}': {error}"
-                )
-
-        # 4. Get the WT sequence.
-        if ":" in wt_aa_seq or ";" in wt_aa_seq:
-            raise KeyError(
-                f"Fold ID {fold.id} seems to be a multimer which is not supported for ESM embeddings yet."
-            )
+        homolog_id_to_seq_map = load_fasta_to_dict(homolog_fasta)
+        validate_embedding_inputs(
+            wt_aa_seq, extra_seq_ids, dms_starting_seq_ids, homolog_id_to_seq_map
+        )
 
         logging.info(
             f"Getting all sequence IDs (dms_starting_seq_ids: {dms_starting_seq_ids}; extra_seq_ids: {extra_seq_ids})"
@@ -134,7 +174,16 @@ def get_esm_embeddings(
         embedding_dicts = []
 
         for ii, seq_id in enumerate(dms_seq_ids):
-            embedding_dicts.append(get_embedding_dict(seq_id, seq_id_to_seq(wt_aa_seq, seq_id)))
+            if is_homolog_seq_id(seq_id):
+                if seq_id not in homolog_id_to_seq_map:
+                    raise ValueError(
+                        f"Full seq id {seq_id} not found in full_seq_id_to_seq_map populated from extra_seq_ids."
+                    )
+                sequence = homolog_id_to_seq_map[seq_id]
+            else:
+                sequence = seq_id_to_seq(wt_aa_seq, seq_id)
+
+            embedding_dicts.append(get_embedding_dict(seq_id, sequence))
             if ii % 100 == 0:
                 logging.info(f"Finished embedding {ii}/{len(dms_seq_ids)}")
             if ii % 2000 == 0:
@@ -156,6 +205,14 @@ def get_esm_embeddings(
         fsm = FoldStorageManager()
         fsm.setup()
         fsm.storage_manager.write_file(fold.id, embedding_path, embedding_csv_string)
+
+        # Try writing homolog_fasta to file.
+        if homolog_fasta:
+            try:
+                homolog_fasta_path = f"embed/{padded_fold_id}_embeddings_{embedding_model}_{embed_name}_homologs.fasta"
+                fsm.storage_manager.write_file(fold.id, homolog_fasta_path, homolog_fasta)
+            except Exception as e:
+                logging.error(f"Error writing homolog fasta to file: {e}")
 
 
 def get_esm_logits(logit_id: int):

@@ -61,6 +61,7 @@ const WINDOW_WIDTH_FOR_SPLIT_SCREEN = 960;
 const MAX_JOBS_TO_REFRESH = 5;
 class InternalFoldView extends Component<FoldProps, FoldState> {
     interval: NodeJS.Timeout | null = null;
+    refreshTimeout: NodeJS.Timeout | null = null;
 
     constructor(props: FoldProps) {
         super(props);
@@ -114,10 +115,11 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
         }
     }
 
-    refreshFoldDataFromBackend = () => {
-        getFold(this.props.foldId).then((new_fold_data) => {
+    refreshFoldDataFromBackend = (): Promise<void> => {
+        return getFold(this.props.foldId).then((new_fold_data) => {
             console.log(`Got new fold with tags ${new_fold_data.tags}`);
             this.setState({ foldData: new_fold_data });
+
             if (this.state.foldData?.jobs) {
                 // Get current state of jobs as a map
                 const currentJobStates = new Map(
@@ -136,7 +138,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
 
                 if (jobsToRefresh.length > MAX_JOBS_TO_REFRESH) {
                     notify.warning(`Not streaming job logs because there are too many jobs (${jobsToRefresh.length} > ${MAX_JOBS_TO_REFRESH}))`);
-                    return;
+                    return Promise.resolve();
                 }
 
                 // Create final job list
@@ -150,7 +152,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
 
                 // Only fetch jobs that need refreshing
                 if (jobsToRefresh.length > 0) {
-                    Promise.all(
+                    return Promise.all(
                         jobsToRefresh.map(jobId => getInvokation(jobId))
                     ).then(
                         (refreshedJobs) => {
@@ -170,9 +172,31 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                 } else {
                     // If no jobs need refreshing, just update state
                     this.setState({ jobs: finalJobs });
+                    return Promise.resolve();
                 }
             }
+            return Promise.resolve();
+        }).catch((error) => {
+            console.error('Error refreshing fold data:', error);
+            // Don't throw to prevent breaking the refresh cycle
         });
+    };
+
+    scheduleNextRefresh = () => {
+        if (this.state.numRefreshes > REFRESH_STATE_MAX_ITERS) {
+            return;
+        }
+
+        this.refreshTimeout = setTimeout(() => {
+            this.setState({
+                numRefreshes: this.state.numRefreshes + 1,
+            });
+
+            this.refreshFoldDataFromBackend().finally(() => {
+                // Schedule the next refresh after this one completes (success or failure)
+                this.scheduleNextRefresh();
+            });
+        }, REFRESH_STATE_PERIOD);
     };
 
     // Generate colors for pfam annotations
@@ -206,18 +230,10 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
     };
 
     componentDidMount() {
-        this.interval = setInterval(() => {
-            if (
-                this.state.numRefreshes > REFRESH_STATE_MAX_ITERS &&
-                this.interval
-            ) {
-                clearInterval(this.interval);
-            }
-            this.setState({
-                numRefreshes: this.state.numRefreshes + 1,
-            });
-            this.refreshFoldDataFromBackend();
-        }, REFRESH_STATE_PERIOD);
+        // Start the first refresh immediately, then schedule subsequent ones
+        this.refreshFoldDataFromBackend().finally(() => {
+            this.scheduleNextRefresh();
+        });
 
         // ReactSequenceViewer requires jQuery, and who are we to deny them?
         // @ts-ignore

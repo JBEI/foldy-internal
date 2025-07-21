@@ -709,7 +709,7 @@ sequences:
                             <AntButton onClick={addAnotherNewFold}>Add Another Fold</AntButton>
                             <AntButton onClick={removeLastNewFold}>Remove Last Fold</AntButton>
                             <AntButton onClick={saveAllEditingFolds}>Validate All</AntButton>
-                            <AntButton type="primary" onClick={saveAllFolds} disabled={isSubmitting}>Submit</AntButton>
+                            <AntButton type="primary" onClick={saveAllFolds} disabled={isSubmitting} loading={isSubmitting}>Submit</AntButton>
                         </div>
                     </Col>
 

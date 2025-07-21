@@ -98,8 +98,9 @@ function TagsView() {
         <div style={{
             padding: "24px",
             width: "100%",
-            maxWidth: "none",
-            overflowY: 'scroll'
+            maxWidth: "100%",
+            overflowX: 'hidden',
+            overflowY: 'auto'
         }}>
             <div style={{ textAlign: "center", marginBottom: "32px" }}>
                 <Title level={2}>
@@ -162,7 +163,7 @@ function TagsView() {
                     style={{ margin: "60px 0" }}
                 />
             ) : (
-                <Row gutter={[16, 16]} style={{ margin: "0 -8px" }}>
+                <Row gutter={[16, 16]}>
                     {filteredTags.map((tagInfo) => (
                         <Col xs={24} sm={12} md={8} lg={6} xl={4} xxl={3} key={tagInfo.tag}>
                             <Card
@@ -177,8 +178,13 @@ function TagsView() {
                                         style={{
                                             fontSize: "14px",
                                             padding: "4px 8px",
-                                            fontWeight: "bold"
+                                            fontWeight: "bold",
+                                            maxWidth: "100%",
+                                            overflow: "hidden",
+                                            textOverflow: "ellipsis",
+                                            whiteSpace: "nowrap"
                                         }}
+                                        title={tagInfo.tag}
                                     >
                                         {tagInfo.tag}
                                     </Tag>
