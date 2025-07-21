@@ -163,7 +163,7 @@ def _run_single_simulation(
         entire_embedding_series.index.isin(available_seq_ids) | (entire_activity_series.isna())
     ]
     assert (
-        (~pretraining_naturalness_series.isna()).any()
+        (~pretraining_naturalness_series.isna()).any()  # Make sure SOME naturalness values are not NAN,
     ), f'{pretraining_naturalness_series.isna().sum()}/{len(pretraining_naturalness_series)} naturalness values in the "pretraining" set are NAN'
 
     held_out_series = ~entire_activity_series.index.isin(available_seq_ids)
@@ -184,6 +184,10 @@ def _run_single_simulation(
         **config.few_shot_model_params,
     )
 
+    zero_shot_model.pretrain(
+        pretraining_naturalness_series,
+        pretraining_embedding_series,
+    )
     few_shot_model.pretrain(
         pretraining_naturalness_series,
         pretraining_embedding_series,

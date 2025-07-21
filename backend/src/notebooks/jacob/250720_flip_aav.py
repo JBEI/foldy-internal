@@ -82,31 +82,22 @@ folde_config = FolDEModelConfig(
     },
 )
 
+difflist = [
+    ModelDiff(name="one-vs-many-split", diffs={
+        "data_split_mode": "one_vs_many_split"
+    }),
+    ModelDiff(name="two-vs-many-split", diffs={
+        "data_split_mode": "two_vs_many_split"
+    }),
+    ModelDiff(name="seven-vs-many-split", diffs={
+        "data_split_mode": "seven_vs_many_split"
+    }),
+]
+
 config_list = (
-    apply_diff_list_to_config(
-        random_config,
-        [
-            ModelDiff(name="one-vs-many-split", diffs={
-                "data_split_mode": "one_vs_many_split"
-            }),
-        ],
-    ) +
-    apply_diff_list_to_config(
-        random_forest_config,
-        [
-            ModelDiff(name="one-vs-many-split", diffs={
-                "data_split_mode": "one_vs_many_split"
-            }),
-        ],
-    ) +
-    apply_diff_list_to_config(
-        folde_config,
-        [
-            ModelDiff(name="one-vs-many-split", diffs={
-                "data_split_mode": "one_vs_many_split"
-            }),
-        ],
-    )
+    apply_diff_list_to_config(folde_config, difflist) +
+    apply_diff_list_to_config(random_forest_config, difflist) +
+    apply_diff_list_to_config(random_config, difflist)
 )
 
 print(f"Config 1/{len(config_list)}:")
@@ -120,7 +111,7 @@ results = simulate_campaigns_with_config_checkpoints(
     round_size=16,
     number_of_simulations=10,
     activity_column="DMS_score",
-    max_rounds=3,
+    max_rounds=10,
     random_seed=42,
     num_workers=5,
 )

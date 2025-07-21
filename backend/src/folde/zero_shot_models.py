@@ -50,6 +50,14 @@ class ZeroShotModel(ABC):
         self.temperature = temperature
         self.epsilon = epsilon
 
+    def pretrain(
+        self,
+        naturalness_series: pd.Series,
+        embedding_series: pd.Series,
+    ) -> "ZeroShotModel":
+        """Optional method to pretrain the model on naturalness and embedding data."""
+        return self
+
     @abstractmethod
     def predict(
         self, naturalness_series: pd.Series, embedding_series: Optional[pd.Series] = None
@@ -171,6 +179,37 @@ class NaturalnessZeroShotModel(ZeroShotModel):
             **kwargs: Additional parameters
         """
         super().__init__(**kwargs)
+        self.is_pretrained = False
+
+    def pretrain(
+        self,
+        naturalness_series: pd.Series,
+        embedding_series: pd.Series,
+    ) -> "NaturalnessZeroShotModel":
+        assert naturalness_series.index.equals(embedding_series.index)
+        assert embedding_series.index.is_unique, "embedding_series contains duplicate indices"
+
+        if self.is_pretrained:
+            raise ValueError("Model is already pretrained.")
+
+        has_naturalness_data = ~naturalness_series.isna()  # index.map(lambda sid: "_" not in sid)
+
+        logging.info(
+            f"Pretraining model with naturalness data with {sum(has_naturalness_data)} naturalness measurements."
+        )
+
+        embedding_series_with_data = embedding_series[has_naturalness_data]
+        naturalness_series_with_data = naturalness_series[has_naturalness_data]
+
+        X = np.array([np.array(emb) for emb in embedding_series_with_data.values])
+        y = naturalness_series_with_data.values
+
+        # Fit KNN regressor
+        knn = KNeighborsRegressor(n_neighbors=5)
+        knn.fit(X, y)
+        self.is_pretrained = True
+        self.knn = knn
+        return self
 
     def predict(
         self, naturalness_series: pd.Series, embedding_series: Optional[pd.Series] = None
@@ -209,25 +248,19 @@ class NaturalnessZeroShotModel(ZeroShotModel):
 
         # Do KNN imputation to fill in NANs from homologs.
         if computed_naturalness_series.isna().any():
+            if not self.is_pretrained:
+                raise ValueError("Model is not pretrained, so cannot fill in NANs from homologs.")
+
             logging.info(f"Filling in NANs from homologs for {computed_naturalness_series.isna().sum()}/{len(computed_naturalness_series)} naturalness values.")
             assert embedding_series is not None
             embedding_array = np.array([np.array(emb) for emb in embedding_series.values])
             naturalness_array = computed_naturalness_series.values
 
             # Find indices for known and missing
-            known_mask = (~computed_naturalness_series.isna()).to_numpy()
             missing_mask = computed_naturalness_series.isna().to_numpy()
-
-            X_known = embedding_array[known_mask]
-            y_known = naturalness_array[known_mask]
             X_missing = embedding_array[missing_mask]
-
-            # Fit KNN regressor
-            knn = KNeighborsRegressor(n_neighbors=5)
-            knn.fit(X_known, y_known)
-
-            # Predict missing values
-            imputed_values = knn.predict(X_missing)
+            
+            imputed_values = self.knn.predict(X_missing)
 
             # Fill in the missing values
             imputed_naturalness = naturalness_array.copy()

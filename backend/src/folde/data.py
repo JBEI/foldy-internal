@@ -178,6 +178,7 @@ def get_proteingym_dataset(
     if dms_id == "FLIP-AAV":
         incomplete_activity_df = pd.read_csv(FLIP_AAV_DATA_FILE)
         incomplete_activity_df = incomplete_activity_df.rename(columns={"homolog_seq_id": "seq_id"})
+        incomplete_activity_df = incomplete_activity_df[~incomplete_activity_df.full_aa_sequence.duplicated(keep=False)]
 
         # Find if any of the seq_ids are in the naturalness df and rename where possible.
         logger.info(f"Converting seq_ids in naturalness df to full sequences")
@@ -187,17 +188,11 @@ def get_proteingym_dataset(
                 return pd.NA
             return seq_id_to_seq(wt_aa_seq, seq_id)
         tmp_naturalness_df['full_seq'] = tmp_naturalness_df.seq_id.apply(maybe_convert_seq_id_to_seq)
+        tmp_naturalness_df = tmp_naturalness_df[tmp_naturalness_df.full_seq.notna()]
+        tmp_naturalness_df = tmp_naturalness_df[~tmp_naturalness_df.full_seq.duplicated()]
         tmp_naturalness_df.set_index('full_seq', drop=True, inplace=True)
 
         logger.info(f"Reassigning seq_ids from activity df to matching naturalness seq_ids.")
-        def get_new_seq_id(activity_row) -> str:
-            matching_naturalness_seqs = tmp_naturalness_df.loc[activity_row.full_aa_sequence]
-            print(type(matching_naturalness_seqs))
-            if len(matching_naturalness_seqs) == 1:
-                return matching_naturalness_seqs.iloc[0].seq_id
-            else:
-                return activity_row.seq_id
-
         incomplete_activity_df = incomplete_activity_df.join(
             tmp_naturalness_df.seq_id.rename('naturalness_seq_id'),
             on='full_aa_sequence',
