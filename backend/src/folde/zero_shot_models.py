@@ -199,7 +199,7 @@ class NaturalnessZeroShotModel(ZeroShotModel):
             # Get the naturalness of the single mutants.
             return naturalness_series.loc[seq_id_parts].prod()
 
-        computed_naturalness_series = naturalness_series.reset_index(name="seq_id").apply(
+        computed_naturalness_series = naturalness_series.reset_index(name="wt_marginal").apply(
             lambda r: get_naturalness(r.seq_id, r.wt_marginal), axis=1
         )
         computed_naturalness_series.index = naturalness_series.index

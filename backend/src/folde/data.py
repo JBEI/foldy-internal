@@ -131,15 +131,6 @@ def get_proteingym_dataset(
         )
     wt_aa_seq = dms_metadata["target_seq"].iloc[0]
 
-    if dms_id == "FLIP-AAV":
-        dms_file_path = FLIP_AAV_DATA_FILE
-    else:
-        # Check that the DMS data exists
-        dms_file_path = os.path.join(DMS_DIR, f"{dms_id}.csv")
-
-    if not os.path.exists(dms_file_path):
-        raise FileNotFoundError(f"DMS data file not found: {dms_file_path}")
-
     # Check that the embedding file exists
     embedding_file_path = os.path.join(
         EMBEDDINGS_DIR, f"{dms_id}_embedding_{embedding_model_id}.csv"
@@ -184,13 +175,18 @@ def get_proteingym_dataset(
     # LOAD ACTIVITY DATA ######################################
     # We mostly only pass through mutants that have activity data. But sometimes, for
     # those with just naturalness, we pass through a null activity value.
-    incomplete_activity_df = pd.read_csv(dms_file_path)
+    if dms_id == "FLIP-AAV":
+        incomplete_activity_df = pd.read_csv(FLIP_AAV_DATA_FILE)
+        incomplete_activity_df = incomplete_activity_df.rename(columns={"homolog_seq_id": "seq_id"})
+    else:
+        # Check that the DMS data exists
+        dms_file_path = os.path.join(DMS_DIR, f"{dms_id}.csv")
+        incomplete_activity_df = pd.read_csv(dms_file_path)
+        # Convert 'mutant' column to 'seq_id' by replacing ':' with '_'
+        incomplete_activity_df["seq_id"] = incomplete_activity_df["mutant"].apply(
+            lambda x: allele_set_to_seq_id(set(x.split(":")))
+        )
     logger.info(f"Loaded activity data for {dms_id} with {len(incomplete_activity_df)} rows")
-
-    # Convert 'mutant' column to 'seq_id' by replacing ':' with '_'
-    incomplete_activity_df["seq_id"] = incomplete_activity_df["mutant"].apply(
-        lambda x: allele_set_to_seq_id(set(x.split(":")))
-    )
     incomplete_activity_df = incomplete_activity_df.set_index("seq_id", drop=False)
     seq_ids_with_activity = set(incomplete_activity_df.index)
     activity_df = incomplete_activity_df.reindex(embedding_df.index)
@@ -211,7 +207,8 @@ def get_proteingym_dataset(
         category_df = pd.DataFrame(
             {
                 "one_vs_many_split": [
-                    "train" if "_" not in seq_id else "test" for seq_id in embedding_df.index
+                    len(seq_id.split("_")) <= 1
+                    for seq_id in embedding_df.index
                 ],
             },
             index=embedding_df.index,
@@ -220,15 +217,15 @@ def get_proteingym_dataset(
         category_df = pd.DataFrame(
             {
                 "one_vs_many_split": [
-                    "train" if len(seq_id.split("_")) > 1 else "test"
+                    len(seq_id.split("_")) <= 1
                     for seq_id in embedding_df.index
                 ],
                 "two_vs_many_split": [
-                    "train" if len(seq_id.split("_")) > 2 else "test"
+                    len(seq_id.split("_")) <= 2
                     for seq_id in embedding_df.index
                 ],
                 "three_vs_many_split": [
-                    "train" if len(seq_id.split("_")) > 3 else "test"
+                    len(seq_id.split("_")) <= 3
                     for seq_id in embedding_df.index
                 ],
             },

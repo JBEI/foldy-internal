@@ -86,7 +86,7 @@ config_list = (
     apply_diff_list_to_config(
         random_config,
         [
-            ModelDiff(name="one_vs_many_split", diffs={
+            ModelDiff(name="one-vs-many-split", diffs={
                 "data_split_mode": "one_vs_many_split"
             }),
         ],
@@ -94,7 +94,7 @@ config_list = (
     apply_diff_list_to_config(
         random_forest_config,
         [
-            ModelDiff(name="one_vs_many_split", diffs={
+            ModelDiff(name="one-vs-many-split", diffs={
                 "data_split_mode": "one_vs_many_split"
             }),
         ],
@@ -102,7 +102,7 @@ config_list = (
     apply_diff_list_to_config(
         folde_config,
         [
-            ModelDiff(name="one_vs_many_split", diffs={
+            ModelDiff(name="one-vs-many-split", diffs={
                 "data_split_mode": "one_vs_many_split"
             }),
         ],
