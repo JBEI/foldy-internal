@@ -303,6 +303,8 @@ def seq_id_to_seq(wt_aa_seq: str, seq_id: str) -> str:
     """
     if seq_id == "WT":
         return wt_aa_seq
+    if is_homolog_seq_id(seq_id):
+        raise ValueError(f"Homolog seq_ids are not supported: {seq_id}")
     seq = wt_aa_seq
     for allele in seq_id.split("_"):
         assert len(allele) >= 3, f'Invalid seq_id, too short: "{seq_id}"'

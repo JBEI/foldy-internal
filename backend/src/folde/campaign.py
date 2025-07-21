@@ -163,13 +163,31 @@ def _run_single_simulation(
         entire_embedding_series.index.isin(available_seq_ids) | (entire_activity_series.isna())
     ]
     assert (
-        not pretraining_naturalness_series.isna().any()
-    ), f'{pretraining_naturalness_series.isna().sum()} naturalness values in the "pretraining" set are NAN'
+        (~pretraining_naturalness_series.isna()).any()
+    ), f'{pretraining_naturalness_series.isna().sum()}/{len(pretraining_naturalness_series)} naturalness values in the "pretraining" set are NAN'
 
     held_out_series = ~entire_activity_series.index.isin(available_seq_ids)
     held_out_activity_series = entire_activity_series.loc[held_out_series]
     held_out_naturalness_series = entire_naturalness_series.loc[held_out_series]
     held_out_embedding_series = entire_embedding_series.loc[held_out_series]
+
+    # Get the zero-shot model
+    zero_shot_model = get_zero_shot_model(
+        config.zero_shot_model_name, **config.zero_shot_model_params
+    )
+
+    # Get few-shot model
+    few_shot_model = get_few_shot_model(
+        config.few_shot_model_name,
+        random_state=random_seed,
+        wt_aa_seq=wt_aa_seq,
+        **config.few_shot_model_params,
+    )
+
+    few_shot_model.pretrain(
+        pretraining_naturalness_series,
+        pretraining_embedding_series,
+    )
 
     # Run the simulation for the specified number of rounds
     for round_num in range(1, max_rounds + 1):
@@ -183,24 +201,6 @@ def _run_single_simulation(
         top_seq_ids = None
         predicted_activity_ensemble: List[pd.Series] = []
         held_out_prediction_ensemble: List[pd.Series] = []
-
-        # Get the zero-shot model
-        zero_shot_model = get_zero_shot_model(
-            config.zero_shot_model_name, **config.zero_shot_model_params
-        )
-
-        # Get few-shot model
-        few_shot_model = get_few_shot_model(
-            config.few_shot_model_name,
-            random_state=random_seed,
-            wt_aa_seq=wt_aa_seq,
-            **config.few_shot_model_params,
-        )
-
-        few_shot_model.pretrain(
-            pretraining_naturalness_series,
-            pretraining_embedding_series,
-        )
 
         # First round: always use zero-shot model
         if round_num == 1:
@@ -298,50 +298,31 @@ def _run_single_simulation(
             consensus_held_out_predictions.values,
         )[0]
 
-        def old_get_held_out_stats_for_percentile(percentile):
-            """Returns some stats on the held out predictions for a percentile, zero to 100 (eg 1.0 for top 1 percent)."""
-
-            def top_k_mask(series: pd.Series) -> pd.Series:
-                k = max(1, int(np.ceil(len(series) * percentile / 100)))
-                top_idx = series.nlargest(k).index  # strict ranking
-                out = pd.Series(False, index=series.index)
-                out.loc[top_idx] = True
-                return out
-
-            held_out_stat_binary = top_k_mask(held_out_activity_series)
-            predicted_stat_binary = top_k_mask(consensus_held_out_predictions)
-            assert held_out_stat_binary.sum() == predicted_stat_binary.sum()
-
-            held_out_stat_recall = recall_score(
-                held_out_stat_binary,
-                predicted_stat_binary,
-            )
-            held_out_stat_auc = roc_auc_score(
-                held_out_stat_binary,
-                consensus_held_out_predictions,
-            )
-            return held_out_stat_recall, held_out_stat_auc
-
         def get_held_out_stats_for_percentile(percentile):
             """Returns some stats on the held out predictions for a percentile, zero to 100 (eg 1.0 for top 1 percent)."""
-
             assert held_out_activity_series.index.equals(consensus_held_out_predictions.index)
+
+            nonnull_activity_mask = held_out_activity_series.notna()
+
+            assert not held_out_activity_series[nonnull_activity_mask].isna().any(), f"{held_out_activity_series[nonnull_activity_mask].isna().sum()}/{len(held_out_activity_series[nonnull_activity_mask])} held out activity values are NAN"
+            assert not consensus_held_out_predictions[nonnull_activity_mask].isna().any(), f"{consensus_held_out_predictions[nonnull_activity_mask].isna().sum()}/{len(consensus_held_out_predictions[nonnull_activity_mask])} consensus held out predictions are NAN"
+
             held_out_stat_recall = get_top_percentile_recall_score(
-                held_out_activity_series.to_numpy(),
-                consensus_held_out_predictions.to_numpy(),
+                held_out_activity_series[nonnull_activity_mask].to_numpy(),
+                consensus_held_out_predictions[nonnull_activity_mask].to_numpy(),
                 percentile,
             )
 
             held_out_stat_auc = roc_auc_score(
-                top_k_mask(held_out_activity_series, percentile),
-                consensus_held_out_predictions,
+                top_k_mask(held_out_activity_series[nonnull_activity_mask], percentile),
+                consensus_held_out_predictions[nonnull_activity_mask],
             )
             return held_out_stat_recall, held_out_stat_auc
 
         held_out_1pct_recall, held_out_1pct_auc = get_held_out_stats_for_percentile(1)
         held_out_10pct_recall, held_out_10pct_auc = get_held_out_stats_for_percentile(10)
 
-        old_held_out_1pct_recall, old_held_out_1pct_auc = old_get_held_out_stats_for_percentile(1)
+        # old_held_out_1pct_recall, old_held_out_1pct_auc = old_get_held_out_stats_for_percentile(1)
 
         round_metrics = RoundMetrics(
             round_num=round_num,
@@ -352,8 +333,8 @@ def _run_single_simulation(
                 "held_out_1pct_auc": float(held_out_1pct_auc),  # type: ignore
                 "held_out_10pct_recall": float(held_out_10pct_recall),  # type: ignore
                 "held_out_10pct_auc": float(held_out_10pct_auc),  # type: ignore
-                "old_held_out_1pct_recall": float(old_held_out_1pct_recall),  # type: ignore
-                "old_held_out_1pct_auc": float(old_held_out_1pct_auc),  # type: ignore
+                "old_held_out_1pct_recall": 0.0, # float(old_held_out_1pct_recall),  # type: ignore
+                "old_held_out_1pct_auc": 0.0, # float(old_held_out_1pct_auc),  # type: ignore
             },
         )
 
@@ -482,9 +463,9 @@ def simulate_campaign(
             )
 
         # Store some activity stats.
-        campaign_result.min_activity = activity_df[activity_column].min()
-        campaign_result.median_activity = activity_df[activity_column].median()
-        campaign_result.max_activity = activity_df[activity_column].max()
+        campaign_result.min_activity = activity_df[activity_column].min(skipna=True)
+        campaign_result.median_activity = activity_df[activity_column].median(skipna=True)
+        campaign_result.max_activity = activity_df[activity_column].max(skipna=True)
         assert not np.isnan(campaign_result.min_activity)
         assert not np.isnan(campaign_result.median_activity)
         assert not np.isnan(campaign_result.max_activity)
@@ -501,11 +482,11 @@ def simulate_campaign(
                         )
                     full_seq_id_list = list(
                         category_df[
-                            category_df[model_config.data_split_mode] == "train"
+                            category_df[model_config.data_split_mode]
                         ].index.values
                     )
                 else:
-                    full_seq_id_list = list(activity_df.index.values)
+                    full_seq_id_list = list(activity_df[activity_df[activity_column].notna()].index.values)
 
                 world_size = int(len(full_seq_id_list) * 0.5)
 

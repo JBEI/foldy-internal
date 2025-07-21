@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from app.helpers.sequence_util import allele_set_to_seq_id, is_homolog_seq_id, sort_seq_id_list
+from app.helpers.sequence_util import allele_set_to_seq_id, is_homolog_seq_id, maybe_get_allele_id_error_message, seq_id_to_seq, sort_seq_id_list
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +178,36 @@ def get_proteingym_dataset(
     if dms_id == "FLIP-AAV":
         incomplete_activity_df = pd.read_csv(FLIP_AAV_DATA_FILE)
         incomplete_activity_df = incomplete_activity_df.rename(columns={"homolog_seq_id": "seq_id"})
+
+        # Find if any of the seq_ids are in the naturalness df and rename where possible.
+        logger.info(f"Converting seq_ids in naturalness df to full sequences")
+        tmp_naturalness_df = pd.DataFrame({'seq_id': incomplete_naturalness_df.index}, index=incomplete_naturalness_df.index)
+        def maybe_convert_seq_id_to_seq(seq_id: str):
+            if maybe_get_allele_id_error_message(wt_aa_seq, seq_id) is not None:
+                return pd.NA
+            return seq_id_to_seq(wt_aa_seq, seq_id)
+        tmp_naturalness_df['full_seq'] = tmp_naturalness_df.seq_id.apply(maybe_convert_seq_id_to_seq)
+        tmp_naturalness_df.set_index('full_seq', drop=True, inplace=True)
+
+        logger.info(f"Reassigning seq_ids from activity df to matching naturalness seq_ids.")
+        def get_new_seq_id(activity_row) -> str:
+            matching_naturalness_seqs = tmp_naturalness_df.loc[activity_row.full_aa_sequence]
+            print(type(matching_naturalness_seqs))
+            if len(matching_naturalness_seqs) == 1:
+                return matching_naturalness_seqs.iloc[0].seq_id
+            else:
+                return activity_row.seq_id
+
+        incomplete_activity_df = incomplete_activity_df.join(
+            tmp_naturalness_df.seq_id.rename('naturalness_seq_id'),
+            on='full_aa_sequence',
+            how='left',
+        )
+        incomplete_activity_df['seq_id'] = incomplete_activity_df.apply(lambda x: x.naturalness_seq_id if pd.notna(x.naturalness_seq_id) else x.seq_id, axis=1)
+
+        incomplete_activity_df_seq_id_dupes = incomplete_activity_df.seq_id.duplicated()
+        logger.info(f'Dropping {incomplete_activity_df_seq_id_dupes.sum()} seq_ids from activity df that are duplicated such as {incomplete_activity_df[incomplete_activity_df_seq_id_dupes].seq_id.tolist()[:5]} and {incomplete_activity_df[incomplete_activity_df_seq_id_dupes].seq_id.tolist()[-5:]}')
+        incomplete_activity_df = incomplete_activity_df[~incomplete_activity_df_seq_id_dupes]
     else:
         # Check that the DMS data exists
         dms_file_path = os.path.join(DMS_DIR, f"{dms_id}.csv")
@@ -246,12 +276,15 @@ def get_proteingym_dataset(
                 )
 
     # We lose ordering with the set operations but recover it with a sort later.
+    logging.info(f'seq_ids_with_embeddings & seq_ids_with_naturalness: {len(seq_ids_with_embeddings & seq_ids_with_naturalness)}')
+    logging.info(f'seq_ids_with_embeddings & seq_ids_with_activity: {len(seq_ids_with_embeddings & seq_ids_with_activity)}')
+    logging.info(f'seq_ids_with_naturalness & seq_ids_with_activity: {len(seq_ids_with_naturalness & seq_ids_with_activity)}')
     common_seq_ids = list(
-        seq_ids_with_embeddings & seq_ids_with_naturalness & seq_ids_with_activity
+        seq_ids_with_embeddings & (seq_ids_with_naturalness | seq_ids_with_activity)
     )
     common_seq_ids = sort_seq_id_list(wt_aa_seq, common_seq_ids)
 
-    logging.info(f"Going foward with {len(common_seq_ids)} common seq ids")
+    logging.info(f"Going forward with {len(common_seq_ids)} common seq ids")
     if activity_df.shape[0] > len(common_seq_ids):
         logging.warning(
             f"Dropping seq ids from activity df such as {activity_df[~activity_df.index.isin(common_seq_ids)].index[:3].tolist()}"

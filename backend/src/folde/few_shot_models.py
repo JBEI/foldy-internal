@@ -248,12 +248,7 @@ class MLPFewShotModel(FewShotModel):
             epsilon=kwargs.pop("epsilon", 0.0),
         )
         self.ensemble_size = ensemble_size
-        base_random_state = kwargs.pop("random_state", 0)
-        self.models: List[SklearnMLPRegressor] = [
-            SklearnMLPRegressor(**kwargs, random_state=base_random_state + ii)
-            for ii in range(ensemble_size)
-        ]
-        self.metrics_: Dict[str, float] = {}
+        self.base_random_state = kwargs.pop("random_state", 0)
         self.is_fitted: bool = False
 
     def fit(
@@ -279,6 +274,13 @@ class MLPFewShotModel(FewShotModel):
             Self for method chaining
         """
         assert naturalness_series.index.equals(embedding_series.index)
+
+        # Reset state! We might have called "fit" already and should blank that out.
+        self.models: List[SklearnMLPRegressor] = [
+            SklearnMLPRegressor(**kwargs, random_state=self.base_random_state + ii)
+            for ii in range(self.ensemble_size)
+        ]
+        self.metrics_: Dict[str, float] = {}
 
         measured_embedding_series = embedding_series.loc[measured_activity_series.index]
         X = np.array([np.array(emb) for emb in measured_embedding_series.values])
@@ -385,13 +387,7 @@ class RandomForestFewShotModel(FewShotModel):
         )
 
         self.ensemble_size = ensemble_size
-
-        base_random_state = kwargs.pop("random_state", 0)
-        self.models: List[SklearnRandomForestRegressor] = [
-            SklearnRandomForestRegressor(**kwargs, random_state=base_random_state + ii)
-            for ii in range(ensemble_size)
-        ]
-        self.metrics_: Dict[str, float] = {}
+        self.base_random_state = kwargs.pop("random_state", 0)
         self.is_fitted: bool = False
 
     def fit(
@@ -417,6 +413,13 @@ class RandomForestFewShotModel(FewShotModel):
             Self for method chaining
         """
         assert naturalness_series.index.equals(embedding_series.index)
+
+        # Reset state! We might have called "fit" already and should blank that out.
+        self.models: List[SklearnRandomForestRegressor] = [
+            SklearnRandomForestRegressor(**kwargs, random_state=self.base_random_state + ii)
+            for ii in range(self.ensemble_size)
+        ]
+        self.metrics_: Dict[str, float] = {}
 
         measured_embedding_series = embedding_series.loc[measured_activity_series.index]
         X = np.array([np.array(emb) for emb in measured_embedding_series.values])
@@ -687,7 +690,10 @@ class TorchMLPFewShotModel(FewShotModel):
             assert test_embedding_series.index.equals(test_naturalness_series.index)
             assert test_embedding_series.index.equals(test_activity_series.index)
 
+        # Reset state! We might have called "fit" already and should blank that out.
         self.finetuned_model_and_trainer_list = self._create_model_ensemble()
+        self.finetune_metrics = []
+
         if self.should_pretrain:
             if not self.is_pretrained:
                 raise ValueError("Model is not pretrained. Call pretrain() first.")
@@ -711,7 +717,6 @@ class TorchMLPFewShotModel(FewShotModel):
             )
             kf_splits = list(kf.split(measured_activity_series.index))
 
-        self.finetune_metrics = []
         for model_idx, (model, trainer) in enumerate(self.finetuned_model_and_trainer_list):
             X_train, X_val, X_test, y_train, y_val, y_test = None, None, None, None, None, None
 
@@ -719,6 +724,7 @@ class TorchMLPFewShotModel(FewShotModel):
                 assert (
                     self.do_validation_with_pair_fraction is None
                 ), f"Cannot do both holdout validation and specify a pair fraction to hold out."
+                assert kf_splits is not None, "kf_splits is not set"
                 # Do the train / test split.
                 train_indices, val_indices = kf_splits[model_idx]
                 train_seqids = measured_activity_series.index[train_indices]
@@ -761,7 +767,6 @@ class TorchMLPFewShotModel(FewShotModel):
                     batch_size=max(16, y_train.shape[0]),
                     epochs=self.train_epochs,
                     patience=self.train_patience,
-                    # patience=None,
                     use_mse_loss=self.use_mse_loss,
                     learning_rate=self.learning_rate,
                     weight_decay=self.weight_decay,

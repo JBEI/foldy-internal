@@ -7,6 +7,7 @@ low-N protein engineering campaigns where little training data
 is available.
 """
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Type, cast
 
@@ -14,6 +15,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 from pandas import DataFrame, Series
+from sklearn.neighbors import KNeighborsRegressor
 
 from app.helpers.sequence_util import is_homolog_seq_id
 from folde.util import get_consensus_scores, internal_sample_n_indices
@@ -185,7 +187,7 @@ class NaturalnessZeroShotModel(ZeroShotModel):
 
         def get_naturalness(seq_id, direct_naturalness) -> float:
             """Try computing naturalness for mutants even if none was provided by extrapolating for multimutants."""
-            if direct_naturalness is not None and direct_naturalness != np.nan:
+            if direct_naturalness is not None and not pd.isna(direct_naturalness):
                 return direct_naturalness
 
             if is_homolog_seq_id(seq_id):
@@ -193,16 +195,50 @@ class NaturalnessZeroShotModel(ZeroShotModel):
 
             # Break it down into single mutants.
             seq_id_parts = seq_id.split("_")
-            if len(seq_id_parts) == 1:
-                return np.nan
 
-            # Get the naturalness of the single mutants.
-            return naturalness_series.loc[seq_id_parts].prod()
+            # For multimutants, we compute naturalness as the product of the naturalness of the single mutants.
+            computed_naturalness = naturalness_series.loc[seq_id_parts].prod()
+            if pd.isna(computed_naturalness):
+                raise ValueError(f"Computed naturalness is NAN for {seq_id} with parts {seq_id_parts}")
+            return computed_naturalness
 
         computed_naturalness_series = naturalness_series.reset_index(name="wt_marginal").apply(
             lambda r: get_naturalness(r.seq_id, r.wt_marginal), axis=1
         )
         computed_naturalness_series.index = naturalness_series.index
+
+        # Do KNN imputation to fill in NANs from homologs.
+        if computed_naturalness_series.isna().any():
+            logging.info(f"Filling in NANs from homologs for {computed_naturalness_series.isna().sum()}/{len(computed_naturalness_series)} naturalness values.")
+            assert embedding_series is not None
+            embedding_array = np.array([np.array(emb) for emb in embedding_series.values])
+            naturalness_array = computed_naturalness_series.values
+
+            # Find indices for known and missing
+            known_mask = (~computed_naturalness_series.isna()).to_numpy()
+            missing_mask = computed_naturalness_series.isna().to_numpy()
+
+            X_known = embedding_array[known_mask]
+            y_known = naturalness_array[known_mask]
+            X_missing = embedding_array[missing_mask]
+
+            # Fit KNN regressor
+            knn = KNeighborsRegressor(n_neighbors=5)
+            knn.fit(X_known, y_known)
+
+            # Predict missing values
+            imputed_values = knn.predict(X_missing)
+
+            # Fill in the missing values
+            imputed_naturalness = naturalness_array.copy()
+            imputed_naturalness[missing_mask] = imputed_values
+
+            # Convert back to Series
+            computed_naturalness_series = pd.Series(imputed_naturalness, index=naturalness_series.index)
+        
+        if computed_naturalness_series.isna().any():
+            raise ValueError(f"Computed naturalness series still has NANs: {computed_naturalness_series.isna().sum()}/{len(computed_naturalness_series)}")
+
         return [computed_naturalness_series]
 
     def get_debug_info(self) -> Dict[str, Any]:
