@@ -92,10 +92,27 @@ difflist = [
     ModelDiff(name="seven-vs-many-split", diffs={
         "data_split_mode": "seven_vs_many_split"
     }),
+    ModelDiff(name="low-vs-high-split", diffs={
+        "data_split_mode": "low_vs_high_split"
+    }),
+    ModelDiff(name="mut-des-split", diffs={
+        "data_split_mode": "mut_des_split"
+    }),
+]
+
+extra_folde_diffs = [
+    ModelDiff(name="nowarmstart-two-vs-many-split", diffs={
+        "data_split_mode": "two_vs_many_split",
+        "few_shot_model_params.pretrain": False,
+    }),
+    ModelDiff(name="noCL-two-vs-many-split", diffs={
+        "data_split_mode": "two_vs_many_split",
+        "few_shot_model_params.decision_mode": 'mean',
+    })
 ]
 
 config_list = (
-    apply_diff_list_to_config(folde_config, difflist) +
+    apply_diff_list_to_config(folde_config, difflist + extra_folde_diffs) +
     apply_diff_list_to_config(random_forest_config, difflist) +
     apply_diff_list_to_config(random_config, difflist)
 )
