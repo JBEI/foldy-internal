@@ -59,7 +59,7 @@ config_list = apply_diff_list_to_config(
         ModelDiff(name="300m", diffs={"embedding_model_id": "300m", "few_shot_model_params.embedding_dim": 960}),
         ModelDiff(name="600m", diffs={"embedding_model_id": "600m", "few_shot_model_params.embedding_dim":  1152}),
         ModelDiff(name="8m", diffs={"embedding_model_id": "8m", "few_shot_model_params.embedding_dim": 320}),
-        # ModelDiff(name="35m", diffs={"embedding_model_id": "35m", "few_shot_model_params.embedding_dim": }),
+        ModelDiff(name="35m", diffs={"embedding_model_id": "35m", "few_shot_model_params.embedding_dim": 480}),
         ModelDiff(name="150m", diffs={"embedding_model_id": "150m", "few_shot_model_params.embedding_dim": 640}),
         ModelDiff(name="650m", diffs={"embedding_model_id": "650m", "few_shot_model_params.embedding_dim": 1280}),
         ModelDiff(name="3b", diffs={"embedding_model_id": "3b", "few_shot_model_params.embedding_dim": 2560}),
