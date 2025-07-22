@@ -93,7 +93,7 @@ config_list = (
             }),
             ModelDiff(name="1-vs-rest-noCL", diffs={
                 "data_split_mode": "one_vs_many_split",
-                'decision_mode': 'mean'
+                'few_shot_model_params.decision_mode': 'mean'
             }),
         ],
     ) +

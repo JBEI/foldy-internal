@@ -26,32 +26,7 @@ folde_train_dms_ids = [
 # Example configuration
 NAME = "250716-mse-to-bt"
 
-random_forest_config = FolDEModelConfig(
-    name="RandomToRandomForest",
-    naturalness_model_id="600m",
-    embedding_model_id="300m",
-    zero_shot_model_name="RandomZeroShotModel",
-    zero_shot_model_params={},
-    few_shot_model_name="RandomForestFewShotModel",
-    few_shot_model_params={
-                "n_estimators": 100,
-                "criterion": "friedman_mse",
-                "max_depth": None,
-                "min_samples_split": 2,
-                "min_samples_leaf": 1,
-                "min_weight_fraction_leaf": 0.0,
-                "max_features": 1.0,
-                "max_leaf_nodes": None,
-                "min_impurity_decrease": 0.0,
-                "bootstrap": True,
-                "oob_score": False,
-                "n_jobs": None,
-                "verbose": 0,
-                "warm_start": False,
-                "ccp_alpha": 0.0,
-                "max_samples": None,
-            },
-)
+
 
 mlp_config_list = apply_diff_list_to_config(
     FolDEModelConfig(
