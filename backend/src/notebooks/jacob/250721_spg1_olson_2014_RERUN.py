@@ -88,6 +88,13 @@ config_list = (
             ModelDiff(name="1-vs-rest", diffs={
                 "data_split_mode": "one_vs_many_split"
             }),
+            ModelDiff(name="1-vs-rest-redo", diffs={
+                "data_split_mode": "one_vs_many_split"
+            }),
+            ModelDiff(name="1-vs-rest-noCL", diffs={
+                "data_split_mode": "one_vs_many_split",
+                'decision_mode': 'mean'
+            }),
         ],
     ) +
     apply_diff_list_to_config(
