@@ -409,8 +409,12 @@ class PreferenceTrainer:
                         )
 
                     if loss.item() == 0:
+                        # logger.warning(f'Zero loss encountered in batch {batch_number} in epoch {epoch} with {len(batch_embeddings)} members.')
                         logger.warning(
-                            f"Zero loss encountered in batch {batch_number} in epoch {epoch} with {len(batch_embeddings)} members"
+                            f"Zero loss encountered in batch {batch_number} in epoch {epoch} with {len(batch_embeddings)} members. "
+                            f"Score variance: {scores.var().detach().cpu().item()}; "
+                            f"activity level variance: {batch_activity_labels.var().detach().cpu().item()}; "
+                            f"train mask occupancy: {'NA' if train_mask is None else (train_mask.sum() / train_mask.numel()).item()}"
                         )
 
                 # "Scaler" is the second part of automatic mixed precision training.

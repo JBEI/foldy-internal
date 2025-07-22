@@ -80,5 +80,5 @@ results = simulate_campaigns_with_config_checkpoints(
     activity_column="DMS_score",
     max_rounds=3,
     random_seed=42,
-    num_workers=10,
+    num_workers=5,
 )
