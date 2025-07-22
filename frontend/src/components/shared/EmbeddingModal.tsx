@@ -286,11 +286,21 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
                             <Text strong>DMS Starting Sequence IDs:</Text> Base sequences for comprehensive mutational scanning:
                             <ul style={{ marginTop: '8px', marginLeft: '16px' }}>
                                 <li>For each sequence listed, ALL possible single amino acid mutants will be generated and embedded</li>
-                                <li>Creates ~19× the protein length in embeddings (19 amino acids × each position)</li>
+                                <li>Creates ~19x the protein length in embeddings (19 amino acids x each position)</li>
                                 <li>Example: "WT" will generate embeddings for A1C, A1D, A1E... through to the last position</li>
                                 <li>Use this for deep mutational scanning experiments</li>
                             </ul>
                         </li>
+                    </ul>
+
+                    <Title level={4}>Homolog FASTA Files (Optional)</Title>
+                    <Paragraph>
+                        You can optionally include homolog sequences (orthologs, paralogs, indel mutants) to be embedded:
+                    </Paragraph>
+                    <ul>
+                        <li><Text strong>Format:</Text> Standard FASTA format with sequence IDs prefixed with "HOM-" (e.g., HOM-ortho1, HOM-para2). Homolog IDs can include letters, numbers, and hyphens</li>
+                        <li><Text strong>Usage:</Text> These <Text strong>must also be listed in Extra Sequence IDs</Text> to be embedded</li>
+                        <li><Text strong>File types:</Text> Accepts .fasta, .fa, or .txt files</li>
                     </ul>
 
                     <Alert
@@ -307,17 +317,6 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
                         style={{ marginTop: '12px', marginBottom: '12px' }}
                     />
 
-                    <Title level={4}>Homolog FASTA Files (Optional)</Title>
-                    <Paragraph>
-                        You can optionally include homolog sequences (orthologs, paralogs) to enhance the embedding generation:
-                    </Paragraph>
-                    <ul>
-                        <li><Text strong>Format:</Text> Standard FASTA format with sequence IDs prefixed with "HOM-" (e.g., HOM-ortho1, HOM-para2)</li>
-                        <li><Text strong>Purpose:</Text> Provides evolutionary context that can improve embedding quality for related sequences</li>
-                        <li><Text strong>Usage:</Text> These sequences will be embedded alongside your target sequences</li>
-                        <li><Text strong>File types:</Text> Accepts .fasta, .fa, or .txt files</li>
-                    </ul>
-
                     <Title level={4}>Model Selection</Title>
                     <Paragraph>
                         Choose a pLM model:
@@ -327,35 +326,16 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
                         <li><Text strong>ESM2 15B:</Text> Slower, used in the EvolvePro paper.</li>
                     </ul>
 
-                    <Title level={4}>Workflow Integration</Title>
-                    <Paragraph>
-                        The typical workflow for using embeddings in directed evolution:
-                    </Paragraph>
-                    <ol>
-                        <li><Text strong>Generate embeddings:</Text> Create embeddings for your protein variants (this modal)</li>
-                        <li><Text strong>Collect activity data:</Text> Measure experimental activity for some variants</li>
-                        <li><Text strong>Train models:</Text> Use embeddings + activity data in the Evolution tab</li>
-                        <li><Text strong>Predict activities:</Text> Get recommendations for the most promising mutations</li>
-                    </ol>
-
-                    <Title level={4}>Best Practices</Title>
-                    <ul>
-                        <li><Text strong>Start small:</Text> Test with a few variants first before running full DMS</li>
-                        <li><Text strong>Include controls:</Text> Always include "WT" in your Extra Sequence IDs</li>
-                        <li><Text strong>Model selection:</Text> ESMC 600M offers good balance of speed and quality</li>
-                        <li><Text strong>Plan ahead:</Text> DMS generates many embeddings - ensure you need them all</li>
-                    </ul>
-
                     <Alert
                         message="Cost Consideration"
-                        description="~$100 for a DMS of a 500AA protein. Consider using Extra Sequence IDs for targeted studies."
+                        description="~$10 for a DMS of a 500AA protein."
                         type="warning"
                         showIcon
                         style={{ marginTop: '16px' }}
                     />
 
                     <Paragraph style={{ marginTop: '16px' }}>
-                        <Text strong>Output:</Text> Completed embeddings can be downloaded as CSV files from the Files tab and are automatically available for use in the Evolution tab.
+                        <Text strong>Output:</Text> Completed embeddings can be downloaded as CSV files from the Files tab and are also available for download in the Evolution tab.
                     </Paragraph>
                 </div>
             </Modal>

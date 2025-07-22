@@ -2,6 +2,7 @@ import io
 import logging
 import re
 import time
+from datetime import datetime
 from typing import (
     Any,
     BinaryIO,
@@ -361,7 +362,7 @@ class TagsResource(Resource):
                             "fold_count": 0,
                             "contributors": set(),
                             "recent_folds": [],
-                            "most_recent_fold_date": fold.create_date,
+                            "most_recent_fold_date": fold.create_date or datetime.min,
                         }
 
                     tag_info[tag]["fold_count"] += 1
@@ -370,7 +371,7 @@ class TagsResource(Resource):
                         tag_info[tag]["contributors"].add(fold.user.name)
 
                     # Update most recent fold date for this tag
-                    if fold.create_date > tag_info[tag]["most_recent_fold_date"]:
+                    if fold.create_date and fold.create_date > tag_info[tag]["most_recent_fold_date"]:
                         tag_info[tag]["most_recent_fold_date"] = fold.create_date
 
                     # Keep track of recent folds (limit to 5)
