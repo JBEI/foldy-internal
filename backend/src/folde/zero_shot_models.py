@@ -180,6 +180,7 @@ class NaturalnessZeroShotModel(ZeroShotModel):
         """
         super().__init__(**kwargs)
         self.is_pretrained = False
+        self.single_mutant_naturalness_series: Optional[pd.Series] = None
 
     def pretrain(
         self,
@@ -192,23 +193,24 @@ class NaturalnessZeroShotModel(ZeroShotModel):
         if self.is_pretrained:
             raise ValueError("Model is already pretrained.")
 
-        has_naturalness_data = ~naturalness_series.isna()  # index.map(lambda sid: "_" not in sid)
+        assert not naturalness_series.isna().any(), "naturalness_series contains NANs"
 
         logging.info(
-            f"Pretraining model with naturalness data with {sum(has_naturalness_data)} naturalness measurements."
+            f"Pretraining model with naturalness data with {len(naturalness_series)} naturalness measurements."
         )
 
-        embedding_series_with_data = embedding_series[has_naturalness_data]
-        naturalness_series_with_data = naturalness_series[has_naturalness_data]
-
-        X = np.array([np.array(emb) for emb in embedding_series_with_data.values])
-        y = naturalness_series_with_data.values
+        X = np.array([np.array(emb) for emb in embedding_series.values])
+        y = naturalness_series.values
 
         # Fit KNN regressor
         knn = KNeighborsRegressor(n_neighbors=5)
         knn.fit(X, y)
         self.is_pretrained = True
         self.knn = knn
+
+        # Also store the naturalness series for prediction later.
+        self.single_mutant_naturalness_series = naturalness_series
+
         return self
 
     def predict(
@@ -236,7 +238,8 @@ class NaturalnessZeroShotModel(ZeroShotModel):
             seq_id_parts = seq_id.split("_")
 
             # For multimutants, we compute naturalness as the product of the naturalness of the single mutants.
-            computed_naturalness = naturalness_series.loc[seq_id_parts].prod()
+            assert self.single_mutant_naturalness_series is not None, "Model is not pretrained, so cannot fill in NANs from the pretrain data which is sometimes how we get single mutant naturalness..."
+            computed_naturalness = self.single_mutant_naturalness_series.loc[seq_id_parts].prod()
             if pd.isna(computed_naturalness):
                 raise ValueError(f"Computed naturalness is NAN for {seq_id} with parts {seq_id_parts}")
             return computed_naturalness
@@ -259,7 +262,7 @@ class NaturalnessZeroShotModel(ZeroShotModel):
             # Find indices for known and missing
             missing_mask = computed_naturalness_series.isna().to_numpy()
             X_missing = embedding_array[missing_mask]
-            
+
             imputed_values = self.knn.predict(X_missing)
 
             # Fill in the missing values
