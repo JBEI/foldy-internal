@@ -30,6 +30,7 @@ from folde.types import (
     SimulationResult,
     SingleConfigCampaignResult,
 )
+from app.helpers.sequence_util import is_homolog_seq_id, get_loci_set
 from folde.util import get_consensus_scores, get_top_percentile_recall_score, top_k_mask
 from folde.zero_shot_models import get_zero_shot_model
 
@@ -156,14 +157,16 @@ def _run_single_simulation(
         whole_world_embedding_series,
     )
 
-    pretraining_naturalness_series = entire_naturalness_series[
-        entire_naturalness_series.index.isin(available_seq_ids) | (entire_activity_series.isna())
-    ]
-    pretraining_embedding_series = entire_embedding_series[
-        entire_embedding_series.index.isin(available_seq_ids) | (entire_activity_series.isna())
-    ]
+    def is_single_mutant_id(seq_id: str) -> bool:
+        if seq_id == 'WT' or is_homolog_seq_id(seq_id):
+            return False
+        return len(get_loci_set(seq_id)) == 1
+    single_mutant_seq_ids = [seq_id for seq_id in entire_naturalness_series.index if is_single_mutant_id(seq_id)]
+
+    pretraining_naturalness_series = entire_naturalness_series.loc[single_mutant_seq_ids]
+    pretraining_embedding_series = entire_embedding_series.loc[single_mutant_seq_ids]
     assert (
-        (~pretraining_naturalness_series.isna()).any()  # Make sure SOME naturalness values are not NAN,
+        not pretraining_naturalness_series.isna().any()  # Make sure SOME naturalness values are not NAN,
     ), f'{pretraining_naturalness_series.isna().sum()}/{len(pretraining_naturalness_series)} naturalness values in the "pretraining" set are NAN'
 
     held_out_series = ~entire_activity_series.index.isin(available_seq_ids)

@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from app.helpers.sequence_util import allele_set_to_seq_id, is_homolog_seq_id, maybe_get_allele_id_error_message, seq_id_to_seq, sort_seq_id_list
+from app.helpers.sequence_util import allele_set_to_seq_id, get_loci_set, is_homolog_seq_id, maybe_get_allele_id_error_message, seq_id_to_seq, sort_seq_id_list
 
 logger = logging.getLogger(__name__)
 
@@ -229,35 +229,39 @@ def get_proteingym_dataset(
         category_df = category_df.reindex(embedding_df.index)
         category_df = category_df.fillna(False)
     elif dms_id == "SPG1_STRSG_Olson_2014":
+        valid_activity_seq_ids = activity_df[activity_df.DMS_score.notna()].index
         category_df = pd.DataFrame(
             {
                 "one_vs_many_split": [
-                    len(seq_id.split("_")) <= 1
-                    for seq_id in embedding_df.index
+                    len(get_loci_set(seq_id)) <= 1
+                    for seq_id in valid_activity_seq_ids
                 ],
             },
-            index=embedding_df.index,
+            index=valid_activity_seq_ids,
         )
     elif dms_id == "SPG1_STRSG_Wu_2016":
+        valid_activity_seq_ids = activity_df[activity_df.DMS_score.notna()].index
         category_df = pd.DataFrame(
             {
                 "one_vs_many_split": [
-                    len(seq_id.split("_")) <= 1
-                    for seq_id in embedding_df.index
+                    len(get_loci_set(seq_id)) <= 1
+                    for seq_id in valid_activity_seq_ids
                 ],
                 "two_vs_many_split": [
-                    len(seq_id.split("_")) <= 2
-                    for seq_id in embedding_df.index
+                    len(get_loci_set(seq_id)) <= 2
+                    for seq_id in valid_activity_seq_ids
                 ],
                 "three_vs_many_split": [
-                    len(seq_id.split("_")) <= 3
-                    for seq_id in embedding_df.index
+                    len(get_loci_set(seq_id)) <= 3
+                    for seq_id in valid_activity_seq_ids
                 ],
             },
-            index=embedding_df.index,
+            index=valid_activity_seq_ids,
         )
     else:
         category_df = pd.DataFrame(index=embedding_df.index)
+    category_df = category_df.reindex(activity_df.index)
+    category_df = category_df.fillna(False)
 
     # Convert embedding column from string to numpy array if needed
     for col in embedding_df.columns:

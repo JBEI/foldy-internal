@@ -11,12 +11,11 @@ from folde.types import FolDEModelConfig, ModelDiff
 from folde.util import apply_diff_list_to_config
 
 dms_ids = [
-    # "SPG1_STRSG_Olson_2014"
-    "FLIP-AAV"
+    "SPG1_STRSG_Olson_2014"
 ]
 
 # Example configuration
-NAME = "250720-flip-aav"
+NAME = "250721-spg1-olson-2014-RERUN"
 
 random_config = FolDEModelConfig(
     name="Random",
@@ -36,23 +35,23 @@ random_forest_config = FolDEModelConfig(
     zero_shot_model_params={},
     few_shot_model_name="RandomForestFewShotModel",
     few_shot_model_params={
-        "n_estimators": 100,
-        "criterion": "friedman_mse",
-        "max_depth": None,
-        "min_samples_split": 2,
-        "min_samples_leaf": 1,
-        "min_weight_fraction_leaf": 0.0,
-        "max_features": 1.0,
-        "max_leaf_nodes": None,
-        "min_impurity_decrease": 0.0,
-        "bootstrap": True,
-        "oob_score": False,
-        "n_jobs": None,
-        "verbose": 0,
-        "warm_start": False,
-        "ccp_alpha": 0.0,
-        "max_samples": None,
-    },
+                "n_estimators": 100,
+                "criterion": "friedman_mse",
+                "max_depth": None,
+                "min_samples_split": 2,
+                "min_samples_leaf": 1,
+                "min_weight_fraction_leaf": 0.0,
+                "max_features": 1.0,
+                "max_leaf_nodes": None,
+                "min_impurity_decrease": 0.0,
+                "bootstrap": True,
+                "oob_score": False,
+                "n_jobs": None,
+                "verbose": 0,
+                "warm_start": False,
+                "ccp_alpha": 0.0,
+                "max_samples": None,
+            },
 )
 
 folde_config = FolDEModelConfig(
@@ -82,22 +81,31 @@ folde_config = FolDEModelConfig(
     },
 )
 
-difflist = [
-    ModelDiff(name="one-vs-many-split", diffs={
-        "data_split_mode": "one_vs_many_split"
-    }),
-    ModelDiff(name="two-vs-many-split", diffs={
-        "data_split_mode": "two_vs_many_split"
-    }),
-    ModelDiff(name="seven-vs-many-split", diffs={
-        "data_split_mode": "seven_vs_many_split"
-    }),
-]
-
 config_list = (
-    apply_diff_list_to_config(folde_config, difflist) +
-    apply_diff_list_to_config(random_forest_config, difflist) +
-    apply_diff_list_to_config(random_config, difflist)
+    apply_diff_list_to_config(
+        folde_config,
+        [
+            ModelDiff(name="1-vs-rest", diffs={
+                "data_split_mode": "one_vs_many_split"
+            }),
+        ],
+    ) +
+    apply_diff_list_to_config(
+        random_config,
+        [
+            ModelDiff(name="1-vs-rest", diffs={
+                "data_split_mode": "one_vs_many_split"
+            }),
+        ],
+    ) +
+    apply_diff_list_to_config(
+        random_forest_config,
+        [
+            ModelDiff(name="1-vs-rest", diffs={
+                "data_split_mode": "one_vs_many_split"
+            }),
+        ],
+    )
 )
 
 print(f"Config 1/{len(config_list)}:")
@@ -111,7 +119,7 @@ results = simulate_campaigns_with_config_checkpoints(
     round_size=16,
     number_of_simulations=10,
     activity_column="DMS_score",
-    max_rounds=10,
+    max_rounds=6,
     random_seed=42,
     num_workers=5,
 )
