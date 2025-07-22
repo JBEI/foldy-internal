@@ -108,6 +108,10 @@ extra_folde_diffs = [
     ModelDiff(name="noCL-two-vs-many-split", diffs={
         "data_split_mode": "two_vs_many_split",
         "few_shot_model_params.decision_mode": 'mean',
+    }),
+    ModelDiff(name="noZeroShot-two-vs-many-split", diffs={
+        "data_split_mode": "two_vs_many_split",
+        "zero_shot_model_name": "RandomZeroShotModel",
     })
 ]
 
