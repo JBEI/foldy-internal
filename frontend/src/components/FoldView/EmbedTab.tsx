@@ -173,6 +173,26 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
                             dataIndex: 'name',
                         },
                         {
+                            key: 'date',
+                            title: 'Date',
+                            width: 80,
+                            render: (_, embedding) => {
+                                if (!embedding.date_created) return "N/A";
+
+                                try {
+                                    const date = new Date(embedding.date_created);
+                                    if (isNaN(date.getTime())) return "Invalid";
+
+                                    return new Intl.DateTimeFormat('en-US', {
+                                        dateStyle: "short",
+                                        timeZone: "America/Los_Angeles"
+                                    }).format(date);
+                                } catch (error) {
+                                    return "Error";
+                                }
+                            },
+                        },
+                        {
                             key: 'status',
                             title: 'Batch Status',
                             render: (_, embedding) => getEmbeddingStatus(embedding, jobs),

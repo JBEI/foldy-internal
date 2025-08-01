@@ -3,7 +3,7 @@ import Plot from 'react-plotly.js';
 import { Data } from 'plotly.js';
 import Papa from 'papaparse';
 import { CheckboxControl, NumberInputControl } from '../../util/controlComponents';
-import SlateTable, { SlateTableColumn } from './SlateTable';
+import ProposedSlateTable, { ProposedSlateTableColumn } from './ProposedSlateTable';
 import { Selection } from '../FoldView/StructurePane';
 import { notify } from '../../services/NotificationService';
 
@@ -20,6 +20,7 @@ interface NaturalnessResultsProps {
     runName?: string;
     onClose?: () => void;
     onBuildSlate?: (seqIds: string[]) => void;
+    disableSlateBuilder?: boolean;
 }
 
 type RowData = {
@@ -123,6 +124,7 @@ const NaturalnessTable: React.FC<{
     yamlConfig: string | null;
     setSelectedSubsequence: (selection: Selection | null) => void;
     onBuildSlate?: (seqIds: string[]) => void;
+    disableSlateBuilder?: boolean;
 }> = ({
     naturalnessCsvData,
     useWtMarginalAsScore,
@@ -132,6 +134,7 @@ const NaturalnessTable: React.FC<{
     yamlConfig,
     setSelectedSubsequence,
     onBuildSlate,
+    disableSlateBuilder,
 }) => {
         if (!naturalnessCsvData) return null;
 
@@ -141,7 +144,7 @@ const NaturalnessTable: React.FC<{
 
         if (!tableData) return null;
 
-        const columns: SlateTableColumn[] = [
+        const columns: ProposedSlateTableColumn[] = [
             {
                 key: "seqId",
                 name: "Sequence ID",
@@ -160,7 +163,7 @@ const NaturalnessTable: React.FC<{
         ];
 
         return (
-            <SlateTable
+            <ProposedSlateTable
                 description="These mutants have the highest naturalness scores. Click on a sequence ID to highlight the residues on the structure."
                 data={tableData}
                 columns={columns}
@@ -170,7 +173,9 @@ const NaturalnessTable: React.FC<{
                 enableRowClick={true}
                 showCopyButton={true}
                 showHighlightButton={true}
+                showHighlightOnModelButton={false}
                 showSlateBuilderButton={!!onBuildSlate}
+                disableSlateBuilderButton={disableSlateBuilder}
                 onBuildSlate={onBuildSlate}
             />
         );
@@ -182,7 +187,8 @@ const NaturalnessResults: React.FC<NaturalnessResultsProps> = ({
     setSelectedSubsequence,
     runName = "Naturalness Results",
     onClose,
-    onBuildSlate
+    onBuildSlate,
+    disableSlateBuilder
 }) => {
     const [maskWildType, setMaskWildType] = useState<boolean>(false);
     const [zeroWildType, setZeroWildType] = useState<boolean>(false);
@@ -255,7 +261,7 @@ const NaturalnessResults: React.FC<NaturalnessResultsProps> = ({
             z: zValues,
             x: loci,
             y: RESIDUES,
-            colorscale: 'Blues',
+            colorscale: 'RdYlBu_r',
             zmin: zmin,
             zmax: zmax,
             hovertemplate: hoverTemplate,
@@ -382,6 +388,7 @@ const NaturalnessResults: React.FC<NaturalnessResultsProps> = ({
                     yamlConfig={yamlConfig}
                     setSelectedSubsequence={setSelectedSubsequence}
                     onBuildSlate={onBuildSlate}
+                    disableSlateBuilder={disableSlateBuilder}
                 />
             </div>
         </div>

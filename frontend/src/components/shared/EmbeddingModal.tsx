@@ -19,6 +19,8 @@ interface EmbeddingModalProps {
     disableSequenceFields?: boolean;
 }
 
+const isNullOrUndefined = (value: string | null | undefined) => value === null || value === undefined;
+
 export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
     open,
     onClose,
@@ -28,11 +30,12 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
     disableSequenceFields = false
 }) => {
     const [batchName, setBatchName] = useState<string>(templateEmbedding?.name || '');
-    const [dmsStartingSeqIds, setDmsStartingSeqIds] = useState<string>(templateEmbedding?.dms_starting_seq_ids ? templateEmbedding.dms_starting_seq_ids.split(',').join('\n') : 'WT');
-    const [extraSequenceIDs, setExtraSequenceIDs] = useState<string>(templateEmbedding?.extra_seq_ids ? templateEmbedding.extra_seq_ids.split(',').join('\n') : '');
+    const [dmsStartingSeqIds, setDmsStartingSeqIds] = useState<string>(isNullOrUndefined(templateEmbedding?.dms_starting_seq_ids) ? 'WT' : templateEmbedding.dms_starting_seq_ids.split(',').join('\n'));
+    const [extraSequenceIDs, setExtraSequenceIDs] = useState<string>(isNullOrUndefined(templateEmbedding?.extra_seq_ids) ? '' : templateEmbedding.extra_seq_ids.split(',').join('\n'));
     const [homologFasta, setHomologFasta] = useState<string | null>(templateEmbedding?.homolog_fasta || null);
     const [homologFile, setHomologFile] = useState<File | null>(null);
     const [extraLayers, setExtraLayers] = useState<string>(templateEmbedding?.extra_layers || '');
+    const [domainBoundaries, setDomainBoundaries] = useState<string>(templateEmbedding?.domain_boundaries || '');
     const [model, setModel] = useState<string>(templateEmbedding?.embedding_model || 'esmc_300m');
     const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
     const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -55,12 +58,16 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
             .split(',')
             .map(line => line.trim())
             .filter(line => line !== '');
+        const domainBoundariesArray: string[] = domainBoundaries
+            .split(',')
+            .map(line => line.trim())
+            .filter(line => line !== '');
 
         setIsLoading(true);
 
         try {
             const promises = foldIds.map(foldId =>
-                startEmbeddings(foldId, batchName, dmsStartingSeqIdsArray, extraIDsArray, extraLayersArray, model, homologFasta)
+                startEmbeddings(foldId, batchName, dmsStartingSeqIdsArray, extraIDsArray, extraLayersArray, model, homologFasta, domainBoundariesArray)
             );
 
             await Promise.all(promises);
@@ -72,6 +79,7 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
             setDmsStartingSeqIds('WT');
             setExtraSequenceIDs('');
             setExtraLayers('');
+            setDomainBoundaries('');
             setModel('esmc_300m');
             setHomologFasta(null);
             setHomologFile(null);
@@ -245,6 +253,15 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
                     rows={1}
                     inputStyle={{ resize: 'vertical' }}
                 />
+
+                <TextAreaControl
+                    label="Domain Boundaries (Optional)"
+                    value={domainBoundaries}
+                    onChange={setDomainBoundaries}
+                    placeholder="Enter domain boundary positions like 80,150 for a 200AA protein with domains at positions 1-80, 81-150, 151-200"
+                    rows={1}
+                    inputStyle={{ resize: 'vertical' }}
+                />
             </Modal>
 
             {/* Detailed Help Modal */}
@@ -316,6 +333,17 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
                         showIcon
                         style={{ marginTop: '12px', marginBottom: '12px' }}
                     />
+
+                    <Title level={4}>Domain Boundaries (Optional)</Title>
+                    <Paragraph>
+                        Domain boundaries allow you to pool embeddings within protein domains instead of averaging across the entire protein:
+                    </Paragraph>
+                    <ul>
+                        <li><Text strong>Format:</Text> Comma-separated list of domain boundary positions (0-indexed)</li>
+                        <li><Text strong>Example:</Text> For a 200AA protein with domains at positions 1-80, 81-150, 151-200, enter: "80,150"</li>
+                        <li><Text strong>Result:</Text> Instead of one averaged embedding, you get concatenated embeddings from each domain</li>
+                        <li><Text strong>Use case:</Text> Preserves domain-specific information in multi-domain proteins</li>
+                    </ul>
 
                     <Title level={4}>Model Selection</Title>
                     <Paragraph>

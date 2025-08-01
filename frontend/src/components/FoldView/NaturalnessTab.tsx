@@ -156,6 +156,26 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
                             dataIndex: 'name',
                         },
                         {
+                            key: 'date',
+                            title: 'Date',
+                            width: 80,
+                            render: (_, naturalness) => {
+                                if (!naturalness.date_created) return "N/A";
+
+                                try {
+                                    const date = new Date(naturalness.date_created);
+                                    if (isNaN(date.getTime())) return "Invalid";
+
+                                    return new Intl.DateTimeFormat('en-US', {
+                                        dateStyle: "short",
+                                        timeZone: "America/Los_Angeles"
+                                    }).format(date);
+                                } catch (error) {
+                                    return "Error";
+                                }
+                            },
+                        },
+                        {
                             key: 'status',
                             title: 'Status',
                             render: (_, naturalness) => getNaturalnessStatus(naturalness, jobs),

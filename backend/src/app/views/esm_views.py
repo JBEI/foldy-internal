@@ -72,6 +72,7 @@ class CalculateEmbeddingsResource(Resource):
         extra_seq_ids_str: str = req.get("extra_seq_ids", "")
         dms_starting_seq_ids_str: str = req.get("dms_starting_seq_ids", "")
         extra_layers_str: str = req.get("extra_layers", "")
+        domain_boundaries_str: str = req.get("domain_boundaries", "")
         homolog_fasta: str = req.get("homolog_fasta", None)
 
         extra_seq_ids: list[str] = [
@@ -82,6 +83,9 @@ class CalculateEmbeddingsResource(Resource):
         ]
         extra_layers: list[str] = [
             layer.strip() for layer in extra_layers_str.split(",") if layer.strip()
+        ]
+        domain_boundaries: list[str] = [
+            boundary.strip() for boundary in domain_boundaries_str.split(",") if boundary.strip()
         ]
 
         if embedding_model not in ALLOWED_ESM_MODELS:
@@ -115,6 +119,7 @@ class CalculateEmbeddingsResource(Resource):
             extra_seq_ids=",".join(extra_seq_ids),
             dms_starting_seq_ids=",".join(dms_starting_seq_ids),
             extra_layers=",".join(extra_layers),
+            domain_boundaries=",".join(domain_boundaries) if domain_boundaries else None,
             homolog_fasta=homolog_fasta,
             invokation_id=new_invokation_id,
         )

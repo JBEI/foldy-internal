@@ -101,6 +101,7 @@ export interface Embedding {
     dms_starting_seq_ids: string | null;
     homolog_fasta: string | null;
     extra_layers: string | null;
+    domain_boundaries: string | null;
     output_fpath: string | null;
     output_fpath_computed: string;
     invokation_id: number | null;

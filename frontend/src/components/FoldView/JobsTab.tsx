@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Invokation } from "../../types/types";
 import { TabContainer, TableSection, SectionCard } from "../../util/tabComponents";
 import { AntTable, defaultExpandableContent } from "../../util/AntTable";
@@ -37,13 +37,24 @@ const JobsTab: React.FC<JobsTabProps> = ({ jobs }) => {
             : "NA";
     };
 
+    // Sort jobs by start time (newest first)
+    const sortedJobs = useMemo(() => {
+        if (!jobs) return [];
+        return [...jobs].sort((a, b) => {
+            if (!a.starttime && !b.starttime) return 0;
+            if (!a.starttime) return 1; // null values go to end
+            if (!b.starttime) return -1;
+            return new Date(b.starttime).getTime() - new Date(a.starttime).getTime();
+        });
+    }, [jobs]);
+
     if (!jobs) return null;
 
     return (
         <TabContainer>
             <TableSection title="Invokations">
                 <AntTable<Invokation>
-                    dataSource={jobs || []}
+                    dataSource={sortedJobs}
                     rowKey={(record) => `${record.job_id}_${record.id}`}
                     expandableContent={defaultExpandableContent}
                     columns={[
@@ -92,7 +103,7 @@ const JobsTab: React.FC<JobsTabProps> = ({ jobs }) => {
             </TableSection>
 
             {/* Job Logs */}
-            {[...jobs].map((job: Invokation) => (
+            {sortedJobs.map((job: Invokation) => (
                 <SectionCard
                     key={job.id || "jobid should not be null"}
                     style={{ marginBottom: '20px' }}

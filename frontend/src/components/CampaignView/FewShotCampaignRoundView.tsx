@@ -67,6 +67,7 @@ interface FewShotResultsContentProps {
     campaign: Campaign;
     setSelectedSubsequence: (selection: Selection | null) => void;
     buildSlate?: (seqIds: string[]) => void;
+    disableSlateBuilder?: boolean;
 }
 
 const FewShotResultsContent: React.FC<FewShotResultsContentProps> = ({
@@ -74,7 +75,8 @@ const FewShotResultsContent: React.FC<FewShotResultsContentProps> = ({
     fold,
     campaign,
     setSelectedSubsequence,
-    buildSlate
+    buildSlate,
+    disableSlateBuilder
 }) => {
     const [csvData, setCsvData] = useState<string | null>(null);
     const [debugData, setDebugData] = useState<any>(null);
@@ -136,6 +138,7 @@ const FewShotResultsContent: React.FC<FewShotResultsContentProps> = ({
                         setSelectedSubsequence={setSelectedSubsequence}
                         sortOptions={sortOptions}
                         onBuildSlate={buildSlate}
+                        disableSlateBuilder={disableSlateBuilder}
                     />
                 </div>
             )}
@@ -243,11 +246,6 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
                 autoSelections[key] = templateEmbeddings[0].id;
             }
         });
-
-        // Auto-select for activity measurements
-        if (allMatchingEmbeddings.length > 0 && !selectedEmbeddings['activity-measurements']) {
-            autoSelections['activity-measurements'] = allMatchingEmbeddings[0].id;
-        }
 
         if (Object.keys(autoSelections).length > 0) {
             setSelectedEmbeddings(prev => ({
@@ -481,19 +479,27 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
                     const selectedOption = options.find(opt => opt.value === selectedEmbeddings[record.key]);
                     const hoverText = selectedOption ? selectedOption.title || selectedOption.label : '';
 
+                    let startingValue: number | null = selectedEmbeddings[record.key];
+                    // Check if starting value exists in options
+                    if (startingValue && !options.find(opt => opt.value === startingValue)) {
+                        // If not found, show error and return null
+                        notify.error(`Embedding ${startingValue} is not a valid option. Setting to null.`);
+                        startingValue = null;
+                    }
+
                     return (
                         <div style={{ overflow: 'hidden' }}>
                             <Tooltip title={hoverText} placement="topLeft">
                                 <Select
                                     style={{ width: '100%' }}
                                     placeholder="Select embedding..."
-                                    value={selectedEmbeddings[record.key]}
+                                    value={startingValue}
                                     onChange={(value) => onEmbeddingChange(record.key, value, record)}
                                     options={options}
                                     showSearch
                                     optionFilterProp="label"
                                     dropdownStyle={{
-                                        maxWidth: '400px'
+                                        maxWidth: '600px'
                                     }}
                                 />
                             </Tooltip>
@@ -545,10 +551,15 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
         return (
             <Card>
                 <div style={{ marginBottom: '24px' }}>
-                    <Title level={4}>Step 1: Select Templates</Title>
+                    <Title level={4}>Step 1: Select Protein Templates</Title>
                     <Paragraph>
-                        Choose templates from previous rounds to use for few-shot learning.
-                        You can also add custom template sequences below.
+                        Choose protein templates to use in the next round. The <strong>few-shot model</strong> will be used to <strong>evaluate all
+                            possible single-mutants of the templates</strong> for testing in the next round.
+
+                        If you want to keep your model only considering single mutants, you can select just the WT template.
+                        If you want to stack only on the best performing mutant, you can just select the best performing mutant.
+
+                        You can also add a sequence that wasn't tested in a prior round.
                     </Paragraph>
                 </div>
 
@@ -676,6 +687,38 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
         };
     };
 
+    // Function to check if all requirements are satisfied
+    const areAllRequirementsSatisfied = () => {
+        // Check if naturalness run is selected and complete
+        if (!selectedNaturalnessRun) return false;
+        const selectedNaturalnessRunData = matchingNaturalnessRuns.find(run => run.id === selectedNaturalnessRun);
+        if (!selectedNaturalnessRunData) return false;
+        const naturalnessStatus = getNaturalnessStatus(selectedNaturalnessRunData, fold.jobs || null);
+        const naturalnessStatusDisplay = getStatusDisplay(naturalnessStatus);
+        if (naturalnessStatusDisplay.text !== 'Complete') return false;
+
+        // Check if all embeddings are selected and complete
+        const requiredEmbeddingKeys = [
+            'naturalness-warmstart',
+            ...selectedTemplates.map(template => `template-${template}`),
+            'activity-measurements'
+        ];
+
+        for (const key of requiredEmbeddingKeys) {
+            const selectedEmbeddingId = selectedEmbeddings[key];
+            if (!selectedEmbeddingId) return false;
+
+            const selectedEmbedding = allMatchingEmbeddings.find(e => e.id === selectedEmbeddingId);
+            if (!selectedEmbedding) return false;
+
+            const embeddingStatus = getEmbeddingStatus(selectedEmbedding, fold.jobs || null);
+            const embeddingStatusDisplay = getStatusDisplay(embeddingStatus);
+            if (embeddingStatusDisplay.text !== 'Complete') return false;
+        }
+
+        return true;
+    };
+
     const handleLaunchFewShotModal = () => {
         const template = createTemplateFewShot();
         setFewShotTemplate(template);
@@ -729,6 +772,7 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
                             campaign={campaign}
                             setSelectedSubsequence={() => { }} // TODO: Implement if needed
                             buildSlate={buildSlate}
+                            disableSlateBuilder={!!currentRound.slate_seq_ids}
                         />
                     ) : (
                         <div style={{ textAlign: 'center', padding: '40px 20px' }}>
@@ -858,7 +902,7 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
                                                             showSearch
                                                             optionFilterProp="label"
                                                             dropdownStyle={{
-                                                                maxWidth: '400px'
+                                                                maxWidth: '600px'
                                                             }}
                                                         />
                                                     </Tooltip>
@@ -995,9 +1039,14 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
                 </div>
 
                 <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-                    <Title level={4}>Ready to Run FewShot Prediction</Title>
+                    <Title level={4}>
+                        {areAllRequirementsSatisfied() ? 'Ready to Run FewShot Prediction' : 'Complete Requirements to Run FewShot Prediction'}
+                    </Title>
                     <Text type="secondary" style={{ display: 'block', marginBottom: '32px' }}>
-                        All requirements have been configured. Start the FewShot activity prediction to generate mutant recommendations.
+                        {areAllRequirementsSatisfied()
+                            ? 'All requirements have been configured. Start the FewShot activity prediction to generate mutant recommendations.'
+                            : 'Please complete all embedding selections and ensure the naturalness run is finished before starting FewShot prediction.'
+                        }
                     </Text>
 
                     <Button
@@ -1005,6 +1054,7 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
                         size="large"
                         icon={<PlusOutlined />}
                         onClick={handleLaunchFewShotModal}
+                        disabled={!areAllRequirementsSatisfied()}
                         style={{
                             backgroundColor: '#1890ff',
                             fontSize: '16px',
@@ -1019,7 +1069,7 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
 
 
             <EmbeddingModal
-                key={embeddingModalTemplate ? JSON.stringify(embeddingModalTemplate) : 'default'}
+                key={embeddingModalTemplate ? JSON.stringify(embeddingModalTemplate) : 'defaultEmbeddingModal'}
                 open={showEmbeddingModal}
                 onClose={handleEmbeddingModalClose}
                 foldIds={[campaign.fold_id]}
@@ -1028,7 +1078,7 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
             />
 
             <FewShotModal
-                key={fewShotTemplate ? JSON.stringify(fewShotTemplate) : 'default'}
+                key={fewShotTemplate ? JSON.stringify(fewShotTemplate) : 'defaultFewShotModal'}
                 open={showFewShotModal}
                 onClose={(createdFewShot?: any) => {
                     setShowFewShotModal(false);

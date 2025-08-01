@@ -97,7 +97,7 @@ const SlateBuilder: React.FC<SlateBuilderProps> = ({
         >
             <div style={{ marginBottom: '16px' }}>
                 <Text>
-                    Select the mutants you want to add to your slate. All mutants are selected by default.
+                    Finalize the slate for this round. Select the mutants you want to add to your slate. All mutants are selected by default.
                 </Text>
             </div>
 

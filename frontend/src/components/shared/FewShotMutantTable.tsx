@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import Papa from 'papaparse';
 import { Select, Spin } from 'antd';
-import SlateTable, { SlateTableColumn } from './SlateTable';
+import ProposedSlateTable, { ProposedSlateTableColumn } from './ProposedSlateTable';
 import { Selection } from '../FoldView/StructurePane';
 import { notify } from '../../services/NotificationService';
 import Plot from 'react-plotly.js';
@@ -23,6 +23,7 @@ interface FewShotMutantTableProps {
     setSelectedSubsequence: (selection: Selection | null) => void;
     sortOptions: { [key: string]: string[] } | null;
     onBuildSlate?: (seqIds: string[]) => void;
+    disableSlateBuilder?: boolean;
 }
 
 const parseCsvDataIntoRowData = (
@@ -116,6 +117,7 @@ const FewShotMutantTable: React.FC<FewShotMutantTableProps> = ({
     setSelectedSubsequence,
     sortOptions,
     onBuildSlate,
+    disableSlateBuilder,
 }) => {
     if (!predictedMutantCsvData) {
         return <div style={{ textAlign: 'center', padding: '60px 0' }}>
@@ -188,7 +190,7 @@ const FewShotMutantTable: React.FC<FewShotMutantTableProps> = ({
 
     if (!tableData) return null;
 
-    const columns: SlateTableColumn[] = [
+    const columns: ProposedSlateTableColumn[] = [
         {
             key: "order",
             name: "Order",
@@ -288,7 +290,7 @@ const FewShotMutantTable: React.FC<FewShotMutantTableProps> = ({
                 </Select>
             </div>
 
-            <SlateTable
+            <ProposedSlateTable
                 description="These are the top mutants selected by the model for evaluating in the next round. Here you can view the mean activity prediction of the mutants (unitless), click the sequence ID to highlight the residues on the structure, and view the standard deviation of the ensemble of predictors, which is a measure of model confidence in these predictions. Try changing the sort order to cluster, to simplify the slate self-correlation heatmap!"
                 data={tableData}
                 columns={columns}
@@ -297,7 +299,9 @@ const FewShotMutantTable: React.FC<FewShotMutantTableProps> = ({
                 enableRowSelection={true}
                 enableRowClick={true}
                 onSelectedRowsChange={setSelectedSeqIds}
+                showHighlightOnModelButton={false}
                 showSlateBuilderButton={!!onBuildSlate}
+                disableSlateBuilderButton={disableSlateBuilder}
                 onBuildSlate={onBuildSlate}
             />
 

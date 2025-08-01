@@ -125,6 +125,7 @@ embedding_fields = ns.model(
         "dms_starting_seq_ids": fields.String(required=False),
         "homolog_fasta": fields.String(required=False),
         "extra_layers": fields.String(required=False),
+        "domain_boundaries": fields.String(required=False),
         "output_fpath": fields.String(required=False),
         "output_fpath_computed": fields.String(required=False),
         "invokation_id": fields.Integer(required=False),

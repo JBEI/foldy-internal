@@ -120,6 +120,11 @@ def get_esm_embeddings(
             if embed_record.extra_layers
             else []
         )
+        domain_boundaries = (
+            [int(ii) for ii in embed_record.domain_boundaries.split(",")]
+            if embed_record.domain_boundaries
+            else []
+        )
         homolog_fasta = embed_record.homolog_fasta
 
         fold = embed_record.fold
@@ -159,7 +164,9 @@ def get_esm_embeddings(
         foldy_esm_client = FoldyESMClient.get_client(embedding_model)
 
         def get_embedding_dict(seq_id, seq):
-            embedding_list = foldy_esm_client.embed(seq, extra_layers=extra_layers)
+            embedding_list = foldy_esm_client.embed(
+                seq, extra_layers=extra_layers, domain_boundaries=domain_boundaries
+            )
             output_dict = {
                 "seq_id": seq_id,
                 "seq": seq,

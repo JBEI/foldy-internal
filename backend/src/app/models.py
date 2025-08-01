@@ -242,6 +242,7 @@ class Embedding(PkModel):
     dms_starting_seq_ids = Column(db.String)
     homolog_fasta = Column(db.String, nullable=True)
     extra_layers = Column(db.String, nullable=True)
+    domain_boundaries = Column(db.String, nullable=True)
     output_fpath = Column(db.String, nullable=True)
     date_created = Column(db.DateTime(timezone=True), nullable=True, default=datetime.now(UTC))
 

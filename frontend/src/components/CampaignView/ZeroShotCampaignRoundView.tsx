@@ -160,6 +160,7 @@ const ZeroShotCampaignRoundView: React.FC<ZeroShotCampaignRoundViewProps> = ({
                             setSelectedSubsequence={() => { }} // TODO: implement if needed
                             runName={currentRound.naturalness_run.name}
                             onBuildSlate={buildSlate}
+                            disableSlateBuilder={!!currentRound.slate_seq_ids}
                         />
                     ) : (
                         <div style={{ textAlign: 'center', padding: '20px' }}>

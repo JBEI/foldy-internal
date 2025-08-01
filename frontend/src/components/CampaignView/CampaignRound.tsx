@@ -130,15 +130,32 @@ const CampaignRoundComponent: React.FC<CampaignRoundComponentProps> = ({
     };
 
     const handleSlateConfirm = async (selectedSeqIds: string[]) => {
-        try {
-            const slateSeqIdsString = selectedSeqIds.join(',');
-            await updateCampaignRound(campaign.id!, currentRound.id, { slate_seq_ids: slateSeqIdsString });
-            onRefresh();
-            notify.success(`Added ${selectedSeqIds.length} mutants to slate`);
-        } catch (error) {
-            notify.error('Failed to update slate');
-            console.error('Error updating slate:', error);
-        }
+        Modal.confirm({
+            title: 'Lock in Slate',
+            icon: <ExclamationCircleOutlined />,
+            width: 600,
+            content: (
+                <div>
+                    <p>Are you sure you want to lock in these <strong>{selectedSeqIds.length} mutants</strong> as your slate?</p>
+                    <p><strong>You cannot change the slate after it has been locked in.</strong> If you need to change the slate, you will need to restart the round.</p>
+                    <p><em>Note that you can test whatever mutants you want, you will not be limited to the slate.</em></p>
+                </div>
+            ),
+            okText: 'Lock in Slate',
+            okType: 'primary',
+            cancelText: 'Cancel',
+            onOk: async () => {
+                try {
+                    const slateSeqIdsString = selectedSeqIds.join(',');
+                    await updateCampaignRound(campaign.id!, currentRound.id, { slate_seq_ids: slateSeqIdsString });
+                    onRefresh();
+                    notify.success(`Added ${selectedSeqIds.length} mutants to slate`);
+                } catch (error) {
+                    notify.error('Failed to update slate');
+                    console.error('Error updating slate:', error);
+                }
+            }
+        });
     };
 
     const handleDeleteRound = () => {

@@ -7,7 +7,7 @@ import { ButtonGroup } from '../../util/tabComponents';
 import { notify } from '../../services/NotificationService';
 import { Button } from 'antd';
 
-export interface SlateTableColumn {
+export interface ProposedSlateTableColumn {
     key: string;
     name: string;
     sortable?: boolean;
@@ -17,15 +17,15 @@ export interface SlateTableColumn {
     formatter?: ({ row }: { row: any }) => React.ReactNode;
 }
 
-export interface SlateTableRow {
+export interface ProposedSlateTableRow {
     seqId: string;
     [key: string]: any;
 }
 
-interface SlateTableProps {
+interface ProposedSlateTableProps {
     description?: string;
-    data: SlateTableRow[];
-    columns: SlateTableColumn[];
+    data: ProposedSlateTableRow[];
+    columns: ProposedSlateTableColumn[];
     yamlConfig?: string | null;
     setSelectedSubsequence?: (selection: Selection | null) => void;
     enableRowSelection?: boolean; // deprecated
@@ -33,13 +33,15 @@ interface SlateTableProps {
     enableRowClick?: boolean;
     showCopyButton?: boolean;
     showHighlightButton?: boolean;
+    showHighlightOnModelButton?: boolean;
     showSlateBuilderButton?: boolean;
+    disableSlateBuilderButton?: boolean;
     onSelectedRowsChange?: (selectedSeqIds: string[]) => void;
     onBuildSlate?: (seqIds: string[]) => void;
     minHeight?: number;
 }
 
-const SlateTable: React.FC<SlateTableProps> = ({
+const ProposedSlateTable: React.FC<ProposedSlateTableProps> = ({
     description,
     data,
     columns,
@@ -50,7 +52,9 @@ const SlateTable: React.FC<SlateTableProps> = ({
     enableRowClick = false,
     showCopyButton = true,
     showHighlightButton = true,
+    showHighlightOnModelButton = true,
     showSlateBuilderButton = false,
+    disableSlateBuilderButton = false,
     onSelectedRowsChange,
     onBuildSlate,
     minHeight = 400,
@@ -200,7 +204,7 @@ const SlateTable: React.FC<SlateTableProps> = ({
                             Copy mutations to clipboard
                         </Button>
                     )}
-                    {showHighlightButton && setSelectedSubsequence && (
+                    {showHighlightButton && showHighlightOnModelButton && setSelectedSubsequence && (
                         <Button
                             type="primary"
                             onClick={highlightResiduesOnModel}
@@ -210,6 +214,8 @@ const SlateTable: React.FC<SlateTableProps> = ({
                     )}
                     {showSlateBuilderButton && onBuildSlate && (
                         <Button
+                            type="primary"
+                            disabled={disableSlateBuilderButton}
                             onClick={() => onBuildSlate(selectedSeqIds.length > 0 ? selectedSeqIds : data.map(row => row.seqId))}
                         >
                             Send mutants to slate builder
@@ -221,4 +227,4 @@ const SlateTable: React.FC<SlateTableProps> = ({
     );
 };
 
-export default SlateTable;
+export default ProposedSlateTable;

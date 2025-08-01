@@ -174,7 +174,7 @@ const MutantSlateCard: React.FC<MutantSlateCardProps> = ({
                             <div style={{ marginBottom: '12px' }}>
                                 <Text strong>Upload Activity Results</Text>
                                 <br />
-                                <Text type="secondary">Upload experimental results to see activity data in the table above</Text>
+                                <Text type="secondary">Upload experimental results. Note that <strong>you should include all compatible data thusfar, not just the mutants tested in this round!</strong> This data will be used to train a model in the next round.</Text>
                             </div>
                             <Form.Item style={{ marginBottom: 0 }}>
                                 <Upload
@@ -327,33 +327,7 @@ const MutantSlateCard: React.FC<MutantSlateCardProps> = ({
             ) : (
                 <div style={{ textAlign: 'center', padding: '40px 20px' }}>
                     <FaRocket style={{ fontSize: '48px', color: '#d9d9d9' }} />
-                    <Title level={5} type="secondary">No activity results yet</Title>
-                    <Text type="secondary" style={{ display: 'block', marginBottom: '20px' }}>
-                        Upload your experimental activity results to proceed to the next round.
-                    </Text>
-
-                    <Form layout="vertical">
-                        <Form.Item
-                            label="Activity Results File"
-                            help="Excel file with seq_id and activity columns"
-                        >
-                            <Upload
-                                beforeUpload={onActivityFileUpload}
-                                accept=".xlsx,.xls"
-                                maxCount={1}
-                                showUploadList={false}
-                            >
-                                <Button
-                                    icon={<UploadOutlined />}
-                                    loading={uploadingActivity}
-                                    type="primary"
-                                    size="large"
-                                >
-                                    {uploadingActivity ? 'Uploading...' : 'Upload Activity Results (.xlsx)'}
-                                </Button>
-                            </Upload>
-                        </Form.Item>
-                    </Form>
+                    <Title level={5} type="secondary">No slate selected yet.</Title>
                 </div>
             )}
         </Card>
