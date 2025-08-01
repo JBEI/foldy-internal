@@ -104,6 +104,8 @@ docopt==0.6.2
     # via dnachisel
 environs==14.1.1
     # via foldy-backend (backend/pyproject.toml)
+et-xmlfile==2.0.0
+    # via openpyxl
 executing==2.2.0
     # via stack-data
 fastapi==0.115.11
@@ -299,6 +301,7 @@ matplotlib==3.10.1
     # via
     #   foldy-backend (backend/pyproject.toml)
     #   seaborn
+    #   statannotations
 matplotlib-inline==0.1.7
     # via
     #   ipykernel
@@ -337,8 +340,11 @@ numpy==1.26.0
     #   scikit-learn
     #   scipy
     #   seaborn
+    #   statannotations
 nvidia-ml-py==12.575.51
     # via pynvml
+openpyxl==3.1.5
+    # via foldy-backend (backend/pyproject.toml)
 overrides==7.7.0
     # via jupyter-server
 packaging==25.0
@@ -356,6 +362,7 @@ pandas==2.2.2
     # via
     #   foldy-backend (backend/pyproject.toml)
     #   seaborn
+    #   statannotations
 pandocfilters==1.5.1
     # via nbconvert
 parso==0.8.4
@@ -506,8 +513,11 @@ scipy==1.15.2
     # via
     #   foldy-backend (backend/pyproject.toml)
     #   scikit-learn
+    #   statannotations
 seaborn==0.13.2
-    # via foldy-backend (backend/pyproject.toml)
+    # via
+    #   foldy-backend (backend/pyproject.toml)
+    #   statannotations
 send2trash==1.8.3
     # via jupyter-server
 six==1.17.0
@@ -527,6 +537,8 @@ stack-data==0.6.3
     # via ipython
 starlette==0.46.2
     # via fastapi
+statannotations==0.7.2
+    # via foldy-backend (backend/pyproject.toml)
 tenacity==9.0.0
     # via foldy-backend (backend/pyproject.toml)
 terminado==0.18.1

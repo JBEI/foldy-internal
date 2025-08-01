@@ -20,7 +20,7 @@ const ESM_MODELS = [
     { value: 'esm1v_t33_650M_UR90S_3', label: 'ESM-1v-3 (650M parameters)' },
     { value: 'esm1v_t33_650M_UR90S_4', label: 'ESM-1v-4 (650M parameters)' },
     { value: 'esm1v_t33_650M_UR90S_5', label: 'ESM-1v-5 (650M parameters)' },
-    { value: 'esm1v', label: 'ESM-1v' },
+    { value: 'esm1v_t33_650M_UR90S_ensemble', label: 'ESM-1v' },
 ];
 
 interface ESMModelPickerProps {

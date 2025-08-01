@@ -1,16 +1,16 @@
 import React from 'react';
 import { Modal, Typography, Space, Tag } from 'antd';
-import { Logit } from '../../types/types';
+import { Naturalness } from '../../types/types';
 
 const { Text } = Typography;
 
-interface LogitParametersModalProps {
+interface NaturalnessParametersModalProps {
     open: boolean;
     onClose: () => void;
-    logit: Logit | null;
+    logit: Naturalness | null;
 }
 
-export const LogitParametersModal: React.FC<LogitParametersModalProps> = ({
+export const LogitParametersModal: React.FC<NaturalnessParametersModalProps> = ({
     open,
     onClose,
     logit

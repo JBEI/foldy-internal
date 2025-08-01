@@ -37,7 +37,7 @@ from app.helpers.sequence_util import (
     process_and_validate_evolve_input_files,
     seq_id_to_seq,
 )
-from app.models import Dock, Embedding, Evolution, Fold, Invokation, Logit
+from app.models import Dock, Embedding, FewShot, Fold, Invokation, Naturalness
 
 
 def load_fasta_to_dict(homolog_fasta: str) -> dict[str, str]:
@@ -214,30 +214,35 @@ def get_esm_embeddings(
             except Exception as e:
                 logging.error(f"Error writing homolog fasta to file: {e}")
 
+        embed_record.output_fpath = embedding_path
+        embed_record.save()
 
-def get_esm_logits(logit_id: int):
-    """Compute the ESM logits and store them with the storage manager.
+
+def get_esm_naturalness(naturalness_id: int):
+    """Compute the ESM naturalness and store them with the storage manager.
 
     Arguments:
-        logit_id: ID of the logit record to run.
+        naturalness_id: ID of the naturalness record to run.
     """
-    logit_record = Logit.get_by_id(logit_id)
-    if not logit_record:
-        raise KeyError(f"Logit ID {logit_id} not found!")
+    naturalness_record = Naturalness.get_by_id(naturalness_id)
+    if not naturalness_record:
+        raise KeyError(f"Naturalness ID {naturalness_id} not found!")
 
-    logit_name = logit_record.name
-    logit_model = logit_record.logit_model
-    fold = logit_record.fold
+    naturalness_name = naturalness_record.name
+    naturalness_model = naturalness_record.logit_model
+    fold = naturalness_record.fold
     if not fold:
-        raise KeyError(f"Logit ID {logit_id} ({logit_name}) does not have an associated fold!")
-    invokation = Invokation.get_by_id(logit_record.invokation_id)
+        raise KeyError(
+            f"Naturalness ID {naturalness_id} ({naturalness_name}) does not have an associated fold!"
+        )
+    invokation = Invokation.get_by_id(naturalness_record.invokation_id)
     if not invokation:
         raise KeyError(
-            f"Logit ID {logit_id} ({logit_name}) does not have an associated invokation!"
+            f"Naturalness ID {naturalness_id} ({naturalness_name}) does not have an associated invokation!"
         )
 
     with LoggingRecorder(invokation):
-        logging.info("Starting logit...")
+        logging.info("Starting naturalness...")
 
         fsm = FoldStorageManager()
         fsm.setup()
@@ -253,10 +258,10 @@ def get_esm_logits(logit_id: int):
         else:
             protein_input = boltz_yaml_helper.get_protein_sequences()[0][1]
 
-        get_depth_two_logits = logit_record.get_depth_two_logits or False
+        get_depth_two_logits = naturalness_record.get_depth_two_logits or False
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            if logit_record.use_structure:
+            if naturalness_record.use_structure:
                 pdb_binary = fsm.storage_manager.get_binary(fold.id, "ranked_0.cif")
                 with open(os.path.join(temp_dir, "ranked_0.cif"), "wb") as f:
                     f.write(pdb_binary)
@@ -264,7 +269,7 @@ def get_esm_logits(logit_id: int):
             else:
                 cif_file_path = None
 
-            if logit_model == "esm1v_t33_650M_UR90S_ensemble":
+            if naturalness_model == "esm1v_t33_650M_UR90S_ensemble":
                 logits_dicts_list = []
                 melted_df_list = []
                 for ii in range(1, 6):
@@ -278,7 +283,7 @@ def get_esm_logits(logit_id: int):
                 melted_df = pd.concat(melted_df_list)
             else:
                 logits_json, melted_df = get_naturalness(
-                    protein_input, logit_model, get_depth_two_logits, cif_file_path
+                    protein_input, naturalness_model, get_depth_two_logits, cif_file_path
                 )
 
         melted_csv_buffer = StringIO()
@@ -286,28 +291,32 @@ def get_esm_logits(logit_id: int):
         melted_csv_string = melted_csv_buffer.getvalue()
 
         # Save both formats using FoldStorageManager
-        logging.info("Saving logits to storage")
-        logits_path = f"naturalness/logits_{logit_name}.json"
-        melted_path = f"naturalness/logits_{logit_name}_melted.csv"
+        logging.info("Saving naturalness to storage")
+        logits_path = f"naturalness/naturalness_{naturalness_name}.json"
+        melted_path = f"naturalness/naturalness_{naturalness_name}_melted.csv"
 
         fsm.storage_manager.write_file(fold.id, logits_path, logits_json)
         fsm.storage_manager.write_file(fold.id, melted_path, melted_csv_string)
 
-        logging.info("Logits computation and storage complete")
+        # Update the naturalness record with the output file path
+        naturalness_record.output_fpath = melted_path
+        naturalness_record.save()
+
+        logging.info("Naturalness computation and storage complete")
 
 
-def finetune_esm_model(evolve_id: int):
+def finetune_esm_model(few_shot_id: int):
     """Run the evolvepro workflow."""
 
-    evolve = Evolution.get_by_id(evolve_id)
-    if not evolve:
-        raise BadRequest(f"Evolution {evolve_id} not found")
-    fold = Fold.get_by_id(evolve.fold_id)
+    few_shot = FewShot.get_by_id(few_shot_id)
+    if not few_shot:
+        raise BadRequest(f"FewShot {few_shot_id} not found")
+    fold = Fold.get_by_id(few_shot.fold_id)
     if not fold:
-        raise BadRequest(f"Fold {evolve.fold_id} not found")
-    invokation = Invokation.get_by_id(evolve.invokation_id)
+        raise BadRequest(f"Fold {few_shot.fold_id} not found")
+    invokation = Invokation.get_by_id(few_shot.invokation_id)
     if not invokation:
-        raise BadRequest(f"Invokation {evolve.invokation_id} not found")
+        raise BadRequest(f"Invokation {few_shot.invokation_id} not found")
 
     with LoggingRecorder(invokation):
         logging.info("Starting finetuning...")
@@ -330,10 +339,10 @@ def finetune_esm_model(evolve_id: int):
         fsm.setup()
 
         # 1. Get the activity file.
-        evolve_directory = Path("evolve") / evolve.name
-        activity_file_path = evolve_directory / "activity.xlsx"
+        few_shot_directory = Path("few_shots") / few_shot.name
+        activity_file_path = few_shot_directory / "activity.xlsx"
         logging.info(f"Getting the activity file {activity_file_path}")
-        activity_file = fsm.storage_manager.get_binary(evolve.fold_id, str(activity_file_path))
+        activity_file = fsm.storage_manager.get_binary(few_shot.fold_id, str(activity_file_path))
         raw_activity_df = pd.read_excel(BytesIO(activity_file))
 
         # 3. Process the activity and embedding data.
@@ -377,7 +386,7 @@ def finetune_esm_model(evolve_id: int):
 
         epochs = 10
         learning_rate = 3e-4
-        possible_params = evolve.name.split("_")
+        possible_params = few_shot.name.split("_")
         for possible_param in possible_params:
             parts = possible_param.split("=")
             if len(parts) == 2:
@@ -389,7 +398,7 @@ def finetune_esm_model(evolve_id: int):
 
         # Save model outputs
         padded_fold_id = "%06d" % fold.id
-        model_dir = f"evolve/{evolve.name}/model"
+        model_dir = f"few_shots/{few_shot.name}/model"
 
         # Declare these outside the with block
         tokenizer = None
@@ -403,7 +412,7 @@ def finetune_esm_model(evolve_id: int):
 
             # Example: enable ranking loss
             tokenizer, model, history = train_per_protein(
-                checkpoint=evolve.finetuning_model_checkpoint,
+                checkpoint=few_shot.finetuning_model_checkpoint,
                 train_df=train_df,
                 valid_df=valid_df,
                 device=torch.device("cuda" if gpu_available else "cpu"),
@@ -437,7 +446,7 @@ def finetune_esm_model(evolve_id: int):
         # Score sequences and save results
         logging.info(f"Scoring {len(dms_seq_ids)} sequences")
         scores_df = score_sequences(model, tokenizer, wt_aa_seq, dms_seq_ids)
-        scores_fpath = f"evolve/{evolve.name}/scores.csv"
+        scores_fpath = f"few_shots/{few_shot.name}/scores.csv"
         logging.info(f"Saving scores to {scores_fpath}")
         scores_csv = scores_df.to_csv(index=False)
         fsm.storage_manager.write_file(fold.id, scores_fpath, scores_csv)

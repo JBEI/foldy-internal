@@ -116,3 +116,40 @@ export const bulkAddTag = async (foldRange: string, newTag: string): Promise<any
   );
   return response.data;
 };
+
+/**
+ * Populates output_fpath fields for existing naturalness, embedding, and few shot records
+ */
+export const populateOutputFpathFields = async (): Promise<{
+  naturalness_updated: number;
+  embedding_updated: number;
+  few_shot_updated: number;
+  total_updated: number;
+}> => {
+  const response = await axiosInstance.post('/api/populate_output_fpath_fields', {});
+  return response.data;
+};
+
+/**
+ * Backfill date_created fields for existing naturalness, embedding, and few shot records
+ */
+export const backfillDateCreated = async (): Promise<{
+  naturalness_updated: number;
+  embedding_updated: number;
+  few_shot_updated: number;
+  total_updated: number;
+}> => {
+  const response = await axiosInstance.post('/api/backfill_date_created', {});
+  return response.data;
+};
+
+/**
+ * Backfills input_activity_fpath for FewShot records
+ */
+export const backfillInputActivityFpath = async (): Promise<{
+  few_shot_updated: number;
+  total_updated: number;
+}> => {
+  const response = await axiosInstance.post('/api/backfill_input_activity_fpath', {});
+  return response.data;
+};

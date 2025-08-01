@@ -98,8 +98,8 @@ dock_fields = ns.model(
     },
 )
 
-logit_fields = ns.model(
-    "LogitFields",
+naturalness_fields = ns.model(
+    "NaturalnessFields",
     {
         "id": fields.Integer(required=False),
         "name": fields.String(required=True),
@@ -107,7 +107,10 @@ logit_fields = ns.model(
         "logit_model": fields.String(required=True),
         "use_structure": fields.Boolean(required=False),
         "get_depth_two_logits": fields.Boolean(required=False),
+        "output_fpath": fields.String(required=False),
+        "output_fpath_computed": fields.String(required=False),
         "invokation_id": fields.Integer(required=False),
+        "date_created": fields.DateTime(required=False),
     },
 )
 
@@ -122,12 +125,15 @@ embedding_fields = ns.model(
         "dms_starting_seq_ids": fields.String(required=False),
         "homolog_fasta": fields.String(required=False),
         "extra_layers": fields.String(required=False),
+        "output_fpath": fields.String(required=False),
+        "output_fpath_computed": fields.String(required=False),
         "invokation_id": fields.Integer(required=False),
+        "date_created": fields.DateTime(required=False),
     },
 )
 
-evolution_fields = ns.model(
-    "EvolutionFields",
+few_shot_fields = ns.model(
+    "FewShotFields",
     {
         "id": fields.Integer(required=False),
         "name": fields.String(required=False),
@@ -139,6 +145,10 @@ evolution_fields = ns.model(
         "invokation_id": fields.Integer(required=False),
         "few_shot_params": fields.String(),
         "num_mutants": fields.Integer(required=False),
+        "input_activity_fpath": fields.String(required=False, nullable=True),
+        "output_fpath": fields.String(required=False, nullable=True),
+        "output_fpath_computed": fields.String(required=False, nullable=True),
+        "date_created": fields.DateTime(required=False, nullable=True),
     },
 )
 
@@ -172,10 +182,12 @@ fold_fields = ns.model(
                 [] if log_getattr(x, "_skip_embedded_fields", False, "docks") else x.docks
             ),
         ),
-        "logits": fields.List(
-            fields.Nested(logit_fields),
+        "naturalness_runs": fields.List(
+            fields.Nested(naturalness_fields),
             attribute=lambda x: (
-                [] if log_getattr(x, "_skip_embedded_fields", False, "logits") else x.logits
+                []
+                if log_getattr(x, "_skip_embedded_fields", False, "naturalness_runs")
+                else x.naturalness_runs
             ),
         ),
         "embeddings": fields.List(
@@ -184,10 +196,10 @@ fold_fields = ns.model(
                 [] if log_getattr(x, "_skip_embedded_fields", False, "embeddings") else x.embeddings
             ),
         ),
-        "evolutions": fields.List(
-            fields.Nested(evolution_fields),
+        "few_shots": fields.List(
+            fields.Nested(few_shot_fields),
             attribute=lambda x: (
-                [] if log_getattr(x, "_skip_embedded_fields", False, "evolutions") else x.evolutions
+                [] if log_getattr(x, "_skip_embedded_fields", False, "few_shots") else x.few_shots
             ),
         ),
         # Old AF2 inputs.
@@ -371,7 +383,10 @@ class TagsResource(Resource):
                         tag_info[tag]["contributors"].add(fold.user.name)
 
                     # Update most recent fold date for this tag
-                    if fold.create_date and fold.create_date > tag_info[tag]["most_recent_fold_date"]:
+                    if (
+                        fold.create_date
+                        and fold.create_date > tag_info[tag]["most_recent_fold_date"]
+                    ):
                         tag_info[tag]["most_recent_fold_date"] = fold.create_date
 
                     # Keep track of recent folds (limit to 5)

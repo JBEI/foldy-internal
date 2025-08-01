@@ -74,7 +74,7 @@ def register_extensions(app: Flask) -> None:
     class UserModelView(VerifiedModelView):
         column_list = ["email", "name", "created_at", "access_type", "num_folds", "attributes"]
         column_editable_list = ["created_at", "name", "access_type"]
-        column_sortable_list = ["email", "created_at", "access_type"]
+        column_sortable_list = ["email", "name", "created_at", "access_type"]
         column_searchable_list = ["email", "name", "access_type"]
         can_export = True
         page_size = 50
@@ -110,6 +110,20 @@ def register_extensions(app: Flask) -> None:
                 "style": "width: 100%;",
             }
         }
+
+        # Ensure user field is properly configured for editing
+        form_columns = [
+            "name",
+            "user",
+            "tagstring",
+            "create_date",
+            "af2_model_preset",
+            "disable_relaxation",
+            "sequence",
+            "yaml_config",
+            "diffusion_samples",
+            "public",
+        ]
 
         @staticmethod
         def _sequence_formatter(view: Any, context: Any, model: models.Fold, name: str) -> Markup:
@@ -166,7 +180,7 @@ def register_extensions(app: Flask) -> None:
             "bounding_box_radius_angstrom",
         ]
 
-    class LogitModelView(VerifiedModelView):
+    class NaturalnessModelView(VerifiedModelView):
         column_list = [
             "id",
             "name",
@@ -174,9 +188,11 @@ def register_extensions(app: Flask) -> None:
             "fold.user",
             "logit_model",
             "use_structure",
+            "date_created",
         ]
-        column_sortable_list = ["id", "name", "logit_model", "use_structure"]
+        column_sortable_list = ["id", "name", "logit_model", "use_structure", "date_created"]
         column_searchable_list = ["name", "logit_model"]
+        column_editable_list = ["date_created"]
 
     class EmbeddingModelView(VerifiedModelView):
         column_list = [
@@ -188,9 +204,11 @@ def register_extensions(app: Flask) -> None:
             "extra_seq_ids",
             "dms_starting_seq_ids",
             "extra_layers",
+            "date_created",
         ]
-        column_sortable_list = ["id", "name", "embedding_model"]
+        column_sortable_list = ["id", "name", "embedding_model", "date_created"]
         column_searchable_list = ["name", "embedding_model"]
+        column_editable_list = ["date_created"]
 
         # Add custom CSS to truncate/scroll long text in extra_seq_ids column
         column_formatters = {
@@ -203,7 +221,7 @@ def register_extensions(app: Flask) -> None:
             )
         }
 
-    class EvolutionModelView(VerifiedModelView):
+    class FewShotModelView(VerifiedModelView):
         column_list = [
             "id",
             "name",
@@ -212,17 +230,46 @@ def register_extensions(app: Flask) -> None:
             "mode",
             "embedding_files",
             "finetuning_model_checkpoint",
+            "date_created",
         ]
-        column_sortable_list = ["id", "name"]
+        column_sortable_list = ["id", "name", "date_created"]
         column_searchable_list = ["name"]
+        column_editable_list = ["date_created"]
+
+    class CampaignModelView(VerifiedModelView):
+        column_list = [
+            "id",
+            "name",
+            "fold",
+            "fold.user",
+            "description",
+            "created_at",
+        ]
+        column_sortable_list = ["id", "name", "created_at"]
+        column_searchable_list = ["name", "description"]
+        column_editable_list = ["name", "description"]
+
+    class CampaignRoundModelView(VerifiedModelView):
+        column_list = [
+            "id",
+            "campaign",
+            "campaign.name",
+            "round_number",
+            "date_started",
+        ]
+        column_sortable_list = ["id", "round_number", "date_started"]
+        column_searchable_list = ["round_number"]
+        column_editable_list = ["round_number", "date_started"]
 
     admin.add_view(UserModelView(models.User, db.session))
     admin.add_view(FoldModelView(models.Fold, db.session))
     admin.add_view(InvokationModelView(models.Invokation, db.session))
     admin.add_view(DockModelView(models.Dock, db.session))
-    admin.add_view(LogitModelView(models.Logit, db.session))
+    admin.add_view(NaturalnessModelView(models.Naturalness, db.session))
     admin.add_view(EmbeddingModelView(models.Embedding, db.session))
-    admin.add_view(EvolutionModelView(models.Evolution, db.session))
+    admin.add_view(FewShotModelView(models.FewShot, db.session))
+    admin.add_view(CampaignModelView(models.Campaign, db.session))
+    admin.add_view(CampaignRoundModelView(models.CampaignRound, db.session))
     admin.init_app(app)
     db.init_app(app)
     migrate.init_app(app, db)
@@ -257,8 +304,9 @@ def create_app(config_object: str = "settings") -> Flask:
     jwt = JWTManager(app)
 
     from app.views.admin_views import ns as admin_views_ns
+    from app.views.campaign_views import ns as campaign_views_ns
     from app.views.esm_views import ns as esm_views_ns
-    from app.views.evolve_views import ns as evolve_views_ns
+    from app.views.few_shot_views import ns as few_shot_views_ns
     from app.views.file_views import ns as file_views_ns
     from app.views.login_views import ns as login_views_ns
     from app.views.login_views import oauth
@@ -302,9 +350,10 @@ def create_app(config_object: str = "settings") -> Flask:
 
     api.add_namespace(login_views_ns, "/api")
     api.add_namespace(admin_views_ns, "/api")
+    api.add_namespace(campaign_views_ns, "/api")
     api.add_namespace(file_views_ns, "/api")
     api.add_namespace(esm_views_ns, "/api")
-    api.add_namespace(evolve_views_ns, "/api")
+    api.add_namespace(few_shot_views_ns, "/api")
     api.add_namespace(other_views_ns, "/api")
 
     api.init_app(app)

@@ -1,9 +1,12 @@
 # We use the same CUDA image in all our Dockerfiles.
 FROM nvidia/cuda:12.2.0-devel-ubuntu20.04
 
+COPY worker/scripts/base_setup.sh /scripts/base_setup.sh
+RUN /scripts/base_setup.sh
+
 COPY backend/requirements.txt /backend/
-COPY worker/scripts/setup.sh /scripts/setup.sh
-RUN /scripts/setup.sh
+COPY worker/scripts/conda_env_setup.sh /scripts/conda_env_setup.sh
+RUN /scripts/conda_env_setup.sh
 
 ENV APP_HOME /src
 WORKDIR $APP_HOME

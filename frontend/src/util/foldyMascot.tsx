@@ -37,7 +37,7 @@ const spinningStyles = `
         left: -300px;
     }
     100% {
-        left: 100%;
+        left: 110%;
     }
 }
 

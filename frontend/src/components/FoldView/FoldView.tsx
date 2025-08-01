@@ -2,7 +2,7 @@ import jquery from "jquery";
 import React, { Component } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import UIkit from "uikit";
-import { Button, Card, Typography } from 'antd';
+import { Button, Card, Typography, Modal, Input } from 'antd';
 
 const { Title } = Typography;
 import { notify } from "../../services/NotificationService";
@@ -17,7 +17,7 @@ import SequenceTab from "./SequenceTab";
 import fileDownload from "js-file-download";
 import NaturalnessTab from "./NaturalnessTab";
 import EmbedTab from "./EmbedTab";
-import EvolveTab from "./EvolveTab";
+import FewShotTab from "./FewShotTab";
 import { Annotations, RenderableAnnotations, FileInfo, Fold, Invokation } from "../../types/types";
 import { getFile, getFileList } from "../../api/fileApi";
 import { getFold, updateFold } from "../../api/foldApi";
@@ -32,6 +32,7 @@ interface FoldProps {
     foldId: number;
     userType: string | null;
     navigate: ReturnType<typeof useNavigate>;
+    initialTabName?: string;
 }
 
 
@@ -54,11 +55,28 @@ interface FoldState {
 
     selectedSubsequence: Selection | null;
     currentFolderPath: string;
+    editNameModalVisible: boolean;
+    editNameValue: string;
+    currentTab: string;
 }
 
 // From UIkit's definition of a "medium" window: https://getuikit.com/docs/visibility
 const WINDOW_WIDTH_FOR_SPLIT_SCREEN = 960;
 const MAX_JOBS_TO_REFRESH = 5;
+
+// Tab name mapping
+const TAB_NAMES = ['inputs', 'logs', 'files', 'pae', 'dock', 'naturalness', 'embed', 'fewshot', 'actions'] as const;
+type TabName = typeof TAB_NAMES[number];
+
+const getTabIndex = (tabName: string | undefined): number => {
+    if (!tabName) return 0;
+    const index = TAB_NAMES.indexOf(tabName.toLowerCase() as TabName);
+    return index >= 0 ? index : 0;
+};
+
+const getTabName = (index: number): TabName => {
+    return TAB_NAMES[index] || 'inputs';
+};
 class InternalFoldView extends Component<FoldProps, FoldState> {
     interval: NodeJS.Timeout | null = null;
     refreshTimeout: NodeJS.Timeout | null = null;
@@ -83,6 +101,9 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
 
             selectedSubsequence: null,
             currentFolderPath: '/',
+            editNameModalVisible: false,
+            editNameValue: '',
+            currentTab: getTabName(getTabIndex(props.initialTabName)),
         };
     }
 
@@ -96,23 +117,44 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
         }
     };
 
-    openUpLogsForJob = (jobId?: number) => {
+    switchToTab = (tabIndex: number, scrollToJobId?: number) => {
+        const tabName = getTabName(tabIndex);
+        const newUrl = `/fold/${this.props.foldId}/${tabName}${scrollToJobId ? `#logs_${scrollToJobId}` : ''}`;
+
+        // Update the URL
+        this.props.navigate(newUrl, { replace: true });
+
+        // Update local state
+        this.setState({ currentTab: tabName });
+
+        // Switch the UIkit tab
         const tabElement = document.getElementById('tab');
         if (tabElement) {
-            // 1 is the index of the Logs tab
-            UIkit.tab(tabElement).show(1);
-
-            // If a jobId is provided, we can add logic to scroll to that specific job
-            if (jobId && this.state.jobs) {
-                // Add a small delay to ensure the tab has switched
-                setTimeout(() => {
-                    const jobElement = document.getElementById(`logs_${jobId.toString()}`);
-                    if (jobElement) {
-                        jobElement.scrollIntoView({ behavior: 'smooth' });
-                    }
-                }, 100);
-            }
+            UIkit.tab(tabElement).show(tabIndex);
         }
+
+        // If a jobId is provided, scroll to that specific job
+        if (scrollToJobId && this.state.jobs) {
+            // Add a small delay to ensure the tab has switched
+            setTimeout(() => {
+                const jobElement = document.getElementById(`logs_${scrollToJobId.toString()}`);
+                if (jobElement) {
+                    jobElement.scrollIntoView({ behavior: 'smooth' });
+                }
+            }, 100);
+        }
+    }
+
+    handleTabClick = (tabIndex: number) => {
+        const tabName = getTabName(tabIndex);
+        const newUrl = `/fold/${this.props.foldId}/${tabName}`;
+        this.props.navigate(newUrl, { replace: true });
+        this.setState({ currentTab: tabName });
+    }
+
+    openUpLogsForJob = (jobId?: number) => {
+        // 1 is the index of the Logs tab
+        this.switchToTab(1, jobId);
     }
 
     refreshFoldDataFromBackend = (): Promise<void> => {
@@ -238,6 +280,31 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
         // ReactSequenceViewer requires jQuery, and who are we to deny them?
         // @ts-ignore
         window.$ = window.jQuery = jquery;
+
+        // Set initial tab based on URL
+        const initialTabIndex = getTabIndex(this.props.initialTabName);
+        setTimeout(() => {
+            const tabElement = document.getElementById('tab');
+            if (tabElement) {
+                UIkit.tab(tabElement).show(initialTabIndex);
+            }
+
+            // Handle hash fragment for job logs
+            if (window.location.hash) {
+                const match = window.location.hash.match(/#logs_(\d+)/);
+                if (match) {
+                    const jobId = parseInt(match[1]);
+                    setTimeout(() => {
+                        const jobElement = document.getElementById(`logs_${jobId}`);
+                        if (jobElement) {
+                            jobElement.scrollIntoView({ behavior: 'smooth' });
+                        }
+                    }, 200);
+                }
+            }
+        }, 100);
+
+        // Note: Tab URL updates are now handled by direct click handlers on tab links
 
         // @ts-ignore
         UIkit.util.on(document, "beforeshow", "#paeli", (e: any) =>
@@ -373,35 +440,35 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                 }}
             >
                 <li>
-                    <a>Inputs</a>
+                    <a onClick={() => this.handleTabClick(0)}>Inputs</a>
                 </li>
                 <li>
-                    <a>Logs</a>
+                    <a onClick={() => this.handleTabClick(1)}>Logs</a>
                 </li>
                 <li>
-                    <a>Files</a>
+                    <a onClick={() => this.handleTabClick(2)}>Files</a>
                 </li>
                 {/* TODO(jbr): Figure out why we can't pass displayStructure here... */}
                 <li>
-                    <a>PAE</a>
+                    <a onClick={() => this.handleTabClick(3)}>PAE</a>
                 </li>
                 {/* <li>
                     <a>Contacts</a>
                 </li> */}
                 <li>
-                    <a>Dock</a>
+                    <a onClick={() => this.handleTabClick(4)}>Dock</a>
                 </li>
                 <li>
-                    <a>Naturalness</a>
+                    <a onClick={() => this.handleTabClick(5)}>Naturalness</a>
                 </li>
                 <li>
-                    <a>Embed</a>
+                    <a onClick={() => this.handleTabClick(6)}>Embed</a>
                 </li>
                 <li>
-                    <a>Evolve</a>
+                    <a onClick={() => this.handleTabClick(7)}>FewShot</a>
                 </li>
                 <li>
-                    <a>Actions</a>
+                    <a onClick={() => this.handleTabClick(8)}>Actions</a>
                 </li>
             </ul>
         );
@@ -486,13 +553,13 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                     />
                 </li>
 
-                <li key="Logitli">
+                <li key="Naturalnessli">
                     <NaturalnessTab
                         foldId={this.props.foldId}
                         foldName={this.state.foldData?.name || null}
                         yamlConfig={this.state.foldData?.yaml_config || null}
                         jobs={this.state.jobs}
-                        logits={this.state.foldData?.logits || null}
+                        logits={this.state.foldData?.naturalness_runs || null}
                         setSelectedSubsequence={this.setSelectedSubsequence}
                         openUpLogsForJob={this.openUpLogsForJob}
                     />
@@ -508,13 +575,13 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                     />
                 </li>
 
-                <li key="Evolveli">
-                    <EvolveTab
+                <li key="FewShotli">
+                    <FewShotTab
                         foldId={this.props.foldId}
                         yamlConfig={this.state.foldData?.yaml_config || null}
                         jobs={this.state.jobs}
                         files={this.state.files}
-                        evolutions={this.state.foldData?.evolutions || null}
+                        evolutions={this.state.foldData?.few_shots || null}
                         openUpLogsForJob={this.openUpLogsForJob}
                         setSelectedSubsequence={this.setSelectedSubsequence}
                     />
@@ -574,7 +641,14 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                     {[...(this.state.foldData?.jobs || [])].map((job: Invokation) => {
                         // If it's (dock, embedding, evolve) and it's not running or queued, don't show it.
                         if (
-                            (job.type?.startsWith("dock_") || job.type?.startsWith("embed_") || job.type?.startsWith("evolve_") || job.type?.startsWith("logits_")) &&
+                            (
+                                job.type?.startsWith("dock_") ||
+                                job.type?.startsWith("embed_") ||
+                                job.type?.startsWith("evolve_") ||
+                                job.type?.startsWith("logits_") ||
+                                job.type?.startsWith("few_shot_") ||
+                                job.type?.startsWith("naturalness_")
+                            ) &&
                             (job.state !== 'running' && job.state !== 'queued')) {
                             return null;
                         }
@@ -609,6 +683,23 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         </div>
                     </div>
                 </div>
+
+                {/* Edit Name Modal */}
+                <Modal
+                    title="Edit Fold Name"
+                    open={this.state.editNameModalVisible}
+                    onOk={this.handleNameModalOk}
+                    onCancel={this.handleNameModalCancel}
+                    okText="Update"
+                    cancelText="Cancel"
+                >
+                    <Input
+                        placeholder="Enter new fold name"
+                        value={this.state.editNameValue}
+                        onChange={(e) => this.setState({ editNameValue: e.target.value })}
+                        onPressEnter={this.handleNameModalOk}
+                    />
+                </Modal>
             </div>
         );
     }
@@ -805,28 +896,40 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
     };
 
     setFoldName = () => {
-        UIkit.modal
-            .prompt("New fold name:", "")
-            .then((newFoldName: string | null) => {
-                if (!newFoldName) {
-                    return;
-                }
-                UIkit.modal
-                    .confirm(
-                        `Are you sure you want to rename this fold to ${newFoldName}?`
-                    )
-                    .then(() => {
-                        updateFold(this.props.foldId, { name: newFoldName }).then(
-                            () => {
-                                this.refreshFoldDataFromBackend();
-                                notify.info("Updated fold name.");
-                            },
-                            (e) => {
-                                notify.error(e);
-                            }
-                        );
-                    });
-            });
+        this.setState({
+            editNameModalVisible: true,
+            editNameValue: this.state.foldData?.name || ''
+        });
+    };
+
+    handleNameModalOk = () => {
+        const newFoldName = this.state.editNameValue.trim();
+        if (!newFoldName) {
+            this.setState({ editNameModalVisible: false });
+            return;
+        }
+
+        Modal.confirm({
+            title: 'Confirm Rename',
+            content: `Are you sure you want to rename this fold to "${newFoldName}"?`,
+            onOk: () => {
+                updateFold(this.props.foldId, { name: newFoldName }).then(
+                    () => {
+                        this.refreshFoldDataFromBackend();
+                        notify.info("Updated fold name.");
+                        this.setState({ editNameModalVisible: false });
+                    },
+                    (e) => {
+                        notify.error(e);
+                        this.setState({ editNameModalVisible: false });
+                    }
+                );
+            }
+        });
+    };
+
+    handleNameModalCancel = () => {
+        this.setState({ editNameModalVisible: false, editNameValue: '' });
     };
 
     setFoldModelPreset = () => {
@@ -938,7 +1041,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
 function FoldView(props: {
     userType: string | null;
 }) {
-    let { foldId } = useParams();
+    let { foldId, tabName } = useParams();
     const navigate = useNavigate();
 
     if (!foldId) {
@@ -949,6 +1052,7 @@ function FoldView(props: {
             foldId={parseInt(foldId)}
             userType={props.userType}
             navigate={navigate}
+            initialTabName={tabName}
         />
     );
 }

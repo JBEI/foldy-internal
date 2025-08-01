@@ -97,6 +97,7 @@ dependencies = [
     "dask==2025.2.0",
     "Pillow==11.1.0",
     "dnachisel",
+    "openpyxl",
 
     # Misc runtime utils
     "requests==2.32.3",
@@ -130,8 +131,10 @@ dev = [
     "Faker==37.0.0",
     "coverage==7.6.12",
     "pytest-watch==4.2.0",
+    "levenshtein==0.27.1",
 
     "pre-commit",
+    "pip-tools",
 
     # ML/GPU dependencies from worker conda environment (setup.sh)
     "torch>=2.2.0,<2.3.0",

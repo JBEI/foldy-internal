@@ -113,13 +113,7 @@ const StructurePane: React.FC<StructurePaneProps> = ({ cifString, pdbString, str
     useEffect(() => {
         if (!pluginRef.current) return;
 
-        selection?.data.forEach(residue => {
-            console.log(`RESIDUE: ${residue}`);
-            console.log(`residue.struct_asym_id: ${residue.struct_asym_id}`);
-            console.log(`start: ${residue.start_residue_number}`);
-            console.log(`end: ${residue.end_residue_number}`);
-            console.log(`color: ${residue.color}`);
-        });
+        console.log("SELECTION: ", selection?.data);
         pluginRef.current.visual.clearSelection();
 
         if (!selection) {

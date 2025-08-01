@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Embedding, Invokation } from '../../types/types';
-import { FaDownload, FaFileCode, FaRedo } from 'react-icons/fa';
+import { FaDownload, FaFileCode, FaRedo, FaTrash } from 'react-icons/fa';
 import { downloadFileStraightToFilesystem } from '../../api/fileApi';
+import { deleteEmbedding } from '../../api/embedApi';
 import { notify } from '../../services/NotificationService';
 import { TabContainer, DescriptionSection, TableSection } from '../../util/tabComponents';
 import { AntTable, createActionButtons } from '../../util/AntTable';
@@ -9,6 +10,7 @@ import { Button as AntButton, Table } from 'antd';
 import { EmbeddingModal } from '../shared/EmbeddingModal';
 import { EmbeddingParametersModal } from '../shared/EmbeddingParametersModal';
 import { PlusOutlined } from '@ant-design/icons';
+import { getEmbeddingStatus } from '../../util/statusHelpers';
 
 interface EmbedTabProps {
     foldId: number;
@@ -93,16 +95,21 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
     const [selectedEmbedding, setSelectedEmbedding] = useState<Embedding | null>(null);
     const [templateEmbedding, setTemplateEmbedding] = useState<Embedding | null>(null);
 
+    // Sort embeddings by date_created (newest first)
+    const sortedEmbeddings = useMemo(() => {
+        if (!embeddings) return [];
+        return [...embeddings].sort((a, b) => {
+            if (!a.date_created && !b.date_created) return 0;
+            if (!a.date_created) return 1; // null values go to end
+            if (!b.date_created) return -1;
+            return new Date(b.date_created).getTime() - new Date(a.date_created).getTime();
+        });
+    }, [embeddings]);
 
-
-    const getEmbeddingStatus = (embedding: Embedding): string => {
-        const job = jobs?.find(job => job.id === embedding.invokation_id);
-        return job?.state || 'Unknown';
-    };
 
     const downloadEmbedding = (embedding: Embedding) => {
         const paddedFoldId = foldId.toString().padStart(6, '0');
-        const embeddingPath = `embed/${paddedFoldId}_embeddings_${embedding.embedding_model}_${embedding.name}.csv`;
+        const embeddingPath = embedding.output_fpath_computed;
         notify.info(`Downloading embedding ${embedding.id} at path ${embeddingPath}, do not close this window until the download is complete.`);
 
         const newFileName = `${foldName || paddedFoldId}_embedding_${embedding.name}.csv`;
@@ -114,6 +121,20 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
     const redoEmbedding = (embedding: Embedding) => {
         setTemplateEmbedding(embedding);
         setShowEmbeddingModal(true);
+    };
+
+    const deleteEmbeddingHelper = async (embedding: Embedding) => {
+        if (!window.confirm(`Are you sure you want to delete embedding run "${embedding.name}"? This action cannot be undone.`)) {
+            return;
+        }
+
+        try {
+            await deleteEmbedding(embedding.id);
+            notify.success(`Embedding run "${embedding.name}" deleted successfully`);
+            window.location.reload(); // Refresh the page to update the data
+        } catch (error: any) {
+            notify.error(error.response?.data?.message || 'Failed to delete embedding run');
+        }
     };
 
     return (
@@ -142,7 +163,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
                 }
             >
                 <AntTable<Embedding>
-                    dataSource={embeddings || []}
+                    dataSource={sortedEmbeddings}
                     rowKey="id"
                     expandableContent={embeddingExpandableContent}
                     columns={[
@@ -154,7 +175,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
                         {
                             key: 'status',
                             title: 'Batch Status',
-                            render: (_, embedding) => getEmbeddingStatus(embedding),
+                            render: (_, embedding) => getEmbeddingStatus(embedding, jobs),
                         },
                         {
                             key: 'actions',
@@ -174,13 +195,21 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
                                     },
                                 ];
 
-                                if (getEmbeddingStatus(embedding) === 'finished') {
+                                if (getEmbeddingStatus(embedding, jobs) === 'finished') {
                                     buttons.splice(1, 0, {
                                         icon: <FaDownload />,
                                         onClick: () => downloadEmbedding(embedding),
                                         tooltip: 'Download embeddings CSV',
                                     });
                                 }
+
+                                // Add delete button (always available)
+                                buttons.push({
+                                    icon: <FaTrash />,
+                                    onClick: () => deleteEmbeddingHelper(embedding),
+                                    tooltip: 'Delete embedding run',
+                                    danger: true,
+                                });
 
                                 return createActionButtons(buttons);
                             },

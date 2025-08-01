@@ -7,6 +7,7 @@ import {
     ChonkyActions,
     ChonkyFileActionData,
 } from "chonky";
+import { Button } from "antd";
 import { FileInfo } from "../../types/types";
 import { downloadFileStraightToFilesystem } from "../../api/fileApi";
 import { removeLeadingSlash } from "../../api/commonApi";
@@ -170,14 +171,13 @@ const FileTab = React.memo((props: FileTabProps) => {
         <TabContainer>
             <SectionCard>
                 <h3 style={{ marginBottom: '15px' }}>Quick Access</h3>
-                <button
-                    type="button"
-                    className="uk-button uk-button-primary"
+                <Button
+                    type="primary"
                     onClick={props.maybeDownloadCif}
                     disabled={!(props.foldName && props.cifString)}
                 >
                     Download Best CIF
-                </button>
+                </Button>
             </SectionCard>
 
             <SectionCard>

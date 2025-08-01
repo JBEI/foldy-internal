@@ -22,9 +22,9 @@ export interface Fold extends FoldInput {
     state: string | null;
     jobs: Invokation[] | null;
     docks: Dock[] | null;
-    logits: Logit[] | null;
+    naturalness_runs: Naturalness[] | null;
     embeddings: Embedding[] | null;
-    evolutions: Evolution[] | null;
+    few_shots: FewShot[] | null;
 }
 
 export interface FoldPae {
@@ -79,14 +79,17 @@ export interface Dock extends DockInput {
     pose_confidences: string | null;
 }
 
-export interface Logit {
+export interface Naturalness {
     id: number;
     name: string;
     fold_id: number;
     logit_model: string;
     use_structure: boolean | null;
     get_depth_two_logits: boolean | null;
+    output_fpath: string | null;
+    output_fpath_computed: string;
     invokation_id: number;
+    date_created: string | null;
 }
 
 export interface Embedding {
@@ -98,10 +101,13 @@ export interface Embedding {
     dms_starting_seq_ids: string | null;
     homolog_fasta: string | null;
     extra_layers: string | null;
+    output_fpath: string | null;
+    output_fpath_computed: string;
     invokation_id: number | null;
+    date_created: string | null;
 }
 
-export interface Evolution {
+export interface FewShot {
     id: number | undefined;
     name: string;
     num_mutants: number;
@@ -112,6 +118,38 @@ export interface Evolution {
     naturalness_files: string | undefined;
     finetuning_model_checkpoint: string | undefined;
     few_shot_params: string | undefined;
+    input_activity_fpath: string | null;
+    output_fpath: string | null;
+    output_fpath_computed: string;
+    date_created: string | null;
+}
+
+export interface Campaign {
+    id: number;
+    name: string;
+    description?: string;
+    fold_id: number;
+    created_at: string;
+    rounds?: CampaignRound[];
+    fold_name?: string;
+    naturalness_model?: string;
+    embedding_model?: string;
+}
+
+export interface CampaignRound {
+    id: number;
+    campaign_id: number;
+    round_number: number;
+    date_started: string;
+    mode?: string | null;
+    naturalness_run_id?: number | null;
+    naturalness_run?: Naturalness | null;
+    slate_seq_ids?: string | null;
+    result_activity_fpath?: string | null;
+    promoted_templates?: string[] | null;
+    input_templates?: string | null;
+    few_shot_run_id?: number | null;
+    few_shot_run?: FewShot | null;
 }
 
 export interface Invokation {

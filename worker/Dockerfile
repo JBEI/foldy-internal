@@ -1,8 +1,11 @@
 FROM nvidia/cuda:12.2.0-devel-ubuntu20.04
 
+COPY worker/scripts/base_setup.sh /scripts/base_setup.sh
+RUN /scripts/base_setup.sh
+
 COPY backend/requirements.txt /backend/
-COPY worker/scripts/setup.sh /scripts/setup.sh
-RUN /scripts/setup.sh
+COPY worker/scripts/conda_env_setup.sh /scripts/conda_env_setup.sh
+RUN /scripts/conda_env_setup.sh
 
 
 ENV PATH="/opt/conda/bin:$PATH"
@@ -29,7 +32,9 @@ COPY worker/docking/requirements.txt ./
 # Combine conda operations into a single RUN command to reduce layers
 # Use mamba instead of conda for faster resolution
 # Pin specific versions to avoid resolution issues
-RUN conda install -n base -c conda-forge mamba && \
+
+# 7/31/25: BROKEN BY ANACONDA https://app.semanticdiff.com/gh/scikit-learn/scikit-learn/pull/31771/overview
+RUN conda install -n base -c conda-forge mamba --override-channels && \
     mamba create -n dock python=3.7 && \
     mamba install -n dock -c conda-forge -c defaults \
         openbabel=3.1.1 \
@@ -48,13 +53,15 @@ RUN tar zxvf ADFRsuite_x86_64Linux_1.0.tar.gz && \
 
 # Install annotation requirements.
 WORKDIR /annotations
-RUN /opt/conda/bin/conda config --add channels defaults && \
-  /opt/conda/bin/conda config --add channels bioconda && \
-  /opt/conda/bin/conda config --add channels conda-forge
-RUN /opt/conda/bin/conda create -y -n annotations python=3.9 conda java-jdk
+# 7/31/25: BROKEN BY ANACONDA https://app.semanticdiff.com/gh/scikit-learn/scikit-learn/pull/31771/overview
+# RUN /opt/conda/bin/conda config --add channels defaults && \
+#   /opt/conda/bin/conda config --add channels bioconda && \
+#   /opt/conda/bin/conda config --add channels conda-forge
+# RUN /opt/conda/bin/conda create -y -n annotations python=3.9 conda java-jdk
+RUN /opt/conda/bin/conda create -y -n annotations -c bioconda -c conda-forge --override-channels python=3.9 conda java-jdk
 # TODO: maybe switch to muscle version 3.8.31, which we have elsewhere,
 # but did not install properly here.
-RUN /opt/conda/envs/annotations/bin/conda install -y \
+RUN /opt/conda/envs/annotations/bin/conda install -y -c bioconda -c conda-forge --override-channels \
   hmmer2 hmmer diamond fasttree prodigal blast muscle=3.8.1551 glimmerhmm && \
   /opt/conda/envs/annotations/bin/conda clean -afy
 
@@ -65,8 +72,9 @@ RUN git clone https://github.com/gcorso/DiffDock.git && \
   cd DiffDock && \
   git checkout c1abe25 && \
   cd -
-RUN /opt/conda/bin/conda create -y -n diffdock python=3.8 conda pip
-RUN /opt/conda/envs/diffdock/bin/conda install -y pytorch==1.13.0 cpuonly -c pytorch && \
+# 7/31/25: BROKEN BY ANACONDA https://app.semanticdiff.com/gh/scikit-learn/scikit-learn/pull/31771/overview
+RUN /opt/conda/bin/conda create -y -n diffdock -c bioconda -c conda-forge -c pytorch --override-channels python=3.8 conda pip && \
+  /opt/conda/envs/diffdock/bin/conda install -y -c bioconda -c conda-forge -c pytorch --override-channels pytorch==1.13.0 cpuonly && \
   /opt/conda/envs/diffdock/bin/conda clean -afy
 
 # Install scipy, then install torch from a specific wheel, not from pip (no-index), then

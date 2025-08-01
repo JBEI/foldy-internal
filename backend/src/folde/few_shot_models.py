@@ -513,7 +513,6 @@ class TorchMLPFewShotModel(FewShotModel):
     def __init__(
         self,
         wt_aa_seq: str,
-        embedding_dim: int,
         random_state: int,
         hidden_dims: list[int] = [100, 50],
         dropout: float = 0.1,
@@ -537,12 +536,12 @@ class TorchMLPFewShotModel(FewShotModel):
         importance_sampling_temperature: float | None = None,
         use_exponential_learning_rate_decay: bool = False,
         use_plateau_learning_rate_decay: bool = False,
+        embedding_dim: int | None = None,  # DEPRECATED
         **kwargs,
     ):
         """Initialize the Random Forest regressor with any parameters supported by sklearn's RandomForestRegressor."""
         super().__init__(wt_aa_seq, **kwargs)
 
-        self.embedding_dim = embedding_dim
         self.base_random_state = random_state
 
         self.hidden_dims = hidden_dims
@@ -572,15 +571,20 @@ class TorchMLPFewShotModel(FewShotModel):
 
         self.finetuned_model_and_trainer_list = []
 
+        if embedding_dim is not None:
+            logging.warning("embedding_dim is deprecated and ignored.")
+
         self.is_pretrained = False
         self.pretrain_metrics: list[dict[str, Any]] = []
         self.is_fitted = False
         self.finetune_metrics: list[dict[str, Any]] = []
 
-    def _create_model_ensemble(self) -> list[tuple[BradleyTerryMLP, PreferenceTrainer]]:
+    def _create_model_ensemble(
+        self, embedding_dim: int
+    ) -> list[tuple[BradleyTerryMLP, PreferenceTrainer]]:
         return [
             create_preference_model(
-                embedding_dim=self.embedding_dim,
+                embedding_dim=embedding_dim,
                 hidden_dims=self.hidden_dims,
                 dropout=self.dropout,
                 device=self.device,
@@ -611,9 +615,10 @@ class TorchMLPFewShotModel(FewShotModel):
 
         naturalness_series_with_data = naturalness_series[has_naturalness_data]
         embedding_series_with_data = embedding_series[has_naturalness_data]
+        embedding_dim = embedding_series_with_data.iloc[0].shape[0]
 
         # Create pretrained version of each model.
-        for ii, (model, trainer) in enumerate(self._create_model_ensemble()):
+        for ii, (model, trainer) in enumerate(self._create_model_ensemble(embedding_dim)):
             rng = np.random.RandomState(self.base_random_state + ii)
             validation_seqids = rng.choice(
                 embedding_series_with_data.index,
@@ -691,7 +696,8 @@ class TorchMLPFewShotModel(FewShotModel):
             assert test_embedding_series.index.equals(test_activity_series.index)
 
         # Reset state! We might have called "fit" already and should blank that out.
-        self.finetuned_model_and_trainer_list = self._create_model_ensemble()
+        embedding_dim = embedding_series.iloc[0].shape[0]
+        self.finetuned_model_and_trainer_list = self._create_model_ensemble(embedding_dim)
         self.finetune_metrics = []
 
         if self.should_pretrain:

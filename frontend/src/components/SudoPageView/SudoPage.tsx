@@ -1,10 +1,13 @@
 import React, { useState } from "react";
 import {
     addInvokationToAllJobs,
+    backfillDateCreated,
+    backfillInputActivityFpath,
     bulkAddTag,
     createDbs,
     killFoldsInRange,
     killWorker,
+    populateOutputFpathFields,
     queueTestJob,
     removeFailedJobs,
     runUnrunStages,
@@ -33,7 +36,8 @@ import {
     MailOutlined,
     SettingOutlined,
     DeleteOutlined,
-    TagOutlined
+    TagOutlined,
+    FileTextOutlined
 } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
@@ -193,6 +197,49 @@ function SudoPage() {
         bulkAddTag(foldsToBulkAddTag, tagToBulkAdd).then(
             () => {
                 notify.info("Successfully added tags.");
+            },
+            (e) => {
+                notify.error(e.toString());
+            }
+        );
+    };
+
+    const localPopulateOutputFpathFields = () => {
+        populateOutputFpathFields().then(
+            (result) => {
+                notify.success(
+                    `Successfully populated output_fpath fields! Updated ${result.total_updated} records: ` +
+                    `${result.naturalness_updated} naturalness, ${result.embedding_updated} embeddings, ` +
+                    `${result.few_shot_updated} few shots.`
+                );
+            },
+            (e) => {
+                notify.error(e.toString());
+            }
+        );
+    };
+
+    const localBackfillDateCreated = () => {
+        backfillDateCreated().then(
+            (result) => {
+                notify.success(
+                    `Successfully backfilled date_created fields! Updated ${result.total_updated} records: ` +
+                    `${result.naturalness_updated} naturalness, ${result.embedding_updated} embeddings, ` +
+                    `${result.few_shot_updated} few shots.`
+                );
+            },
+            (e) => {
+                notify.error(e.toString());
+            }
+        );
+    };
+
+    const localBackfillInputActivityFpath = () => {
+        backfillInputActivityFpath().then(
+            (result) => {
+                notify.success(
+                    `Successfully backfilled input_activity_fpath fields! Updated ${result.total_updated} FewShot records.`
+                );
             },
             (e) => {
                 notify.error(e.toString());
@@ -448,15 +495,47 @@ function SudoPage() {
                     {/* System Management */}
                     <Col xs={24} lg={8}>
                         <Card title={<><MailOutlined /> System</>} size="small">
-                            <Button
-                                type="primary"
-                                onClick={localSendEmail}
-                                icon={<MailOutlined />}
-                                block
-                                size="small"
-                            >
-                                Send Test Email
-                            </Button>
+                            <Space direction="vertical" style={{ width: "100%" }} size="small">
+                                <Button
+                                    type="primary"
+                                    onClick={localSendEmail}
+                                    icon={<MailOutlined />}
+                                    block
+                                    size="small"
+                                >
+                                    Send Test Email
+                                </Button>
+
+                                <Button
+                                    type="primary"
+                                    onClick={localPopulateOutputFpathFields}
+                                    icon={<FileTextOutlined />}
+                                    block
+                                    size="small"
+                                >
+                                    Populate Output File Paths
+                                </Button>
+
+                                <Button
+                                    type="primary"
+                                    onClick={localBackfillDateCreated}
+                                    icon={<FileTextOutlined />}
+                                    block
+                                    size="small"
+                                >
+                                    Backfill Date Created Fields
+                                </Button>
+
+                                <Button
+                                    type="primary"
+                                    onClick={localBackfillInputActivityFpath}
+                                    icon={<FileTextOutlined />}
+                                    block
+                                    size="small"
+                                >
+                                    Backfill Input Activity Paths
+                                </Button>
+                            </Space>
                         </Card>
                     </Col>
                 </Row>

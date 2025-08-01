@@ -22,9 +22,9 @@ from app.helpers.rq_helpers import (
 )
 from app.helpers.sequence_util import VALID_AMINO_ACIDS, maybe_get_seq_id_error_message
 from app.jobs import esm_jobs
-from app.models import Embedding, Fold, Logit
+from app.models import Embedding, Fold, Naturalness
 from app.util import get_job_type_replacement
-from app.views.other_views import embedding_fields, logit_fields
+from app.views.other_views import embedding_fields, naturalness_fields
 
 ns = Namespace("esm_views", decorators=[jwt_required(fresh=True)])
 
@@ -43,10 +43,9 @@ ALLOWED_ESM_MODELS: List[str] = [
     "esm1v_t33_650M_UR90S_3",
     "esm1v_t33_650M_UR90S_4",
     "esm1v_t33_650M_UR90S_5",
-    "esm1v",
 ]
 
-ALLOWED_LOGITS_MODELS: List[str] = ALLOWED_ESM_MODELS + ["esm1v_t33_650M_UR90S_ensemble"]
+ALLOWED_NATURALNESS_MODELS: List[str] = ALLOWED_ESM_MODELS + ["esm1v_t33_650M_UR90S_ensemble"]
 
 
 @ns.route("/embeddings")
@@ -137,22 +136,22 @@ class CalculateEmbeddingsResource(Resource):
         return True
 
 
-@ns.route("/startlogits/<int:fold_id>")
-class StartLogitsResource(Resource):
+@ns.route("/startnaturalness/<int:fold_id>")
+class StartNaturalnessResource(Resource):
     @verify_has_edit_access
-    @ns.expect(logit_fields)
-    @ns.marshal_with(logit_fields)
-    def post(self, fold_id: int) -> Logit:
-        """Create a new logit calculation job for a fold.
+    @ns.expect(naturalness_fields)
+    @ns.marshal_with(naturalness_fields)
+    def post(self, fold_id: int) -> Naturalness:
+        """Create a new naturalness calculation job for a fold.
 
         Args:
-            fold_id: ID of the fold to create logits for
+            fold_id: ID of the fold to create naturalness for
 
         Returns:
-            The created Logit record
+            The created Naturalness record
 
         Raises:
-            BadRequest: If logit model is not allowed or fold doesn't exist
+            BadRequest: If naturalness model is not allowed or fold doesn't exist
         """
         req = request.get_json()
 
@@ -161,9 +160,9 @@ class StartLogitsResource(Resource):
         use_structure: bool = req.get("use_structure", False)
         get_depth_two_logits: bool = req.get("get_depth_two_logits", False)
 
-        if logit_model not in ALLOWED_LOGITS_MODELS:
+        if logit_model not in ALLOWED_NATURALNESS_MODELS:
             raise BadRequest(
-                f"Invalid logit model {logit_model}: must be one of {ALLOWED_LOGITS_MODELS}"
+                f"Invalid naturalness model {logit_model}: must be one of {ALLOWED_NATURALNESS_MODELS}"
             )
 
         fold = Fold.get_by_id(fold_id)
@@ -171,14 +170,16 @@ class StartLogitsResource(Resource):
         if not fold:
             raise BadRequest(f"Fold with ID {fold_id} not found")
 
-        existing_logit = Logit.query.filter(Logit.name == name, Logit.fold_id == fold_id).first()
-        if existing_logit:
-            logging.info(f"Deleting existing logit job {existing_logit.id} for {name}")
-            existing_logit.delete()
+        existing_naturalness = Naturalness.query.filter(
+            Naturalness.name == name, Naturalness.fold_id == fold_id
+        ).first()
+        if existing_naturalness:
+            logging.info(f"Deleting existing naturalness job {existing_naturalness.id} for {name}")
+            existing_naturalness.delete()
 
-        new_invokation_id: int = get_job_type_replacement(fold, f"logits_{name}")
+        new_invokation_id: int = get_job_type_replacement(fold, f"naturalness_{name}")
 
-        logit_record: Logit = Logit.create(
+        naturalness_record: Naturalness = Naturalness.create(
             name=name,
             fold_id=fold_id,
             logit_model=logit_model,
@@ -189,18 +190,52 @@ class StartLogitsResource(Resource):
 
         esm_q = get_queue("esm")
         enqueued_job = esm_q.enqueue(
-            esm_jobs.get_esm_logits,
-            logit_record.id,
+            esm_jobs.get_esm_naturalness,
+            naturalness_record.id,
             job_timeout="24h",
             result_ttl=48 * 60 * 60,  # 2 days
             on_success=Callback(send_success_email, timeout="5s"),
             on_failure=Callback(send_failure_email, timeout="5s"),
         )
-        add_meta_to_job(enqueued_job, fold, "logits", logit_record.id)
+        add_meta_to_job(enqueued_job, fold, "naturalness", naturalness_record.id)
 
         logging.info(
-            f"Queued logit job {enqueued_job.id} for fold {fold_id}, model {logit_model}, "
+            f"Queued naturalness job {enqueued_job.id} for fold {fold_id}, model {logit_model}, "
             f"use_structure={use_structure}, get_depth_two_logits={get_depth_two_logits}"
         )
 
-        return logit_record
+        return naturalness_record
+
+
+@ns.route("/naturalness/<int:naturalness_id>")
+class NaturalnessResource(Resource):
+    @verify_has_edit_access
+    def delete(self, naturalness_id: int) -> None:
+        """Delete a naturalness run by ID.
+
+        Args:
+            naturalness_id: ID of the naturalness run to delete
+        """
+        naturalness = Naturalness.query.get(naturalness_id)
+        if not naturalness:
+            raise BadRequest(f"Naturalness run not found {naturalness_id}")
+
+        logging.info(f"Deleting naturalness run {naturalness_id} ({naturalness.name})")
+        naturalness.delete()
+
+
+@ns.route("/embedding/<int:embedding_id>")
+class EmbeddingResource(Resource):
+    @verify_has_edit_access
+    def delete(self, embedding_id: int) -> None:
+        """Delete an embedding run by ID.
+
+        Args:
+            embedding_id: ID of the embedding run to delete
+        """
+        embedding = Embedding.query.get(embedding_id)
+        if not embedding:
+            raise BadRequest(f"Embedding run not found {embedding_id}")
+
+        logging.info(f"Deleting embedding run {embedding_id} ({embedding.name})")
+        embedding.delete()

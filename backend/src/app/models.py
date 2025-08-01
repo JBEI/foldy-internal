@@ -109,15 +109,15 @@ class Fold(PkModel):
         cascade="all,delete-orphan",
     )
 
-    logits = relationship(
-        "Logit",
+    naturalness_runs = relationship(
+        "Naturalness",
         back_populates="fold",
         passive_deletes=True,
         cascade="all,delete-orphan",
     )
 
-    evolutions = relationship(
-        "Evolution",
+    few_shots = relationship(
+        "FewShot",
         back_populates="fold",
         passive_deletes=True,
         cascade="all,delete-orphan",
@@ -198,24 +198,33 @@ class Dock(PkModel):
         self.bounding_box_radius_angstrom = bounding_box_radius_angstrom
 
 
-class Logit(PkModel):
-    """A logit run."""
+class Naturalness(PkModel):
+    """A naturalness run."""
 
     __tablename__ = "logits"
 
     name = Column(db.String, nullable=False)
 
     fold_id = Column(db.Integer, db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE"))
-    fold = relationship("Fold", back_populates="logits")
+    fold = relationship("Fold", back_populates="naturalness_runs")
 
     logit_model = Column(db.String, nullable=False)
     use_structure = Column(db.Boolean, nullable=True)
     get_depth_two_logits = Column(db.Boolean, nullable=True)
+    output_fpath = Column(db.String, nullable=True)
+    date_created = Column(db.DateTime(timezone=True), nullable=True, default=datetime.now(UTC))
 
     invokation_id = Column(
         db.Integer,
         db.ForeignKey("invokation.id", ondelete="CASCADE", onupdate="CASCADE"),
     )
+
+    @hybrid_property
+    def output_fpath_computed(self) -> str:
+        """Get the output CSV path, falling back to computed path if not set."""
+        if self.output_fpath:
+            return self.output_fpath
+        return f"naturalness/naturalness_{self.name}_melted.csv"
 
 
 class Embedding(PkModel):
@@ -233,6 +242,8 @@ class Embedding(PkModel):
     dms_starting_seq_ids = Column(db.String)
     homolog_fasta = Column(db.String, nullable=True)
     extra_layers = Column(db.String, nullable=True)
+    output_fpath = Column(db.String, nullable=True)
+    date_created = Column(db.DateTime(timezone=True), nullable=True, default=datetime.now(UTC))
 
     # State tracking.
     invokation_id = Column(
@@ -240,9 +251,16 @@ class Embedding(PkModel):
         db.ForeignKey("invokation.id", ondelete="CASCADE", onupdate="CASCADE"),
     )
 
+    @hybrid_property
+    def output_fpath_computed(self) -> str:
+        """Get the output CSV path, falling back to computed path if not set."""
+        if self.output_fpath:
+            return self.output_fpath
+        return f"embeddings/embeddings_{self.name}_processed.csv"
 
-class Evolution(PkModel):
-    """A single evolution of a fold."""
+
+class FewShot(PkModel):
+    """A single slate build for a fold."""
 
     __tablename__ = "fold_evolution"
 
@@ -251,21 +269,122 @@ class Evolution(PkModel):
     name = Column(db.String, nullable=False)
 
     fold_id = Column(db.Integer, db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE"))
-    fold = relationship("Fold", back_populates="evolutions")
+    fold = relationship("Fold", back_populates="few_shots")
 
     mode = Column(db.String, nullable=True)
-
     embedding_files = Column(db.String, nullable=True)  # A list of embedding file paths.
     naturalness_files = Column(db.String, nullable=True)  # A list of embedding file paths.
-
-    # NO LONGER USED.
-    finetuning_model_checkpoint = Column(db.String, nullable=True)
-
     few_shot_params = Column(db.String, nullable=True)
     num_mutants = Column(db.Integer, nullable=True)
+    input_activity_fpath = Column(db.String, nullable=True)
+    date_created = Column(db.DateTime(timezone=True), nullable=True, default=datetime.now(UTC))
+
+    output_fpath = Column(db.String, nullable=True)
 
     # State tracking.
     invokation_id = Column(
         db.Integer,
         db.ForeignKey("invokation.id", ondelete="CASCADE", onupdate="CASCADE"),
     )
+
+    # NO LONGER USED.
+    finetuning_model_checkpoint = Column(db.String, nullable=True)
+
+    @hybrid_property
+    def output_fpath_computed(self) -> str:
+        """Get the output CSV path, falling back to computed path if not set."""
+        if self.output_fpath:
+            return self.output_fpath
+        return f"few_shots/{self.name}/predicted_activity.csv"
+
+
+class Campaign(PkModel):
+    """A directed evolution campaign."""
+
+    __tablename__ = "campaigns"
+
+    # Id is created automatically.
+
+    name = Column(db.String(80), nullable=False)
+    description = Column(db.Text, nullable=True)
+    created_at = Column(db.DateTime, nullable=False, default=datetime.now(UTC))
+
+    fold_id = Column(db.Integer, db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE"))
+    fold = relationship("Fold", backref="campaigns")
+
+    naturalness_model = Column(db.String(80), nullable=True, default="esm2_t33_650M_UR50D")
+    embedding_model = Column(db.String(80), nullable=True, default="esm2_t33_650M_UR50D")
+
+    rounds = relationship(
+        "CampaignRound",
+        back_populates="campaign",
+        passive_deletes=True,
+        cascade="all,delete-orphan",
+        order_by="CampaignRound.date_started",
+    )
+
+    def __init__(
+        self,
+        name: str,
+        fold_id: int,
+        description: Optional[str] = None,
+        naturalness_model: Optional[str] = None,
+        embedding_model: Optional[str] = None,
+    ) -> None:
+        super().__init__()
+        self.name = name
+        self.fold_id = fold_id
+        self.description = description
+        self.naturalness_model = naturalness_model or "esm2_t33_650M_UR50D"
+        self.embedding_model = embedding_model or "esm2_t33_650M_UR50D"
+
+
+class CampaignRound(PkModel):
+    """A round within a directed evolution campaign."""
+
+    __tablename__ = "campaign_rounds"
+
+    # Id is created automatically.
+
+    campaign_id = Column(
+        db.Integer, db.ForeignKey("campaigns.id", ondelete="CASCADE", onupdate="CASCADE")
+    )
+    campaign = relationship("Campaign", back_populates="rounds")
+
+    date_started = Column(db.DateTime, nullable=False, default=datetime.now(UTC))
+    round_number = Column(db.Integer, nullable=False)
+    mode = Column(db.String(20), nullable=True)  # 'zero-shot' or 'few-shot'
+    naturalness_run_id = Column(
+        db.Integer,
+        db.ForeignKey("logits.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+    )
+    naturalness_run = relationship("Naturalness")
+    few_shot_run_id = Column(
+        db.Integer,
+        db.ForeignKey("fold_evolution.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+    )
+    few_shot_run = relationship("FewShot")
+    slate_seq_ids = Column(db.Text, nullable=True)  # Comma-separated sequence IDs
+    result_activity_fpath = Column(db.Text, nullable=True)  # Relative path to activity file
+    promoted_templates = Column(
+        db.JSON, nullable=True, default=list
+    )  # List of promoted sequence IDs
+    input_templates = Column(
+        db.Text, nullable=True
+    )  # Comma-separated list of selected template IDs
+
+    def __init__(
+        self,
+        campaign_id: int,
+        round_number: int,
+        date_started: Optional[datetime] = None,
+        mode: Optional[str] = None,
+    ) -> None:
+        super().__init__()
+        self.campaign_id = campaign_id
+        self.round_number = round_number
+        self.mode = mode
+        if date_started:
+            self.date_started = date_started

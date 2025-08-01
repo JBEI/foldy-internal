@@ -14,7 +14,7 @@ import "./App.scss";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import UIkit from "uikit";
 import { Layout, Menu, Button as AntButton, Drawer, Spin } from "antd";
-import { MenuOutlined, HomeOutlined, InfoCircleOutlined, SettingOutlined, DatabaseOutlined, TagOutlined } from "@ant-design/icons";
+import { MenuOutlined, HomeOutlined, InfoCircleOutlined, SettingOutlined, DatabaseOutlined, TagOutlined, ExperimentOutlined } from "@ant-design/icons";
 import About from "./components/AboutView/About";
 import DashboardView from "./components/DashboardView";
 import NewBoltzFoldView from "./components/NewFoldView/NewBoltzFoldView";
@@ -22,6 +22,8 @@ import NewBoltzFoldView from "./components/NewFoldView/NewBoltzFoldView";
 // import NewFold from "./components/NewFoldView/NewFoldView";
 // import NewFold from "./components/NewFoldView/NewFold";
 import SudoPage from "./components/SudoPageView/SudoPage";
+import CampaignsView from "./components/CampaignsView";
+import CampaignView from "./components/CampaignView";
 import {
     authenticationService,
     currentJwtStringSubject,
@@ -221,6 +223,12 @@ function RoutedApp({ token, setToken }: {
             onClick: () => navigate('/')
         },
         {
+            key: 'campaigns',
+            icon: <ExperimentOutlined />,
+            label: 'Campaigns',
+            onClick: () => navigate('/campaigns')
+        },
+        {
             key: 'tags',
             icon: <TagOutlined />,
             label: 'Tags',
@@ -278,6 +286,7 @@ function RoutedApp({ token, setToken }: {
                 </a>
                 <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
                     <NavLink href="/">Dashboard</NavLink>
+                    <NavLink href="/campaigns">Campaigns</NavLink>
                     <NavLink href="/tags">Tags</NavLink>
                     {fullDecodedToken?.user_claims.type === "admin" && (
                         <>
@@ -415,6 +424,30 @@ function RoutedApp({ token, setToken }: {
                                 />
                             </Suspense>
                         }
+                    />
+                    <Route
+                        path="/fold/:foldId/:tabName"
+                        element={
+                            <Suspense fallback={renderLoader()}>
+                                <AvatarFoldView
+                                    userType={
+                                        fullDecodedToken ? fullDecodedToken.user_claims.type : null
+                                    }
+                                />
+                            </Suspense>
+                        }
+                    />
+                    <Route
+                        path="/campaigns"
+                        element={<CampaignsView />}
+                    />
+                    <Route
+                        path="/campaigns/:campaignId"
+                        element={<CampaignView />}
+                    />
+                    <Route
+                        path="/campaigns/:campaignId/:roundNumber"
+                        element={<CampaignView />}
                     />
                     <Route
                         path="/tag/:tagStringParam"
