@@ -523,7 +523,7 @@ class FoldyESM1and2Client(FoldyESMClient):
             sys.modules.pop("esm")
 
         self.model_name = model_name
-        self.model, self.alphabet = torch.hub.load("facebookresearch/esm:main", model_name)
+        self.model, self.alphabet = torch.hub.load("facebookresearch/esm:main", model_name)  # type: ignore[reportGeneralTypeIssues]
         self.batch_converter = self.alphabet.get_batch_converter()
         self.model.eval()  # Set to evaluation mode
 

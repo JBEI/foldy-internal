@@ -23,46 +23,46 @@ def parse_oligo_name(sequence_name: str) -> Dict[str, Union[str, bool]]:
     """
 
     # Pattern for forward primers: <prefix>.<allele_id>.F1
-    forward_pattern = r'^([^.]+)\.([^.]+)\.F1$'
+    forward_pattern = r"^([^.]+)\.([^.]+)\.F1$"
 
     # Pattern for reverse primers: <prefix>.<allele_id>.R
-    reverse_pattern = r'^([^.]+)\.([^.]+)\.R$'
+    reverse_pattern = r"^([^.]+)\.([^.]+)\.R$"
 
     result = {
-        'original_name': sequence_name,
-        'prefix': None,
-        'allele_id': None,
-        'direction': None,
-        'primer_type': None,
-        'is_forward': False,
-        'is_reverse': False
+        "original_name": sequence_name,
+        "prefix": None,
+        "allele_id": None,
+        "direction": None,
+        "primer_type": None,
+        "is_forward": False,
+        "is_reverse": False,
     }
 
     # Try forward pattern first
     forward_match = re.match(forward_pattern, sequence_name)
     if forward_match:
-        result['prefix'] = forward_match.group(1)
-        result['allele_id'] = forward_match.group(2)
-        result['direction'] = 'forward'
-        result['primer_type'] = 'F1'
-        result['is_forward'] = True
+        result["prefix"] = forward_match.group(1)
+        result["allele_id"] = forward_match.group(2)
+        result["direction"] = "forward"
+        result["primer_type"] = "F1"
+        result["is_forward"] = True
         return result
 
     # Try reverse pattern
     reverse_match = re.match(reverse_pattern, sequence_name)
     if reverse_match:
-        result['prefix'] = reverse_match.group(1)
-        result['allele_id'] = reverse_match.group(2)
-        result['direction'] = 'reverse'
-        result['primer_type'] = 'R'
-        result['is_reverse'] = True
+        result["prefix"] = reverse_match.group(1)
+        result["allele_id"] = reverse_match.group(2)
+        result["direction"] = "reverse"
+        result["primer_type"] = "R"
+        result["is_reverse"] = True
         return result
 
     # If no pattern matches, return the result with None values
     return result
 
 
-def classify_oligos(df: pd.DataFrame, sequence_name_col: str = 'Sequence Name') -> pd.DataFrame:
+def classify_oligos(df: pd.DataFrame, sequence_name_col: str = "Sequence Name") -> pd.DataFrame:
     """
     Classify oligos in a dataframe and add parsed information as new columns.
 
@@ -87,13 +87,13 @@ def classify_oligos(df: pd.DataFrame, sequence_name_col: str = 'Sequence Name') 
 
     # Add the parsed columns to the result dataframe
     for col in parsed_df.columns:
-        if col != 'original_name':  # Don't duplicate the original name
+        if col != "original_name":  # Don't duplicate the original name
             result_df[col] = parsed_df[col]
 
     return result_df
 
 
-def get_forward_primers(df: pd.DataFrame, sequence_name_col: str = 'Sequence Name') -> pd.DataFrame:
+def get_forward_primers(df: pd.DataFrame, sequence_name_col: str = "Sequence Name") -> pd.DataFrame:
     """
     Filter dataframe to return only forward primers.
 
@@ -105,10 +105,10 @@ def get_forward_primers(df: pd.DataFrame, sequence_name_col: str = 'Sequence Nam
         DataFrame containing only forward primers
     """
     classified_df = classify_oligos(df, sequence_name_col)
-    return classified_df[classified_df['is_forward'] == True]
+    return classified_df[classified_df["is_forward"] == True]
 
 
-def get_reverse_primers(df: pd.DataFrame, sequence_name_col: str = 'Sequence Name') -> pd.DataFrame:
+def get_reverse_primers(df: pd.DataFrame, sequence_name_col: str = "Sequence Name") -> pd.DataFrame:
     """
     Filter dataframe to return only reverse primers.
 
@@ -120,10 +120,12 @@ def get_reverse_primers(df: pd.DataFrame, sequence_name_col: str = 'Sequence Nam
         DataFrame containing only reverse primers
     """
     classified_df = classify_oligos(df, sequence_name_col)
-    return classified_df[classified_df['is_reverse'] == True]
+    return classified_df[classified_df["is_reverse"] == True]
 
 
-def get_primers_by_prefix(df: pd.DataFrame, prefix: str, sequence_name_col: str = 'Sequence Name') -> pd.DataFrame:
+def get_primers_by_prefix(
+    df: pd.DataFrame, prefix: str, sequence_name_col: str = "Sequence Name"
+) -> pd.DataFrame:
     """
     Filter dataframe to return primers for a specific protein/construct prefix.
 
@@ -136,10 +138,12 @@ def get_primers_by_prefix(df: pd.DataFrame, prefix: str, sequence_name_col: str 
         DataFrame containing only primers for the specified prefix
     """
     classified_df = classify_oligos(df, sequence_name_col)
-    return classified_df[classified_df['prefix'] == prefix]
+    return classified_df[classified_df["prefix"] == prefix]
 
 
-def get_primer_pairs(df: pd.DataFrame, sequence_name_col: str = 'Sequence Name') -> Dict[str, Dict[str, pd.Series]]:
+def get_primer_pairs(
+    df: pd.DataFrame, sequence_name_col: str = "Sequence Name"
+) -> Dict[str, Dict[str, pd.Series]]:
     """
     Group primers into forward/reverse pairs by prefix and allele_id.
 
@@ -155,25 +159,25 @@ def get_primer_pairs(df: pd.DataFrame, sequence_name_col: str = 'Sequence Name')
     pairs = {}
 
     # Group by prefix and allele_id
-    for prefix in classified_df['prefix'].dropna().unique():
+    for prefix in classified_df["prefix"].dropna().unique():
         pairs[prefix] = {}
-        prefix_df = classified_df[classified_df['prefix'] == prefix]
+        prefix_df = classified_df[classified_df["prefix"] == prefix]
 
-        for allele_id in prefix_df['allele_id'].dropna().unique():
-            allele_df = prefix_df[prefix_df['allele_id'] == allele_id]
+        for allele_id in prefix_df["allele_id"].dropna().unique():
+            allele_df = prefix_df[prefix_df["allele_id"] == allele_id]
 
-            forward_primers = allele_df[allele_df['is_forward'] == True]
-            reverse_primers = allele_df[allele_df['is_reverse'] == True]
+            forward_primers = allele_df[allele_df["is_forward"] == True]
+            reverse_primers = allele_df[allele_df["is_reverse"] == True]
 
             pairs[prefix][allele_id] = {
-                'forward': forward_primers.iloc[0] if len(forward_primers) > 0 else None,
-                'reverse': reverse_primers.iloc[0] if len(reverse_primers) > 0 else None
+                "forward": forward_primers.iloc[0] if len(forward_primers) > 0 else None,
+                "reverse": reverse_primers.iloc[0] if len(reverse_primers) > 0 else None,
             }
 
     return pairs
 
 
-def summarize_oligos(df: pd.DataFrame, sequence_name_col: str = 'Sequence Name') -> pd.DataFrame:
+def summarize_oligos(df: pd.DataFrame, sequence_name_col: str = "Sequence Name") -> pd.DataFrame:
     """
     Create a summary of oligos by prefix and direction.
 
@@ -186,10 +190,11 @@ def summarize_oligos(df: pd.DataFrame, sequence_name_col: str = 'Sequence Name')
     """
     classified_df = classify_oligos(df, sequence_name_col)
 
-    summary = classified_df.groupby(['prefix', 'direction']).agg({
-        'allele_id': 'count',
-        'Sequence': 'count'
-    }).rename(columns={'allele_id': 'count', 'Sequence': 'sequence_count'})
+    summary = (
+        classified_df.groupby(["prefix", "direction"])
+        .agg({"allele_id": "count", "Sequence": "count"})
+        .rename(columns={"allele_id": "count", "Sequence": "sequence_count"})
+    )
 
     return summary.reset_index()
 
@@ -203,7 +208,7 @@ if __name__ == "__main__":
         "GAH_DBAT.S23T.F1",
         "ID_CUS.I46F.F1",
         "LK_BorAT.K360A.F1",
-        "PW_CYP90.G56F.F1"
+        "PW_CYP90.G56F.F1",
     ]
 
     print("Testing oligo name parsing:")
@@ -211,26 +216,26 @@ if __name__ == "__main__":
         parsed = parse_oligo_name(name)
         print(f"{name} -> {parsed}")
 
-    print("\n" + "="*50 + "\n")
+    print("\n" + "=" * 50 + "\n")
 
     # Example of how to use with a dataframe
     sample_data = {
-        'Sequence Name': [
-            'AP_OplR.W10L.F1',
-            'AP_OplR.W10.R',
-            'AP_OplR.S51D.F1',
-            'AP_OplR.S51.R',
-            'GAH_DBAT.S23T.F1',
-            'GAH_DBAT.S23.R'
+        "Sequence Name": [
+            "AP_OplR.W10L.F1",
+            "AP_OplR.W10.R",
+            "AP_OplR.S51D.F1",
+            "AP_OplR.S51.R",
+            "GAH_DBAT.S23T.F1",
+            "GAH_DBAT.S23.R",
         ],
-        'Sequence': [
-            'GAACTCTCGACCCACGGCCTGCCACAGCCAGAGCGCCAGGTAC',
-            'GCCGTGGGTCGAGAGTTCTGTGGG',
-            'GCGCTGGAGTACGCCGGACACGCCGCTCAGCCTGTCGC',
-            'CGCGTACTCCAGCGCTGCAG',
-            'GGTTGCTCCTAGCCAGCCAACACCTAAAGCCTTTTTTGCAGTTATCAACCCTAGACAACTTACCAG',
-            'TTTTAGGTGATGGCTGGCTAGGAGCAACC'
-        ]
+        "Sequence": [
+            "GAACTCTCGACCCACGGCCTGCCACAGCCAGAGCGCCAGGTAC",
+            "GCCGTGGGTCGAGAGTTCTGTGGG",
+            "GCGCTGGAGTACGCCGGACACGCCGCTCAGCCTGTCGC",
+            "CGCGTACTCCAGCGCTGCAG",
+            "GGTTGCTCCTAGCCAGCCAACACCTAAAGCCTTTTTTGCAGTTATCAACCCTAGACAACTTACCAG",
+            "TTTTAGGTGATGGCTGGCTAGGAGCAACC",
+        ],
     }
 
     df = pd.DataFrame(sample_data)
@@ -239,19 +244,23 @@ if __name__ == "__main__":
 
     print("\nClassified DataFrame:")
     classified = classify_oligos(df)
-    print(classified[['Sequence Name', 'prefix', 'allele_id', 'direction', 'is_forward', 'is_reverse']])
+    print(
+        classified[
+            ["Sequence Name", "prefix", "allele_id", "direction", "is_forward", "is_reverse"]
+        ]
+    )
 
     print("\nForward primers only:")
     forward_only = get_forward_primers(df)
-    print(forward_only[['Sequence Name', 'direction']])
+    print(forward_only[["Sequence Name", "direction"]])
 
     print("\nReverse primers only:")
     reverse_only = get_reverse_primers(df)
-    print(reverse_only[['Sequence Name', 'direction']])
+    print(reverse_only[["Sequence Name", "direction"]])
 
     print("\nAP_OplR primers only:")
-    ap_oplr_only = get_primers_by_prefix(df, 'AP_OplR')
-    print(ap_oplr_only[['Sequence Name', 'prefix', 'allele_id']])
+    ap_oplr_only = get_primers_by_prefix(df, "AP_OplR")
+    print(ap_oplr_only[["Sequence Name", "prefix", "allele_id"]])
 
     print("\nSummary:")
     summary = summarize_oligos(df)

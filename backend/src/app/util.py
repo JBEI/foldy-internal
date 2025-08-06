@@ -45,7 +45,7 @@ def get_job_type_replacement(fold: Fold, job_type: str) -> int:
     Returns:
         ID of the newly created invokation
     """
-    for job in fold.jobs:
+    for job in fold.jobs:  # type: ignore[reportGeneralTypeIssues] # SQLAlchemy relationship properties are iterable at runtime
         if job.type == job_type:
             logging.info(f"Deleting existing job {job.id} of type {job_type} for fold {fold.id}")
             job.delete(commit=False)

@@ -53,7 +53,7 @@ class LoginResource(Resource):
             logging.info(
                 "OAuth authentication disabled, redirecting directly to authorize endpoint"
             )
-            return redirect(url_for("login_views_authorize_resource", state=state, _external=True))
+            return redirect(url_for("login_views_authorize_resource", state=state, _external=True))  # type: ignore[reportReturnType] # werkzeug vs flask Response typing
         else:
             assert current_app.config["FOLDY_USER_EMAIL_DOMAIN"]
             assert current_app.config["GOOGLE_CLIENT_ID"]
@@ -77,7 +77,7 @@ def make_error_redirect(message: str) -> Response:
     frontend_parsed = frontend_parsed._replace(query=(frontend_queries))
     rd_url = urlunparse(frontend_parsed)
     logging.warning(f"Redirecting with error: {message}")
-    return redirect(location=rd_url)
+    return redirect(location=rd_url)  # type: ignore[reportReturnType] # werkzeug vs flask Response typing
 
 
 @ns.route("/authorize")
@@ -168,7 +168,7 @@ class AuthorizeResource(Resource):
         response = redirect(location=rd_url)
         set_access_cookies(response, access_token)
         logging.info(f"Setting access cookies for user {email}")
-        return response
+        return response  # type: ignore[reportReturnType] # werkzeug vs flask Response typing
 
 
 @ns.route("/logout")
@@ -183,4 +183,4 @@ class LogoutResource(Resource):
         response = redirect(location=current_app.config["FRONTEND_URL"])
         unset_jwt_cookies(response)
         logging.info("JWT cookies cleared")
-        return response
+        return response  # type: ignore[reportReturnType] # werkzeug vs flask Response typing

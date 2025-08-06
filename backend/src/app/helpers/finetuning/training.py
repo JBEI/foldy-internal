@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from app.helpers.sequence_util import seq_id_to_seq
 from datasets import Dataset
 from scipy.stats import spearmanr
 from sklearn.metrics import accuracy_score
@@ -27,6 +26,8 @@ from transformers import (
 )
 from transformers.integrations import TensorBoardCallback
 from transformers.trainer_callback import TrainerCallback
+
+from app.helpers.sequence_util import seq_id_to_seq
 
 # from .modeling_esm import load_esm_model
 # from .ranking_trainer import RankingTrainer
@@ -116,7 +117,7 @@ class LoggingCallback(TrainerCallback):
             # }
             # if metrics_logs:
             log_str = f"Step {state.global_step}: " + ", ".join(
-                [f"{k}={v:.4f}" for k, v in logs.items()]
+                [f"{k}={v:.4f}" for k, v in (logs.items() if logs else [])]
             )
             logging.info(log_str)
 
@@ -436,8 +437,8 @@ class ESMDirectPreferenceTrainer(Trainer):
         return (
             loss.detach(),
             {
-                "log_score_w": torch.stack(outputs["log_score_w"]).detach(),
-                "log_score_l": torch.stack(outputs["log_score_l"]).detach(),
+                "log_score_w": torch.stack(outputs["log_score_w"]).detach(),  # type: ignore[reportArgumentType]
+                "log_score_l": torch.stack(outputs["log_score_l"]).detach(),  # type: ignore[reportArgumentType]
             },
             # Labels aren't needed for ranking accuracy, but "None" labels won't have compute_accuracy called.
             dummy_labels,

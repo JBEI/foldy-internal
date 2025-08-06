@@ -433,8 +433,7 @@ def apply_diff_list_to_config(
     exclude_base_config: bool = False,
 ) -> List[FolDEModelConfig]:
     original_config = folde_model_config_base.model_copy(
-        deep=True,
-        update={"name": folde_model_config_base.name + '-base'}
+        deep=True, update={"name": folde_model_config_base.name + "-base"}
     )
     if exclude_base_config:
         config_list = []

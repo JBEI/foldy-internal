@@ -6,7 +6,7 @@ from app.helpers.rq_helpers import get_queue
 
 
 def get_queue_size(queue_name: str) -> int:
-    redis_url = os.environ.get('RQ_REDIS_URL')
+    redis_url = os.environ.get("RQ_REDIS_URL")
     if not redis_url:
         raise ValueError("RQ_REDIS_URL is not set...")
     return len(get_queue(queue_name, redis_url=redis_url))

@@ -72,7 +72,7 @@ def get_torch_cuda_is_available_and_add_logs(add_log: Callable[[str], Any]) -> b
     add_log(f"CUDA is{' not' if not torch.cuda.is_available() else ''} available")
 
     # Check if PyTorch was built with CUDA
-    add_log(f"PyTorch CUDA built: {torch.version.cuda is not None}")
+    add_log(f"PyTorch CUDA built: {torch.version.cuda is not None}")  # type: ignore[reportAttributeAccessIssue] # torch.version module incomplete typing
 
     try:
         # Try to get NVIDIA driver version
@@ -138,7 +138,7 @@ class LoggingRecorder(logging.Handler):
         msg = self.format(record)
 
         # Add timestamp and severity
-        pt_tz = pytz.timezone('America/Los_Angeles')
+        pt_tz = pytz.timezone("America/Los_Angeles")
         timestamp = datetime.now(pt_tz).isoformat(sep=" ", timespec="milliseconds")
         severity = record.levelname
         formatted_msg = f"{timestamp} [{severity}] - {msg}"
@@ -156,7 +156,7 @@ class LoggingRecorder(logging.Handler):
 
         Returns:
             The LoggingRecorder instance
-            """
+        """
         # Get the root logger
         logger = logging.getLogger()
 
@@ -197,10 +197,11 @@ class LoggingRecorder(logging.Handler):
                     # Attach captured stack (if any)
                     if getattr(self, "_sigterm_stack", None):
                         self.logs.append(
-                            "----- stack @ SIGTERM -----\n" +
-                            "".join(self._sigterm_stack)
+                            "----- stack @ SIGTERM -----\n" + "".join(self._sigterm_stack)
                         )
-                    logger.info("""Check for preemption with 'gcloud compute operations list --filter="compute.instances.preempted"'""")
+                    logger.info(
+                        """Check for preemption with 'gcloud compute operations list --filter="compute.instances.preempted"'"""
+                    )
                 else:
                     self.final_state = "failed"
                     full_tb = "".join(traceback.format_exception(exc_type, exc_val, exc_tb))

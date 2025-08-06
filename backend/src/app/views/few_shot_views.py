@@ -75,7 +75,7 @@ class UploadActivityFileResource(Resource):
         elif args["activity_file_path"]:
             activity_file_path = Path(args["activity_file_path"])
             activity_file_blob = fsm.storage_manager.get_blob(fold_id, str(activity_file_path))
-            activity_file = activity_file_blob.open("rb").read()
+            activity_file = activity_file_blob.open("rb").read()  # type: ignore[reportAssignmentType] # blob.read() return type ambiguity
         elif args["activity_file_from_few_shot_id"]:
             few_shot_for_activity_file = FewShot.query.get(args["activity_file_from_few_shot_id"])
             if not few_shot_for_activity_file:
@@ -88,7 +88,7 @@ class UploadActivityFileResource(Resource):
                 activity_file_blob = fsm.storage_manager.get_blob(
                     fold_id, few_shot_for_activity_file.input_activity_fpath
                 )
-                activity_file = activity_file_blob.open("rb").read()
+                activity_file = activity_file_blob.open("rb").read()  # type: ignore[reportAssignmentType] # blob.read() return type ambiguity
             except Exception as e:
                 raise BadRequest(
                     f"Failed to get activity file from few shot {args['activity_file_from_few_shot_id']}: {e}"
@@ -109,7 +109,7 @@ class UploadActivityFileResource(Resource):
                 activity_file_blob = fsm.storage_manager.get_blob(
                     fold_id, campaign_round.result_activity_fpath
                 )
-                activity_file = activity_file_blob.open("rb").read()
+                activity_file = activity_file_blob.open("rb").read()  # type: ignore[reportAssignmentType] # blob.read() return type ambiguity
             except Exception as e:
                 raise BadRequest(
                     f"Failed to get activity file from campaign round {args['activity_file_from_campaign_round_id']}: {e}"

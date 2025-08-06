@@ -83,42 +83,41 @@ folde_config = FolDEModelConfig(
 )
 
 difflist = [
-    ModelDiff(name="one-vs-many-split", diffs={
-        "data_split_mode": "one_vs_many_split"
-    }),
-    ModelDiff(name="two-vs-many-split", diffs={
-        "data_split_mode": "two_vs_many_split"
-    }),
-    ModelDiff(name="seven-vs-many-split", diffs={
-        "data_split_mode": "seven_vs_many_split"
-    }),
-    ModelDiff(name="low-vs-high-split", diffs={
-        "data_split_mode": "low_vs_high_split"
-    }),
-    ModelDiff(name="mut-des-split", diffs={
-        "data_split_mode": "mut_des_split"
-    }),
+    ModelDiff(name="one-vs-many-split", diffs={"data_split_mode": "one_vs_many_split"}),
+    ModelDiff(name="two-vs-many-split", diffs={"data_split_mode": "two_vs_many_split"}),
+    ModelDiff(name="seven-vs-many-split", diffs={"data_split_mode": "seven_vs_many_split"}),
+    ModelDiff(name="low-vs-high-split", diffs={"data_split_mode": "low_vs_high_split"}),
+    ModelDiff(name="mut-des-split", diffs={"data_split_mode": "mut_des_split"}),
 ]
 
 extra_folde_diffs = [
-    ModelDiff(name="nowarmstart-two-vs-many-split", diffs={
-        "data_split_mode": "two_vs_many_split",
-        "few_shot_model_params.pretrain": False,
-    }),
-    ModelDiff(name="noCL-two-vs-many-split", diffs={
-        "data_split_mode": "two_vs_many_split",
-        "few_shot_model_params.decision_mode": 'mean',
-    }),
-    ModelDiff(name="noZeroShot-two-vs-many-split", diffs={
-        "data_split_mode": "two_vs_many_split",
-        "zero_shot_model_name": "RandomZeroShotModel",
-    })
+    ModelDiff(
+        name="nowarmstart-two-vs-many-split",
+        diffs={
+            "data_split_mode": "two_vs_many_split",
+            "few_shot_model_params.pretrain": False,
+        },
+    ),
+    ModelDiff(
+        name="noCL-two-vs-many-split",
+        diffs={
+            "data_split_mode": "two_vs_many_split",
+            "few_shot_model_params.decision_mode": "mean",
+        },
+    ),
+    ModelDiff(
+        name="noZeroShot-two-vs-many-split",
+        diffs={
+            "data_split_mode": "two_vs_many_split",
+            "zero_shot_model_name": "RandomZeroShotModel",
+        },
+    ),
 ]
 
 config_list = (
-    apply_diff_list_to_config(folde_config, difflist + extra_folde_diffs) +
-    apply_diff_list_to_config(random_forest_config, difflist) +
-    apply_diff_list_to_config(random_config, difflist)
+    apply_diff_list_to_config(folde_config, difflist + extra_folde_diffs)
+    + apply_diff_list_to_config(random_forest_config, difflist)
+    + apply_diff_list_to_config(random_config, difflist)
 )
 
 print(f"Config 1/{len(config_list)}:")

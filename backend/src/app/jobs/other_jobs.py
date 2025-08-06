@@ -87,11 +87,6 @@ def start_generic_script(invokation_id, process_args):
         raise RuntimeError(
             f"Called Popen invalidly, got error {err} and stdout:\n{_tail(''.join(stdout))}"
         )
-    except subprocess.CalledProcessError as err:
-        stdout += [f"\n\n\nInterrupted by CalledProcessError: {str(err)}"]
-        raise RuntimeError(
-            f"Got CalledProcessError, got error {err} and stdout:\n{_tail(''.join(stdout))}"
-        )
     finally:
         print(f"Invokation ending with final state {final_state}", flush=True)
         # This will get executed regardless of the exceptions raised in try

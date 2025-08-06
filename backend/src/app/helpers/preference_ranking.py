@@ -16,8 +16,8 @@ but contributes to multiple preference pairs.
 """
 
 import logging
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import random
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -26,8 +26,8 @@ import torch.nn.functional as F
 from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
-from torch.utils.data import DataLoader, Dataset, TensorDataset
 from torch.cuda.amp import GradScaler, autocast
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from folde.util import get_top_percentile_recall_score
 
@@ -54,7 +54,9 @@ class PreferenceDataset(Dataset):
             activity_labels: Array of shape (n_samples,) with activity measurements for all samples
         """
         self.embeddings: torch.Tensor = torch.tensor(embeddings, dtype=torch.float32, device=device)
-        self.activity_labels: torch.Tensor = torch.tensor(activity_labels, dtype=torch.float32, device=device)
+        self.activity_labels: torch.Tensor = torch.tensor(
+            activity_labels, dtype=torch.float32, device=device
+        )
         self.n_samples: int = len(embeddings)
 
     def __len__(self) -> int:
@@ -136,21 +138,21 @@ def batch_bradley_terry_loss(
     B = scores.size(0)
 
     # compute pairwise logits & targets
-    diff = scores.view(-1,1) - scores.view(1,-1)          # (B, B)
-    Y = (labels.view(-1,1) > labels.view(1,-1)).float()  # (B, B)
+    diff = scores.view(-1, 1) - scores.view(1, -1)  # (B, B)
+    Y = (labels.view(-1, 1) > labels.view(1, -1)).float()  # (B, B)
 
     # get scores and weights
-    s   = scores.view(-1,1) # (B,1)
+    s = scores.view(-1, 1)  # (B,1)
     s_i = s.expand(B, B).t()  # (B,B)
-    s_j = s.expand(B, B)      # (B,B)
+    s_j = s.expand(B, B)  # (B,B)
 
     if importance_sampling_reweighting_strat == "min":
         w_full = torch.exp(torch.min(s_i, s_j) / importance_sampling_temperature)
     elif importance_sampling_reweighting_strat == "max":
         w_full = torch.exp(torch.max(s_i, s_j) / importance_sampling_temperature)
     else:
-        w_full = torch.ones_like(diff) # uniform
-    
+        w_full = torch.ones_like(diff)  # uniform
+
     if pair_mask is None:
         pair_mask = torch.ones_like(diff, dtype=torch.int).triu(diagonal=1)
     pair_mask_bool = pair_mask.bool()
@@ -161,12 +163,11 @@ def batch_bradley_terry_loss(
     w = w_full[pair_mask_bool]
     w = w / w.sum()  # normalize within this split
     w = w.detach()
-    losses = F.binary_cross_entropy_with_logits(
-        logits, targets, reduction="none"
-    )
+    losses = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
     loss = (w * losses).sum()
 
     return loss
+
 
 # function for masks
 def old_get_random_pair_split(B: int, labels: np.ndarray, val_fraction: float = 0.2, device=None):
@@ -177,22 +178,25 @@ def old_get_random_pair_split(B: int, labels: np.ndarray, val_fraction: float = 
     """
     # first, sample a uniform random matrix
     rand = torch.rand((B, B), device=device)
-    
+
     # make a val‐mask by thresholding, then zero out diagonals
-    val_mask = (rand < val_fraction)
-    val_mask = val_mask.triu(diagonal=1) # make the mask upper triangular (excluding diagonal).
-    
+    val_mask = rand < val_fraction
+    val_mask = val_mask.triu(diagonal=1)  # make the mask upper triangular (excluding diagonal).
+
     # train is everything else off‐diagonal
     train_mask = ~val_mask
-    train_mask = train_mask.triu(diagonal=1) # make the mask upper triangular (excluding diagonal).
-    
+    train_mask = train_mask.triu(diagonal=1)  # make the mask upper triangular (excluding diagonal).
+
     return train_mask, val_mask
 
-def get_random_pair_split(B: int, labels: np.ndarray, rng_seed: int, val_fraction: float = 0.2, device=None):
+
+def get_random_pair_split(
+    B: int, labels: np.ndarray, rng_seed: int, val_fraction: float = 0.2, device=None
+):
     """
     Split directed pairs into training vs validation such that validation
     masks only include pairs for which there is NO directed chain
-    through any intermediate in the training graph. This ensures that 
+    through any intermediate in the training graph. This ensures that
     the validation loss only contains nontrivial comparisons.
 
     Returns:
@@ -214,9 +218,9 @@ def get_random_pair_split(B: int, labels: np.ndarray, rng_seed: int, val_fractio
                 adj[u].append(v)
 
     # do BFS
-    reach = [[False]*B for _ in range(B)]
+    reach = [[False] * B for _ in range(B)]
     for u in range(B):
-        visited = [False]*B
+        visited = [False] * B
         stack = [u]
         visited[u] = True
         while stack:
@@ -326,13 +330,17 @@ class PreferenceTrainer:
         np.random.seed(self.random_state)
 
         # Create datasets and dataloaders
-        train_dataset = PreferenceDataset(train_embeddings, train_activity_labels, device=self.device)
+        train_dataset = PreferenceDataset(
+            train_embeddings, train_activity_labels, device=self.device
+        )
         val_dataset = None
         if val_embeddings is not None and val_activity_labels is not None:
             val_dataset = PreferenceDataset(val_embeddings, val_activity_labels, device=self.device)
         test_dataset = None
         if test_embeddings is not None and test_activity_labels is not None:
-            test_dataset = PreferenceDataset(test_embeddings, test_activity_labels, device=self.device)
+            test_dataset = PreferenceDataset(
+                test_embeddings, test_activity_labels, device=self.device
+            )
 
         shuffle_train_batches = True
         train_mask, val_mask = None, None
@@ -340,15 +348,16 @@ class PreferenceTrainer:
             assert val_embeddings is None and val_activity_labels is None
             shuffle_train_batches = False
             if batch_size < train_activity_labels.shape[0]:
-                raise ValueError(f'Batch size {batch_size} is less than the number of training samples {train_activity_labels.shape[0]}.')
+                raise ValueError(
+                    f"Batch size {batch_size} is less than the number of training samples {train_activity_labels.shape[0]}."
+                )
             train_mask, val_mask = get_random_pair_split(
                 train_activity_labels.shape[0],
                 train_activity_labels,
                 self.random_state,
                 do_validation_with_pair_fraction,
-                device=self.device
+                device=self.device,
             )
-
 
         # Create datasets and dataloaders with fixed random seed
         g = torch.Generator()
@@ -379,7 +388,9 @@ class PreferenceTrainer:
         if use_exponential_learning_rate_decay:
             exponential_lr_schedule = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
         elif use_plateau_learning_rate_decay:
-            plateau_lr_schedule = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10, verbose=True)
+            plateau_lr_schedule = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, mode="min", factor=0.1, patience=10, verbose=True
+            )
 
         for epoch in range(epochs):
             # Training
@@ -424,7 +435,7 @@ class PreferenceTrainer:
 
                 train_loss += loss.item()
                 num_batches += 1
-            
+
             if exponential_lr_schedule is not None:
                 exponential_lr_schedule.step()
 
@@ -446,7 +457,9 @@ class PreferenceTrainer:
                     importance_sampling_temperature,
                 )
                 metrics["val_loss"].append(val_loss if val_loss is not None else np.nan)
-                metrics["test_recall_1pct"].append(test_recall_1pct if test_recall_1pct is not None else np.nan)
+                metrics["test_recall_1pct"].append(
+                    test_recall_1pct if test_recall_1pct is not None else np.nan
+                )
 
                 if val_loss is not None:
                     if plateau_lr_schedule is not None:
@@ -463,10 +476,12 @@ class PreferenceTrainer:
                     if patience is not None and epoch - best_val_loss_epoch >= patience:
                         logger.info(f"Early stopping at epoch {epoch+1}")
                         break
-        
+
         if best_model_state is not None:
             with torch.no_grad():
-                self.model.load_state_dict({k: v.to(self.device) for k,v in best_model_state.items()})
+                self.model.load_state_dict(
+                    {k: v.to(self.device) for k, v in best_model_state.items()}
+                )
 
         return metrics
 
@@ -499,20 +514,27 @@ class PreferenceTrainer:
 
             if val_dataset is not None:
                 if val_mask is not None:
-                    raise ValueError('Cannot specify both a validation dataset and a validation mask')
+                    raise ValueError(
+                        "Cannot specify both a validation dataset and a validation mask"
+                    )
 
-                train_and_val_embeddings = torch.cat([train_dataset.embeddings, val_dataset.embeddings], dim=0)
+                train_and_val_embeddings = torch.cat(
+                    [train_dataset.embeddings, val_dataset.embeddings], dim=0
+                )
                 train_and_val_scores = self.model(train_and_val_embeddings)
 
                 # Make a mask that ignores the block of training pairs in the loss calculation.
                 ignore_train_loss_mask = torch.ones(
-                    (train_and_val_scores.shape[0],train_and_val_scores.shape[0]),
-                    dtype=torch.int
+                    (train_and_val_scores.shape[0], train_and_val_scores.shape[0]), dtype=torch.int
                 )
-                ignore_train_loss_mask[:train_dataset.embeddings.shape[0], :train_dataset.embeddings.shape[0]] = 0
+                ignore_train_loss_mask[
+                    : train_dataset.embeddings.shape[0], : train_dataset.embeddings.shape[0]
+                ] = 0
                 ignore_train_loss_mask = ignore_train_loss_mask.triu(diagonal=1)
 
-                activity_labels = torch.cat([train_dataset.activity_labels, val_dataset.activity_labels], dim=0)
+                activity_labels = torch.cat(
+                    [train_dataset.activity_labels, val_dataset.activity_labels], dim=0
+                )
 
                 val_loss_tensor = batch_bradley_terry_loss(
                     train_and_val_scores,
@@ -523,7 +545,13 @@ class PreferenceTrainer:
                 )
                 val_loss = float(val_loss_tensor.detach().cpu().item())
 
-                del train_and_val_embeddings, train_and_val_scores, ignore_train_loss_mask, activity_labels, val_loss_tensor
+                del (
+                    train_and_val_embeddings,
+                    train_and_val_scores,
+                    ignore_train_loss_mask,
+                    activity_labels,
+                    val_loss_tensor,
+                )
                 torch.cuda.empty_cache()
             elif val_mask is not None:
                 train_scores = self.model(train_dataset.embeddings)
@@ -540,11 +568,7 @@ class PreferenceTrainer:
 
             if test_dataset is not None:
                 # Move only the scores to CPU for metric computation; labels are already on CPU.
-                test_scores_cpu = (
-                    self.model(test_dataset.embeddings)
-                    .detach()
-                    .cpu()
-                )
+                test_scores_cpu = self.model(test_dataset.embeddings).detach().cpu()
 
                 test_recall_1pct = get_top_percentile_recall_score(
                     test_dataset.activity_labels.detach().cpu().numpy(),
@@ -555,7 +579,6 @@ class PreferenceTrainer:
                 torch.cuda.empty_cache()
 
         return val_loss, test_recall_1pct
-
 
     def predict_scores(self, embeddings: np.ndarray) -> np.ndarray:
         """Predict preference scores for embeddings.

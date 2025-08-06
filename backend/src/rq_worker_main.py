@@ -23,8 +23,7 @@ class GracefulWorker(Worker):
     """
 
     def request_stop(self, signum, frame):
-        self.log.warning("%s received – requesting warm shutdown",
-                         signal_name(signum))
+        self.log.warning("%s received – requesting warm shutdown", signal_name(signum))
 
         # Record when we asked so RQ's debounce still works
         self._shutdown_requested_date = now()
@@ -42,20 +41,24 @@ class GracefulWorker(Worker):
 
 
 # Parse command line arguments
-parser = argparse.ArgumentParser(description='Run RQ worker')
-parser.add_argument('queues', nargs='+', help='Queues to listen on')
-parser.add_argument('--burst', action='store_true', help='Run in burst mode')
-parser.add_argument('--max-jobs', type=int, help='Maximum number of jobs to process before quitting')
+parser = argparse.ArgumentParser(description="Run RQ worker")
+parser.add_argument("queues", nargs="+", help="Queues to listen on")
+parser.add_argument("--burst", action="store_true", help="Run in burst mode")
+parser.add_argument(
+    "--max-jobs", type=int, help="Maximum number of jobs to process before quitting"
+)
 args = parser.parse_args()
+
 
 def handle_worker_death(job, *exc_info):
     # Custom handler for worker deaths (e.g., OOM)
     print(f"Worker for job {job.id} was killed: {exc_info}")
     # Add logging or notification logic here
 
+
 def main():
     # Initialize Flask app
-    app = create_app('rq_worker_settings')
+    app = create_app("rq_worker_settings")
 
     with app.app_context():
         # Get Redis connection from Flask app config
@@ -74,5 +77,6 @@ def main():
         print(f"Worker listening on queues: {', '.join(args.queues)}")
         worker.work(burst=args.burst, max_jobs=args.max_jobs)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

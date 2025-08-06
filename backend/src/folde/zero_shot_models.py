@@ -238,10 +238,14 @@ class NaturalnessZeroShotModel(ZeroShotModel):
             seq_id_parts = seq_id.split("_")
 
             # For multimutants, we compute naturalness as the product of the naturalness of the single mutants.
-            assert self.single_mutant_naturalness_series is not None, "Model is not pretrained, so cannot fill in NANs from the pretrain data which is sometimes how we get single mutant naturalness..."
+            assert (
+                self.single_mutant_naturalness_series is not None
+            ), "Model is not pretrained, so cannot fill in NANs from the pretrain data which is sometimes how we get single mutant naturalness..."
             computed_naturalness = self.single_mutant_naturalness_series.loc[seq_id_parts].prod()
             if pd.isna(computed_naturalness):
-                raise ValueError(f"Computed naturalness is NAN for {seq_id} with parts {seq_id_parts}")
+                raise ValueError(
+                    f"Computed naturalness is NAN for {seq_id} with parts {seq_id_parts}"
+                )
             return computed_naturalness
 
         computed_naturalness_series = naturalness_series.reset_index(name="wt_marginal").apply(
@@ -254,7 +258,9 @@ class NaturalnessZeroShotModel(ZeroShotModel):
             if not self.is_pretrained:
                 raise ValueError("Model is not pretrained, so cannot fill in NANs from homologs.")
 
-            logging.info(f"Filling in NANs from homologs for {computed_naturalness_series.isna().sum()}/{len(computed_naturalness_series)} naturalness values.")
+            logging.info(
+                f"Filling in NANs from homologs for {computed_naturalness_series.isna().sum()}/{len(computed_naturalness_series)} naturalness values."
+            )
             assert embedding_series is not None
             embedding_array = np.array([np.array(emb) for emb in embedding_series.values])
             naturalness_array = computed_naturalness_series.values
@@ -270,10 +276,14 @@ class NaturalnessZeroShotModel(ZeroShotModel):
             imputed_naturalness[missing_mask] = imputed_values
 
             # Convert back to Series
-            computed_naturalness_series = pd.Series(imputed_naturalness, index=naturalness_series.index)
-        
+            computed_naturalness_series = pd.Series(
+                imputed_naturalness, index=naturalness_series.index
+            )
+
         if computed_naturalness_series.isna().any():
-            raise ValueError(f"Computed naturalness series still has NANs: {computed_naturalness_series.isna().sum()}/{len(computed_naturalness_series)}")
+            raise ValueError(
+                f"Computed naturalness series still has NANs: {computed_naturalness_series.isna().sum()}/{len(computed_naturalness_series)}"
+            )
 
         return [computed_naturalness_series]
 

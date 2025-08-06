@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from scipy.stats import spearmanr
 from sklearn.metrics import average_precision_score, mean_squared_error, recall_score, roc_auc_score
 
+from app.helpers.sequence_util import get_loci_set, is_homolog_seq_id
 from folde.data import get_proteingym_dataset
 from folde.few_shot_models import get_consensus_scores, get_few_shot_model
 from folde.types import (
@@ -30,7 +31,6 @@ from folde.types import (
     SimulationResult,
     SingleConfigCampaignResult,
 )
-from app.helpers.sequence_util import is_homolog_seq_id, get_loci_set
 from folde.util import get_consensus_scores, get_top_percentile_recall_score, top_k_mask
 from folde.zero_shot_models import get_zero_shot_model
 
@@ -158,10 +158,13 @@ def _run_single_simulation(
     )
 
     def is_single_mutant_id(seq_id: str) -> bool:
-        if seq_id == 'WT' or is_homolog_seq_id(seq_id):
+        if seq_id == "WT" or is_homolog_seq_id(seq_id):
             return False
         return len(get_loci_set(seq_id)) == 1
-    single_mutant_seq_ids = [seq_id for seq_id in entire_naturalness_series.index if is_single_mutant_id(seq_id)]
+
+    single_mutant_seq_ids = [
+        seq_id for seq_id in entire_naturalness_series.index if is_single_mutant_id(seq_id)
+    ]
 
     pretraining_naturalness_series = entire_naturalness_series.loc[single_mutant_seq_ids]
     pretraining_embedding_series = entire_embedding_series.loc[single_mutant_seq_ids]
@@ -311,8 +314,12 @@ def _run_single_simulation(
 
             nonnull_activity_mask = held_out_activity_series.notna()
 
-            assert not held_out_activity_series[nonnull_activity_mask].isna().any(), f"{held_out_activity_series[nonnull_activity_mask].isna().sum()}/{len(held_out_activity_series[nonnull_activity_mask])} held out activity values are NAN"
-            assert not consensus_held_out_predictions[nonnull_activity_mask].isna().any(), f"{consensus_held_out_predictions[nonnull_activity_mask].isna().sum()}/{len(consensus_held_out_predictions[nonnull_activity_mask])} consensus held out predictions are NAN"
+            assert (
+                not held_out_activity_series[nonnull_activity_mask].isna().any()
+            ), f"{held_out_activity_series[nonnull_activity_mask].isna().sum()}/{len(held_out_activity_series[nonnull_activity_mask])} held out activity values are NAN"
+            assert (
+                not consensus_held_out_predictions[nonnull_activity_mask].isna().any()
+            ), f"{consensus_held_out_predictions[nonnull_activity_mask].isna().sum()}/{len(consensus_held_out_predictions[nonnull_activity_mask])} consensus held out predictions are NAN"
 
             held_out_stat_recall = get_top_percentile_recall_score(
                 held_out_activity_series[nonnull_activity_mask].to_numpy(),
@@ -340,8 +347,8 @@ def _run_single_simulation(
                 "held_out_1pct_auc": float(held_out_1pct_auc),  # type: ignore
                 "held_out_10pct_recall": float(held_out_10pct_recall),  # type: ignore
                 "held_out_10pct_auc": float(held_out_10pct_auc),  # type: ignore
-                "old_held_out_1pct_recall": 0.0, # float(old_held_out_1pct_recall),  # type: ignore
-                "old_held_out_1pct_auc": 0.0, # float(old_held_out_1pct_auc),  # type: ignore
+                "old_held_out_1pct_recall": 0.0,  # float(old_held_out_1pct_recall),  # type: ignore
+                "old_held_out_1pct_auc": 0.0,  # float(old_held_out_1pct_auc),  # type: ignore
             },
         )
 
@@ -488,12 +495,12 @@ def simulate_campaign(
                             f"Data split mode {model_config.data_split_mode} not found in category_df.columns: {category_df.columns}"
                         )
                     full_seq_id_list = list(
-                        category_df[
-                            category_df[model_config.data_split_mode]
-                        ].index.values
+                        category_df[category_df[model_config.data_split_mode]].index.values
                     )
                 else:
-                    full_seq_id_list = list(activity_df[activity_df[activity_column].notna()].index.values)
+                    full_seq_id_list = list(
+                        activity_df[activity_df[activity_column].notna()].index.values
+                    )
 
                 world_size = int(len(full_seq_id_list) * 0.5)
 

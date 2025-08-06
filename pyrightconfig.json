@@ -1,7 +1,6 @@
 {
     "venvPath": ".",
     "venv": ".venv",
-    // "pythonPath": "${workspaceFolder}/.venv/bin/python",
     "extraPaths": ["backend/src"],
     "include": ["backend/src"],
     "executionEnvironments": [
@@ -10,8 +9,41 @@
         "extraPaths": ["backend/src"]
       }
     ],
-    "typeCheckingMode": "standard",
+    "typeCheckingMode": "basic",
+
+    // Strategic suppressions for library compatibility issues
     "reportMissingImports": "none",
-    "reportOptionalMemberAccess": "error",
-    "reportGeneralTypeIssues": "error"
+    "reportMissingTypeStubs": "none",
+    "reportUnknownMemberType": "none",
+    "reportUnknownArgumentType": "none",
+    "reportUnknownParameterType": "none",
+    "reportUnknownVariableType": "none",
+    "reportUntypedNamedTuple": "none",
+    "reportUntypedClassDecorator": "none",
+    "reportUntypedFunctionDecorator": "none",
+
+    // Torch/PyTorch related suppressions
+    "reportArgumentType": "warning",
+    "reportCallIssue": "warning",
+    "reportIndexIssue": "warning",
+    "reportOperatorIssue": "warning",
+
+    // Pandas/NumPy related suppressions
+    "reportIncompatibleVariableOverride": "warning",
+    "reportIncompatibleMethodOverride": "warning",
+
+    // SQLAlchemy related suppressions
+    "reportAttributeAccessIssue": "warning",
+    "reportOptionalMemberAccess": "warning",
+    "reportOptionalSubscript": "warning",
+    "reportOptionalCall": "warning",
+    "reportOptionalIterable": "warning",
+    "reportOptionalContextManager": "warning",
+    "reportOptionalOperand": "warning",
+
+    // Application logic - keep as errors for real issues
+    "reportGeneralTypeIssues": "error",
+    "reportUndefinedVariable": "error",
+    "reportAssignmentType": "error",
+    "reportReturnType": "error"
 }

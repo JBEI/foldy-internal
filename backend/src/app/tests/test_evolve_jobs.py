@@ -148,5 +148,5 @@ def test_run_evolvepro_succeeds(
         # If this were a linear model, it would know that the second mutant should
         # be more active than the first, based on the constructed embedding. But the
         # random forest model can't extrapolate.
-        assert predicted_activity_df.loc["A1G"].predicted_activity > 1.5
-        assert predicted_activity_df.loc["A1G_C2Y"].predicted_activity > 1.5
+        assert predicted_activity_df.loc["A1G"].predicted_activity > 1.5  # type: ignore[reportGeneralTypeIssues] # pandas Series boolean evaluation
+        assert predicted_activity_df.loc["A1G_C2Y"].predicted_activity > 1.5  # type: ignore[reportGeneralTypeIssues] # pandas Series boolean evaluation

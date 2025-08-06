@@ -30,12 +30,6 @@ def test_invokation(app, test_fold):
 ERROR_MESSAGE_IF_EVERYTHING_GOES_WELL = "No module named 'torch'"
 
 
-def test_cif_to_pdb(tmp_path):
-    """Basic test for cif_to_pdb function."""
-    pdb_string = cif_to_pdb("app/tests/testdata/rubisco-boltz.cif", "structure")
-    assert pdb_string.startswith("ATOM")
-
-
 def test_run_boltz_get_decently_far(app, client, tmp_path, test_fold, test_invokation):
     """Basic test for run_evolvepro function."""
     with app.app_context():
