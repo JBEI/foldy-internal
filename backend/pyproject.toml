@@ -71,7 +71,8 @@ dependencies = [
     "rq-scheduler==0.14.0",
     "redis==5.2.1",
     "rq_dashboard",
-    "flask_admin",
+    "flask_admin==1.6.1",
+    "wtforms==3.1.2",  # https://github.com/pallets-eco/flask-admin/issues/2546
     "environs",
     "docker==7.1.0",
 

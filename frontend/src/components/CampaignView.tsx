@@ -121,18 +121,40 @@ const CampaignView: React.FC = () => {
     const handleUpdateCampaign = async (values: any) => {
         if (!campaign) return;
 
-        try {
-            const updatedCampaign = await updateCampaign(campaign.id, {
-                name: values.name,
-                description: values.description,
-                naturalness_model: values.naturalness_model,
-                embedding_model: values.embedding_model,
+        // Check if configuration fields are being changed
+        const isConfigChange =
+            values.naturalness_model !== campaign.naturalness_model ||
+            values.embedding_model !== campaign.embedding_model ||
+            values.domain_boundaries !== campaign.domain_boundaries;
+
+        const performUpdate = async () => {
+            try {
+                const updatedCampaign = await updateCampaign(campaign.id, {
+                    name: values.name,
+                    description: values.description,
+                    naturalness_model: values.naturalness_model,
+                    embedding_model: values.embedding_model,
+                    domain_boundaries: values.domain_boundaries,
+                });
+                setCampaign(updatedCampaign);
+                notify.success('Campaign updated successfully');
+                setShowEditModal(false);
+            } catch (error: any) {
+                notify.error(error.response?.data?.message || 'Failed to update campaign');
+            }
+        };
+
+        if (isConfigChange && sortedRounds.length > 0) {
+            Modal.confirm({
+                title: 'WARNING: Change Campaign Configuration?',
+                content: 'Are you sure you want to change campaign configuration? This might lead to incompatibilities with earlier rounds.',
+                okText: 'Yes, Update Configuration',
+                okType: 'danger',
+                cancelText: 'Cancel',
+                onOk: performUpdate,
             });
-            setCampaign(updatedCampaign);
-            notify.success('Campaign updated successfully');
-            setShowEditModal(false);
-        } catch (error: any) {
-            notify.error(error.response?.data?.message || 'Failed to update campaign');
+        } else {
+            performUpdate();
         }
     };
 
@@ -155,26 +177,6 @@ const CampaignView: React.FC = () => {
         } catch (error: any) {
             notify.error(error.response?.data?.message || 'Failed to create round');
         }
-    };
-
-    const handleDeleteRound = async (round: CampaignRound) => {
-        if (!campaign) return;
-
-        Modal.confirm({
-            title: 'Delete Round',
-            content: `Are you sure you want to delete Round ${round.round_number}? This action cannot be undone.`,
-            okText: 'Delete',
-            okType: 'danger',
-            onOk: async () => {
-                try {
-                    await deleteCampaignRound(campaign.id, round.id);
-                    loadCampaign(); // Reload to get updated rounds
-                    notify.success(`Round ${round.round_number} deleted successfully`);
-                } catch (error: any) {
-                    notify.error(error.response?.data?.message || 'Failed to delete round');
-                }
-            },
-        });
     };
 
     if (loading) {
@@ -292,6 +294,11 @@ const CampaignView: React.FC = () => {
                             {campaign.fold_name}
                         </Link>
                     </Text>
+                    {campaign.description && (
+                        <p style={{ margin: '8px 0 0 0', color: '#666' }}>
+                            {campaign.description}
+                        </p>
+                    )}
                 </div>
                 <Button
                     icon={<EditOutlined />}
@@ -301,6 +308,7 @@ const CampaignView: React.FC = () => {
                             description: campaign.description || '',
                             naturalness_model: campaign.naturalness_model || 'esm2_t33_650M_UR50D',
                             embedding_model: campaign.embedding_model || 'esm2_t33_650M_UR50D',
+                            domain_boundaries: campaign.domain_boundaries || '',
                         });
                         setShowEditModal(true);
                     }}
@@ -311,69 +319,25 @@ const CampaignView: React.FC = () => {
 
             <Row gutter={[24, 24]}>
                 <Col span={24}>
-                    <Card title="Campaign Overview">
+                    <Card title="Configuration">
                         <Descriptions column={2} bordered>
-                            <Descriptions.Item label="Name">
-                                {campaign.name}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Fold">
-                                <Link
-                                    to={`/fold/${campaign.fold_id}`}
-                                    style={{
-                                        color: 'inherit',
-                                        textDecoration: 'none'
-                                    }}
-                                >
-                                    {campaign.fold_name}
-                                </Link>
-                            </Descriptions.Item>
                             <Descriptions.Item label="Created">
                                 {new Date(campaign.created_at).toLocaleString()}
                             </Descriptions.Item>
-                            <Descriptions.Item label="Total Rounds">
-                                {sortedRounds.length}
+                            <Descriptions.Item label="Naturalness Model">
+                                <Text code>{campaign.naturalness_model || 'esm2_t33_650M_UR50D'}</Text>
                             </Descriptions.Item>
-                            <Descriptions.Item label="Description" span={2}>
-                                {campaign.description ? (
-                                    <Paragraph style={{ margin: 0 }}>
-                                        {campaign.description}
-                                    </Paragraph>
+                            <Descriptions.Item label="Embedding Model">
+                                <Text code>{campaign.embedding_model || 'esm2_t33_650M_UR50D'}</Text>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Domain Boundaries">
+                                {campaign.domain_boundaries ? (
+                                    <Text code>{campaign.domain_boundaries}</Text>
                                 ) : (
-                                    <Text type="secondary">No description provided</Text>
+                                    <Text type="secondary">Not set</Text>
                                 )}
                             </Descriptions.Item>
                         </Descriptions>
-                    </Card>
-                </Col>
-
-                <Col span={24}>
-                    <Card title="Model Configuration">
-                        <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                            <ESMModelPicker
-                                value={campaign.naturalness_model || "esm2_t33_650M_UR50D"}
-                                onChange={(value) => {
-                                    handleUpdateCampaign({
-                                        name: campaign.name,
-                                        description: campaign.description,
-                                        naturalness_model: value,
-                                        embedding_model: campaign.embedding_model
-                                    });
-                                }}
-                                label="Naturalness Protein Language Model"
-                            />
-                            <ESMModelPicker
-                                value={campaign.embedding_model || "esm2_t33_650M_UR50D"}
-                                onChange={(value) => {
-                                    handleUpdateCampaign({
-                                        name: campaign.name,
-                                        description: campaign.description,
-                                        naturalness_model: campaign.naturalness_model,
-                                        embedding_model: value
-                                    });
-                                }}
-                                label="Embedding Model"
-                            />
-                        </div>
                     </Card>
                 </Col>
 
@@ -450,7 +414,6 @@ const CampaignView: React.FC = () => {
 
                     <Content style={{
                         padding: '24px',
-                        minHeight: '600px',
                         maxHeight: 'calc(100vh - 112px)',
                         overflowY: 'auto',
                         flex: 1
@@ -507,6 +470,14 @@ const CampaignView: React.FC = () => {
                             onChange={(value) => editForm.setFieldValue('embedding_model', value)}
                             label=""
                         />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="domain_boundaries"
+                        label="Domain Boundaries"
+                        tooltip="Optional comma-separated list of boundaries for domain-pooling when generating embeddings (e.g., 10,50,100)"
+                    >
+                        <Input placeholder="e.g., 10,50,100" />
                     </Form.Item>
 
                     <Form.Item style={{ marginBottom: 0 }}>

@@ -21,24 +21,19 @@ ns = Namespace("campaign_views", decorators=[jwt_required(fresh=True)])
 # Import naturalness_fields from other_views to avoid duplication
 from app.views.other_views import few_shot_fields, naturalness_fields
 
-campaign_round_fields = ns.model(
-    "CampaignRoundFields",
-    {
-        "id": fields.Integer(readonly=True),
-        "campaign_id": fields.Integer(required=True),
-        "round_number": fields.Integer(required=True),
-        "date_started": fields.DateTime(format="iso8601Z", dt_format="iso8601", readonly=True),
-        "mode": fields.String(required=False),
-        "naturalness_run_id": fields.Integer(required=False),
-        "naturalness_run": fields.Nested(naturalness_fields, required=False, allow_null=True),
-        "few_shot_run_id": fields.Integer(required=False, allow_null=True),
-        "few_shot_run": fields.Nested(few_shot_fields, required=False, allow_null=True),
-        "slate_seq_ids": fields.String(required=False),
-        "result_activity_fpath": fields.String(required=False),
-        "promoted_templates": fields.List(fields.String, required=False),
-        "input_templates": fields.String(required=False),
-    },
-)
+
+class NullableInteger(fields.Raw):
+    __schema_type__ = ["integer", "null"]
+    __schema_example__ = None
+
+    def format(self, value):
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            raise ValueError(f"{value} is not a valid integer or none")
+
 
 campaign_round_input_fields = ns.model(
     "CampaignRoundInputFields",
@@ -47,7 +42,7 @@ campaign_round_input_fields = ns.model(
         "date_started": fields.DateTime(format="iso8601Z", dt_format="iso8601", required=False),
         "mode": fields.String(required=False),
         "naturalness_run_id": fields.Integer(required=False),
-        "few_shot_run_id": fields.Integer(required=False),
+        "few_shot_run_id": NullableInteger(required=False),
         "slate_seq_ids": fields.String(required=False),
         "result_activity_fpath": fields.String(required=False),
         "promoted_templates": fields.List(fields.String, required=False),
@@ -55,20 +50,19 @@ campaign_round_input_fields = ns.model(
     },
 )
 
-campaign_fields = ns.model(
-    "CampaignFields",
+campaign_round_fields = ns.inherit(
+    "CampaignRoundFields",
+    campaign_round_input_fields,
     {
         "id": fields.Integer(readonly=True),
-        "name": fields.String(required=True),
-        "description": fields.String(required=False),
-        "fold_id": fields.Integer(required=True),
-        "created_at": fields.DateTime(format="iso8601Z", dt_format="iso8601", readonly=True),
-        "rounds": fields.List(fields.Nested(campaign_round_fields), readonly=True),
-        "fold_name": fields.String(
-            attribute=lambda x: x.fold.name if x.fold else None, readonly=True
-        ),
-        "naturalness_model": fields.String(required=False),
-        "embedding_model": fields.String(required=False),
+        "campaign_id": fields.Integer(required=True),
+        "round_number": fields.Integer(required=True),  # Override to make required
+        "date_started": fields.DateTime(
+            format="iso8601Z", dt_format="iso8601", readonly=True
+        ),  # Override to make readonly
+        "naturalness_run": fields.Nested(naturalness_fields, required=False, allow_null=True),
+        # "few_shot_run_id": NullableInteger(required=False),  # Override to use NullableInteger
+        "few_shot_run": fields.Nested(few_shot_fields, required=False, allow_null=True),
     },
 )
 
@@ -80,6 +74,20 @@ campaign_input_fields = ns.model(
         "fold_id": fields.Integer(required=True),
         "naturalness_model": fields.String(required=False),
         "embedding_model": fields.String(required=False),
+        "domain_boundaries": fields.String(required=False),
+    },
+)
+
+campaign_fields = ns.inherit(
+    "CampaignFields",
+    campaign_input_fields,
+    {
+        "id": fields.Integer(readonly=True),
+        "created_at": fields.DateTime(format="iso8601Z", dt_format="iso8601", readonly=True),
+        "rounds": fields.List(fields.Nested(campaign_round_fields), readonly=True),
+        "fold_name": fields.String(
+            attribute=lambda x: x.fold.name if x.fold else None, readonly=True
+        ),
     },
 )
 
@@ -171,6 +179,7 @@ class CampaignsResource(Resource):
             description=data.get("description"),
             naturalness_model=data.get("naturalness_model"),
             embedding_model=data.get("embedding_model"),
+            domain_boundaries=data.get("domain_boundaries"),
         )
 
         db.session.add(campaign)
@@ -238,6 +247,9 @@ class CampaignResource(Resource):
 
         if "embedding_model" in data:
             campaign.embedding_model = data["embedding_model"]
+
+        if "domain_boundaries" in data:
+            campaign.domain_boundaries = data["domain_boundaries"]
 
         db.session.commit()
 

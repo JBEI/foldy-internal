@@ -11,13 +11,15 @@ if [ "$#" -gt 1 ]; then
   exit 2
 fi
 
-GOOGLE_CLOUD_PROJECT_ID=$(yq eval '.GoogleProjectId' deployment/helm/values.yaml -e)
-GOOGLE_CLOUD_REGION=$(yq eval '.GoogleCloudRegion' deployment/helm/values.yaml -e)
-GOOGLE_CLOUD_ZONE=$(yq eval '.GoogleCloudZone' deployment/helm/values.yaml -e)
-GOOGLE_CLOUD_ARTIFACT_REPO=$(yq eval '.ArtifactRepo' deployment/helm/values.yaml -e)
-VERSION=$(yq eval '.ImageVersion' deployment/helm/values.yaml -e)
-BACKEND_URL="https://$(yq eval '.FoldyDomain' deployment/helm/values.yaml -e)"
-INSTITUTION=$(yq eval '.Institution' deployment/helm/values.yaml -e)
+VALUES_YAML_PATH="$(dirname $0)/../values.yaml"
+
+GOOGLE_CLOUD_PROJECT_ID=$(yq eval '.GoogleProjectId' $VALUES_YAML_PATH -e)
+GOOGLE_CLOUD_REGION=$(yq eval '.GoogleCloudRegion' $VALUES_YAML_PATH -e)
+GOOGLE_CLOUD_ZONE=$(yq eval '.GoogleCloudZone' $VALUES_YAML_PATH -e)
+GOOGLE_CLOUD_ARTIFACT_REPO=$(yq eval '.ArtifactRepo' $VALUES_YAML_PATH -e)
+VERSION=$(yq eval '.ImageVersion' $VALUES_YAML_PATH -e)
+BACKEND_URL="https://$(yq eval '.FoldyDomain' $VALUES_YAML_PATH -e)"
+INSTITUTION=$(yq eval '.Institution' $VALUES_YAML_PATH -e)
 
 # TODO: delete
 # FOLDY_ALPHAFOLD_TAG=foldyalphafold

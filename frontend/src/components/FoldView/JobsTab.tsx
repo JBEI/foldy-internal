@@ -42,8 +42,8 @@ const JobsTab: React.FC<JobsTabProps> = ({ jobs }) => {
         if (!jobs) return [];
         return [...jobs].sort((a, b) => {
             if (!a.starttime && !b.starttime) return 0;
-            if (!a.starttime) return 1; // null values go to end
-            if (!b.starttime) return -1;
+            if (!a.starttime) return -1; // null values go to top
+            if (!b.starttime) return 1;
             return new Date(b.starttime).getTime() - new Date(a.starttime).getTime();
         });
     }, [jobs]);

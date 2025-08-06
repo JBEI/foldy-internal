@@ -1,20 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Table, Button, Modal, Form, Input, Select, Typography, Space, Card, Pagination, Tag } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, Typography, Space, Card, Pagination, Tag, Spin } from 'antd';
 import { PlusOutlined, EyeOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { ColumnsType } from 'antd/es/table';
-import { Campaign } from '../types/types';
+import { Campaign, Fold as FoldType } from '../types/types';
 import { PaginatedCampaignsResponse, getCampaigns, createCampaign, deleteCampaign } from '../api/campaignApi';
-import { getFoldsWithPagination } from '../api/foldApi';
+import { getFold, getFoldsWithPagination } from '../api/foldApi';
 import { notify } from '../services/NotificationService';
 import { ESMModelPicker } from './FoldView/ESMModelPicker';
+import debounce from 'lodash/debounce';
+import type { SelectProps } from 'antd';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
-interface Fold {
+interface FoldOption {
+    label: string;
+    value: number;
+    owner_email?: string;
+}
+
+interface LocalFold {
     id: number;
     name: string;
+    owner_email?: string;
 }
 
 const CampaignsView: React.FC = () => {
@@ -25,39 +34,116 @@ const CampaignsView: React.FC = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize] = useState(20);
 
-    const [folds, setFolds] = useState<Fold[]>([]);
+    const [folds, setFolds] = useState<LocalFold[]>([]);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [createForm] = Form.useForm();
 
-    const loadCampaigns = async (page: number = 1) => {
+    const loadCampaignsAndFolds = async (page: number = 1) => {
         setLoading(true);
         try {
+            // First, load campaigns
             const response: PaginatedCampaignsResponse = await getCampaigns(page, pageSize);
             setCampaigns(response.campaigns);
             setTotalCampaigns(response.total);
             setCurrentPage(response.page);
+
+            // Get unique fold IDs from the campaigns
+            const foldIds = [...new Set(response.campaigns.map(campaign => campaign.fold_id))];
+
+            // Load only the relevant folds
+            const foldsPromises = foldIds.map(async foldId => {
+                try {
+                    return await getFold(foldId);
+                } catch (error) {
+                    console.warn(`Failed to load fold ${foldId}:`, error);
+                    return null;
+                }
+            });
+            const foldsResponses = await Promise.all(foldsPromises);
+
+            // Map to the format needed for the select dropdown, filtering out null responses
+            const foldsData = foldsResponses
+                .filter(fold => fold !== null)
+                .map(fold => ({ id: fold!.id || 0, name: fold!.name }));
+            setFolds(foldsData);
+
         } catch (error) {
-            notify.error('Failed to load campaigns');
-            console.error('Error loading campaigns:', error);
+            notify.error('Failed to load campaigns and folds');
+            console.error('Error loading campaigns and folds:', error);
         } finally {
             setLoading(false);
         }
     };
 
-    const loadFolds = async () => {
+    useEffect(() => {
+        loadCampaignsAndFolds();
+    }, []);
+
+    const fetchFoldOptions = async (searchTerm: string): Promise<FoldOption[]> => {
+        if (!searchTerm.trim()) {
+            return [];
+        }
+
         try {
-            const foldsResponse = await getFoldsWithPagination(null, null, 1, 1000);
-            setFolds(foldsResponse.data.map((fold: any) => ({ id: fold.id, name: fold.name })));
+            const result = await getFoldsWithPagination(searchTerm, null, 1, 20);
+            return result.data.map(fold => ({
+                label: fold.name,
+                value: fold.id || 0,
+                owner_email: fold.owner
+            }));
         } catch (error) {
-            notify.error('Failed to load folds');
-            console.error('Error loading folds:', error);
+            notify.error('Failed to search folds');
+            console.error('Error searching folds:', error);
+            return [];
         }
     };
 
-    useEffect(() => {
-        loadCampaigns();
-        loadFolds();
-    }, []);
+    const FoldDebounceSelect: React.FC<{
+        value?: number;
+        onChange?: (value: number) => void;
+        placeholder?: string;
+    }> = ({ value, onChange, placeholder }) => {
+        const [fetching, setFetching] = useState(false);
+        const [options, setOptions] = useState<FoldOption[]>([]);
+        const fetchRef = useRef(0);
+
+        const debounceFetcher = useMemo(() => {
+            const loadOptions = (searchValue: string) => {
+                fetchRef.current += 1;
+                const fetchId = fetchRef.current;
+                setOptions([]);
+                setFetching(true);
+
+                fetchFoldOptions(searchValue).then((newOptions) => {
+                    if (fetchId !== fetchRef.current) {
+                        return;
+                    }
+                    setOptions(newOptions);
+                    setFetching(false);
+                });
+            };
+            return debounce(loadOptions, 300);
+        }, []);
+
+        return (
+            <Select
+                showSearch
+                value={value}
+                placeholder={placeholder}
+                filterOption={false}
+                onSearch={debounceFetcher}
+                onChange={onChange}
+                notFoundContent={fetching ? <Spin size="small" /> : 'No results found'}
+                style={{ width: '100%' }}
+            >
+                {options.map(option => (
+                    <Select.Option key={option.value} value={option.value}>
+                        {option.label}{option.owner_email ? ` | ${option.owner_email}` : ''}
+                    </Select.Option>
+                ))}
+            </Select>
+        );
+    };
 
     const handleCreateCampaign = async (values: any) => {
         try {
@@ -67,11 +153,12 @@ const CampaignsView: React.FC = () => {
                 description: values.description,
                 naturalness_model: values.naturalness_model,
                 embedding_model: values.embedding_model,
+                domain_boundaries: values.domain_boundaries,
             });
             notify.success('Campaign created successfully');
             setShowCreateModal(false);
             createForm.resetFields();
-            loadCampaigns(currentPage);
+            loadCampaignsAndFolds(currentPage);
         } catch (error: any) {
             notify.error(error.response?.data?.message || 'Failed to create campaign');
         }
@@ -87,7 +174,7 @@ const CampaignsView: React.FC = () => {
                 try {
                     await deleteCampaign(campaignId);
                     notify.success('Campaign deleted successfully');
-                    loadCampaigns(currentPage);
+                    loadCampaignsAndFolds(currentPage);
                 } catch (error: any) {
                     notify.error(error.response?.data?.message || 'Failed to delete campaign');
                 }
@@ -208,7 +295,7 @@ const CampaignsView: React.FC = () => {
                         pageSize={pageSize}
                         onChange={(page) => {
                             setCurrentPage(page);
-                            loadCampaigns(page);
+                            loadCampaignsAndFolds(page);
                         }}
                         showSizeChanger={false}
                         showQuickJumper
@@ -246,17 +333,11 @@ const CampaignsView: React.FC = () => {
                         label="Fold"
                         rules={[{ required: true, message: 'Please select a fold' }]}
                     >
-                        <Select
-                            placeholder="Select a fold for this campaign"
-                            showSearch
-                            optionFilterProp="children"
-                        >
-                            {folds.map(fold => (
-                                <Select.Option key={fold.id} value={fold.id}>
-                                    {fold.name}
-                                </Select.Option>
-                            ))}
-                        </Select>
+                        <FoldDebounceSelect
+                            placeholder="Search and select a fold for this campaign"
+                            value={createForm.getFieldValue('fold_id')}
+                            onChange={(value) => createForm.setFieldValue('fold_id', value)}
+                        />
                     </Form.Item>
 
                     <Form.Item
@@ -291,6 +372,14 @@ const CampaignsView: React.FC = () => {
                             onChange={(value) => createForm.setFieldValue('embedding_model', value)}
                             label=""
                         />
+                    </Form.Item>
+
+                    <Form.Item
+                        name="domain_boundaries"
+                        label="Domain Boundaries"
+                        tooltip="Optional comma-separated list of boundaries for domain-pooling when generating embeddings (e.g., 10,50,100)"
+                    >
+                        <Input placeholder="e.g., 10,50,100" />
                     </Form.Item>
 
                     <Form.Item style={{ marginTop: '24px', marginBottom: 0 }}>

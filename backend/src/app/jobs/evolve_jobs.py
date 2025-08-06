@@ -149,9 +149,10 @@ def run_evolvepro(few_shot_id: int):
             raise BadRequest(f"Failed to parse few shot params: {e}")
 
         # 2. Read and merge all embedding CSVs
-        activity_file_contents = fsm.storage_manager.get_binary(
-            few_shot.fold_id, str(few_shot_directory / "activity.xlsx")
-        )
+        activity_fpath = few_shot.input_activity_fpath
+        if not activity_fpath:
+            raise ValueError("No activity file path found for few shot")
+        activity_file_contents = fsm.storage_manager.get_binary(few_shot.fold_id, activity_fpath)
 
         raw_activity_df = pd.read_excel(BytesIO(activity_file_contents))
         raw_embedding_df = get_embedding_df_from_file(

@@ -13,15 +13,27 @@
 
 ## Deployment Options
 
-Foldy is a composable set of services which can be deployed lots of  ways. We currently document three types of deployment: Development, Foldy-in-a-Box, and Helm. The development deployment is not fully featured - it cannot run jobs - but supports the frontend features and it can easily be run on a laptop for development purposes. Foldy-in-a-box is a quick deployment option - it can be run in under ten minutes - for creating a full featured Foldy instance on a Google Cloud machine. It could also be the starting point for a more bespoke deployment on a large local machine. Finally the Helm deployment is the horizontally scalable, cloud deployment, built on Kubernetes. The name comes from Helm Charts, which are a tool for specifying Kubernetes deployments. The Helm deployment is involved, but it is secure and can be scaled to hundreds of users and tens of thousands of folds.
+### 🚀 Quick Start: Run Locally
 
-You can find more information about employing the different deployment options in their respective `deployment` directories.
+**Want to try Foldy right now?** Run this single command:
 
-|Deployment Type|Features|Ease of setup|Setup|
-|---|---|---|---|
-|Development|No tools, just an interface|Extremely easy|[Instructions](deployment/development/README.md)|
-|Foldy-in-a-Box|All tools can run|Easy|[Instructions](deployment/foldy-in-a-box/README.md)|
-|Helm|Scalable to hundreds of users|Hard|[Instructions](deployment/helm/README.md)|
+```bash
+FOLDY_STORAGE_DIRECTORY=$HOME/foldy-data \
+  docker-compose -f <(curl -s https://raw.githubusercontent.com/JBEI/foldy/main/deployment/local/docker-compose.yml) up -d
+```
+
+Foldy will be available at **http://localhost:3000** in ~2 minutes.
+
+### All Deployment Options
+
+Foldy is a composable set of services which can be deployed many ways. We document four types of deployment: Local (one-command Docker setup), Development (frontend-only for coding), Foldy-in-a-Box (Google Cloud VM), and Helm (scalable Kubernetes).
+
+|Deployment Type|Features|Ease of setup|Best for|Setup|
+|---|---|---|---|---|
+|**Local**|**Full featured Foldy**|**One command**|**Trying Foldy locally**|**[Instructions](deployment/local/README.md)**|
+|Development|Frontend only, no jobs|Very easy|Development work|[Instructions](deployment/development/README.md)|
+|Foldy-in-a-Box|Full featured|Easy|Small teams, cloud VM|[Instructions](deployment/foldy-in-a-box/README.md)|
+|Helm|Horizontally scalable|Hard|Large institutions|[Instructions](deployment/helm/README.md)|
 
 ## The Interface
 

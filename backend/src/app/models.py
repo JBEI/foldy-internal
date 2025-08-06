@@ -315,6 +315,7 @@ class Campaign(PkModel):
 
     naturalness_model = Column(db.String(80), nullable=True, default="esm2_t33_650M_UR50D")
     embedding_model = Column(db.String(80), nullable=True, default="esm2_t33_650M_UR50D")
+    domain_boundaries = Column(db.String, nullable=True)
 
     rounds = relationship(
         "CampaignRound",
@@ -331,6 +332,7 @@ class Campaign(PkModel):
         description: Optional[str] = None,
         naturalness_model: Optional[str] = None,
         embedding_model: Optional[str] = None,
+        domain_boundaries: Optional[str] = None,
     ) -> None:
         super().__init__()
         self.name = name
@@ -338,6 +340,7 @@ class Campaign(PkModel):
         self.description = description
         self.naturalness_model = naturalness_model or "esm2_t33_650M_UR50D"
         self.embedding_model = embedding_model or "esm2_t33_650M_UR50D"
+        self.domain_boundaries = domain_boundaries
 
 
 class CampaignRound(PkModel):

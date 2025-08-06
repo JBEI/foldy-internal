@@ -7,10 +7,10 @@ if [ "$#" -ne 0 ]; then
   exit 1
 fi
 
-GOOGLE_CLOUD_ZONE=$(yq eval '.GoogleCloudZone' deployment/helm/values.yaml -e)
-GOOGLE_PROJECT_ID=$(yq eval '.GoogleProjectId' deployment/helm/values.yaml -e)
-GKE_CLUSTER_NAME=$(yq eval '.GkeClusterId' deployment/helm/values.yaml -e)
-GOOGLE_SERVICE_ACCOUNT_ID=$(yq eval '.ServiceAccount' deployment/helm/values.yaml -e)
+GOOGLE_CLOUD_ZONE=$(yq eval '.GoogleCloudZone' ../values.yaml -e)
+GOOGLE_PROJECT_ID=$(yq eval '.GoogleProjectId' ../values.yaml -e)
+GKE_CLUSTER_NAME=$(yq eval '.GkeClusterId' ../values.yaml -e)
+GOOGLE_SERVICE_ACCOUNT_ID=$(yq eval '.ServiceAccount' ../values.yaml -e)
 
 SERVICE_ACCOUNT_FULL_ADDRESS="$GOOGLE_SERVICE_ACCOUNT_ID@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com"
 

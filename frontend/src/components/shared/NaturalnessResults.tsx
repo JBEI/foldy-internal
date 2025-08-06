@@ -246,7 +246,8 @@ const NaturalnessResults: React.FC<NaturalnessResultsProps> = ({
                 return key in scoreHeatmapData ? scoreHeatmapData[key] : null;
             })
         );
-        const zmin = showWTMarginalLikelihood ? 0 : 0;
+        // const zmin = showWTMarginalLikelihood ? 0 : 0;
+        const zmin = showWTMarginalLikelihood ? Math.min(...zValues.flat(2).filter(val => val !== null) as number[]) : 0;
         const zmax = showWTMarginalLikelihood ? Math.max(...zValues.flat(2).filter(val => val !== null) as number[]) : 1;
 
         // Create customdata to match the z-values structure (RESIDUES x loci)
@@ -256,16 +257,19 @@ const NaturalnessResults: React.FC<NaturalnessResultsProps> = ({
 
         const hoverTemplate = showWTMarginalLikelihood ? '%{customdata}%{x}%{y}<br>Score: 10^%{z}<extra></extra>' : '%{customdata}%{x}%{y}<br>Probability: %{z}<extra></extra>';
 
+
+
         const plotlyData: Array<Partial<Data>> = [{
             type: 'heatmap',
             z: zValues,
             x: loci,
             y: RESIDUES,
-            colorscale: 'RdYlBu_r',
+            colorscale: 'Viridis',
             zmin: zmin,
             zmax: zmax,
             hovertemplate: hoverTemplate,
             customdata: customData,
+            showscale: true,  // Ensure colorbar is shown
         }];
 
         return (

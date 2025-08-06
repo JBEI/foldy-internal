@@ -290,7 +290,7 @@ const CampaignRoundComponent: React.FC<CampaignRoundComponentProps> = ({
     const nextRoundExists = campaign.rounds?.some(round => round.round_number === currentRound.round_number + 1) || false;
 
     return (
-        <div>
+        <div style={{ marginBottom: '48px' }}>
             {/* Header with Start Next Round and Delete Round buttons */}
             <div style={{ marginBottom: '24px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>

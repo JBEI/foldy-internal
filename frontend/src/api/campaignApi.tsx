@@ -13,6 +13,9 @@ export interface CreateCampaignRequest {
     name: string;
     fold_id: number;
     description?: string;
+    naturalness_model?: string;
+    embedding_model?: string;
+    domain_boundaries?: string;
 }
 
 export interface UpdateCampaignRequest {
@@ -20,6 +23,7 @@ export interface UpdateCampaignRequest {
     description?: string;
     naturalness_model?: string;
     embedding_model?: string;
+    domain_boundaries?: string;
 }
 
 export interface CreateCampaignRoundRequest {

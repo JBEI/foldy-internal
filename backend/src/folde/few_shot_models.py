@@ -152,9 +152,13 @@ class FewShotModel(ABC):
             )
 
             self.selection_debug_info["sorts"]["selection_order"] = chosen_seq_ids
-            self.selection_debug_info["sorts"]["cluster_order"] = cluster_sort_seq_ids(
-                pred_df.loc[chosen_seq_ids]
-            )
+            try:
+                self.selection_debug_info["sorts"]["cluster_order"] = cluster_sort_seq_ids(
+                    pred_df.loc[chosen_seq_ids]
+                )
+            except Exception as e:
+                logging.error(f"Error clustering seq_ids: {e}")
+
             self.selection_debug_info["sorts"]["seq_id_order"] = sort_seq_id_list(
                 self.wt_aa_seq, chosen_seq_ids
             )
@@ -616,6 +620,7 @@ class TorchMLPFewShotModel(FewShotModel):
         naturalness_series_with_data = naturalness_series[has_naturalness_data]
         embedding_series_with_data = embedding_series[has_naturalness_data]
         embedding_dim = embedding_series_with_data.iloc[0].shape[0]
+        logging.info(f"Pretraining model with embedding dimension {embedding_dim}.")
 
         # Create pretrained version of each model.
         for ii, (model, trainer) in enumerate(self._create_model_ensemble(embedding_dim)):

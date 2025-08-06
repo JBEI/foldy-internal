@@ -212,17 +212,15 @@ class FewShotResource(Resource):
         fsm = FoldStorageManager()
         fsm.setup()
         assert fsm.storage_manager is not None
-        found_activity_file = False
         input_activity_fpath = None
         for file_dict in fsm.storage_manager.list_files(fold_id, str(few_shot_directory)):
             if file_dict["key"].endswith("activity.xlsx"):
-                found_activity_file = True
-                input_activity_fpath = file_dict["key"]
+                input_activity_fpath = str(few_shot_directory / file_dict["key"].lstrip("/"))
                 continue
             raise BadRequest(
                 f"Slate build directory {few_shot_directory} has superfluous files maybe from an old run, found {file_dict['key']}"
             )
-        if not found_activity_file:
+        if not input_activity_fpath:
             raise BadRequest(
                 f"Slate build directory {few_shot_directory} is empty, no activity.xlsx file found"
             )

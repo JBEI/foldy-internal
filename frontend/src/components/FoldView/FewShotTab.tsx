@@ -1,7 +1,7 @@
 import React, { useState, ChangeEvent, useMemo, useEffect } from 'react';
 import UIkit from 'uikit';
 import { FileInfo, FewShot, Invokation, CampaignRound } from 'src/types/types';
-import { deleteFewShot, runFewShot } from '../../api/fewShotApi';
+import { deleteFewShot, runFewShot, getFewShotDebugInfo } from '../../api/fewShotApi';
 import { FaDownload, FaEye, FaFileCode, FaRedo, FaTrash } from 'react-icons/fa';
 import fileDownload from 'js-file-download';
 import { removeLeadingSlash } from '../../api/commonApi';
@@ -116,29 +116,15 @@ const FewShotTab: React.FC<FewShotTabProps> = ({ foldId, yamlConfig, jobs, files
             }
         );
 
-        // Fetch the debug.json file
-        getFile(foldId, `few_shots/${fewShotRun.name}/debug_info.json`).then(
-            (fileBlob: Blob) => {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    try {
-                        const fileString = e.target?.result as string;
-                        // Replace NaN with null for proper JSON parsing
-                        const cleanedString = fileString.replace(/NaN/g, 'null');
-                        const jsonData = JSON.parse(cleanedString);
-                        setFewShotDebugData(jsonData);
-                        setSortOptions(jsonData.sorts);
-                    } catch (err) {
-                        console.error("Error parsing debug.json:", err);
-                        notify.error(`Failed to parse debug.json: ${err}`);
-                        console.error(e.target?.result);
-                    }
-                };
-                reader.readAsText(fileBlob);
+        // Fetch the debug info using helper function
+        getFewShotDebugInfo(foldId, fewShotRun).then(
+            ({ debugData, sortOptions }) => {
+                setFewShotDebugData(debugData);
+                setSortOptions(sortOptions || {});
             },
             (e) => {
                 console.log(e);
-                notify.error(`Error fetching debug.json: ${e.toString()}`);
+                notify.error(`Error fetching debug info: ${e.toString()}`);
             }
         );
     };

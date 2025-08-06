@@ -1,6 +1,7 @@
 import { authHeader } from '../util/authHeader';
 import axiosInstance from '../services/axiosInstance';
 import { FewShot } from '../types/types';
+import { getFile } from './fileApi';
 
 export const getFewShot = async (fewShotId: number): Promise<FewShot> => {
     const response = await axiosInstance.get<FewShot>(`/api/few_shots/${fewShotId}`);
@@ -75,4 +76,53 @@ export async function runFewShot(
 
 export const deleteFewShot = async (fewShotId: number): Promise<void> => {
     await axiosInstance.delete(`/api/few_shots/${fewShotId}`);
+};
+
+/**
+ * Interface for FewShot debug information (training metrics only)
+ */
+export interface FewShotDebugInfo {
+    debugData: any | null;
+    sortOptions: { [key: string]: string[] } | null;
+}
+
+/**
+ * Load FewShot debug information (debug_info.json only) from a FewShot run
+ * Uses the correct dynamic path resolution from output_fpath
+ *
+ * @param foldId - The fold ID
+ * @param fewShotRun - The FewShot run object
+ * @returns Promise containing debug data and sort options
+ */
+export const getFewShotDebugInfo = async (
+    foldId: number,
+    fewShotRun: FewShot
+): Promise<FewShotDebugInfo> => {
+    const result: FewShotDebugInfo = {
+        debugData: null,
+        sortOptions: null
+    };
+
+    try {
+        // Load debug data using dynamic path resolution (the correct approach)
+        if (fewShotRun.output_fpath) {
+            const debugPath = fewShotRun.output_fpath.split('/').slice(0, -1).join('/') + '/debug_info.json';
+            try {
+                const debugBlob = await getFile(foldId, debugPath);
+                const debugText = await debugBlob.text();
+                // Replace NaN with null for proper JSON parsing
+                const cleanedString = debugText.replace(/NaN/g, 'null');
+                const jsonData = JSON.parse(cleanedString);
+                result.debugData = jsonData;
+                result.sortOptions = jsonData.sorts || null;
+            } catch (debugError) {
+                console.warn('Debug data not available:', debugError);
+            }
+        }
+    } catch (error) {
+        console.error('Error loading FewShot debug info:', error);
+        throw error;
+    }
+
+    return result;
 };

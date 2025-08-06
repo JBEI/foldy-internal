@@ -135,6 +135,7 @@ export interface Campaign {
     fold_name?: string;
     naturalness_model?: string;
     embedding_model?: string;
+    domain_boundaries?: string;
 }
 
 export interface CampaignRound {

@@ -125,30 +125,30 @@ def register_extensions(app: Flask) -> None:
             "public",
         ]
 
-        @staticmethod
-        def _sequence_formatter(view: Any, context: Any, model: models.Fold, name: str) -> Markup:
-            """Format sequence field for display in admin view.
+        # @staticmethod
+        # def _sequence_formatter(view: Any, context: Any, model: models.Fold, name: str) -> Markup:
+        #     """Format sequence field for display in admin view.
 
-            Args:
-                view: Admin view instance
-                context: Rendering context
-                model: Fold model instance
-                name: Field name
+        #     Args:
+        #         view: Admin view instance
+        #         context: Rendering context
+        #         model: Fold model instance
+        #         name: Field name
 
-            Returns:
-                Markup: HTML-safe content for rendering
-            """
-            return Markup(f"<div style='overflow-x: auto; width: 100px'>{model.sequence}</div>")
+        #     Returns:
+        #         Markup: HTML-safe content for rendering
+        #     """
+        #     return Markup(f"<div style='overflow-x: auto; width: 100px'>{model.sequence}</div>")
 
-        # def _features_log_formatter(view, context, model, name):
-        #   return Markup(f"<div style='overflow-y: auto'>{model.features_log}</div>")
-        # def _models_log_formatter(view, context, model, name):
-        #   return Markup(f"<div style='overflow-y: auto'>{model.models_log}</div>")
-        column_formatters = {
-            "sequence": _sequence_formatter,
-            # 'features_log': _features_log_formatter,
-            # 'models_log': _models_log_formatter,
-        }
+        # # def _features_log_formatter(view, context, model, name):
+        # #   return Markup(f"<div style='overflow-y: auto'>{model.features_log}</div>")
+        # # def _models_log_formatter(view, context, model, name):
+        # #   return Markup(f"<div style='overflow-y: auto'>{model.models_log}</div>")
+        # column_formatters = {
+        #     "sequence": _sequence_formatter,
+        #     # 'features_log': _features_log_formatter,
+        #     # 'models_log': _models_log_formatter,
+        # }
 
     class InvokationModelView(VerifiedModelView):
         column_searchable_list = ["id", "fold_id", "type", "state", "command"]
@@ -210,16 +210,16 @@ def register_extensions(app: Flask) -> None:
         column_searchable_list = ["name", "embedding_model"]
         column_editable_list = ["date_created"]
 
-        # Add custom CSS to truncate/scroll long text in extra_seq_ids column
-        column_formatters = {
-            "extra_seq_ids": lambda v, c, m, p: (
-                Markup(
-                    f'<div style="max-width:200px; overflow-x:auto; white-space:nowrap;">{m.extra_seq_ids}</div>'
-                )
-                if m.extra_seq_ids
-                else ""
-            )
-        }
+        # # Add custom CSS to truncate/scroll long text in extra_seq_ids column
+        # column_formatters = {
+        #     "extra_seq_ids": lambda v, c, m, p: (
+        #         Markup(
+        #             f'<div style="max-width:200px; overflow-x:auto; white-space:nowrap;">{m.extra_seq_ids}</div>'
+        #         )
+        #         if m.extra_seq_ids
+        #         else ""
+        #     )
+        # }
 
     class FewShotModelView(VerifiedModelView):
         column_list = [
@@ -229,12 +229,13 @@ def register_extensions(app: Flask) -> None:
             "fold.user",
             "mode",
             "embedding_files",
+            "input_activity_fpath",
             "finetuning_model_checkpoint",
             "date_created",
         ]
         column_sortable_list = ["id", "name", "date_created"]
         column_searchable_list = ["name"]
-        column_editable_list = ["date_created"]
+        column_editable_list = ["date_created", "input_activity_fpath"]
 
     class CampaignModelView(VerifiedModelView):
         column_list = [

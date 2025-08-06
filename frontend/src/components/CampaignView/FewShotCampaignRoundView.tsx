@@ -23,6 +23,7 @@ import type { Campaign, CampaignRound, Fold, FewShot } from '../../types/types';
 import { updateCampaignRound, uploadCampaignRoundActivityFile, getCampaignRoundActivityData } from '../../api/campaignApi';
 import { getFold } from '../../api/foldApi';
 import { getFile } from '../../api/fileApi';
+import { getFewShotDebugInfo } from '../../api/fewShotApi';
 import { notify } from '../../services/NotificationService';
 import { EmbeddingModal } from '../shared/EmbeddingModal';
 import { FewShotModal } from '../shared/FewShotModal';
@@ -88,24 +89,18 @@ const FewShotResultsContent: React.FC<FewShotResultsContentProps> = ({
             setLoading(true);
             try {
                 // Load CSV data
-                if (fewShotRun.output_fpath_computed) {
-                    const csvBlob = await getFile(campaign.fold_id, fewShotRun.output_fpath_computed);
-                    const csvText = await csvBlob.text();
-                    setCsvData(csvText);
+                if (!fewShotRun.output_fpath) {
+                    console.warn('No output path found for few-shot run:', fewShotRun);
+                    return;
                 }
+                const csvBlob = await getFile(campaign.fold_id, fewShotRun.output_fpath);
+                const csvText = await csvBlob.text();
+                setCsvData(csvText);
 
-                // Load debug data
-                const debugPath = `few_shots/${fewShotRun.name}/debug_info.json`;
-                try {
-                    const debugBlob = await getFile(campaign.fold_id, debugPath);
-                    const debugText = await debugBlob.text();
-                    const cleanedString = debugText.replace(/NaN/g, 'null');
-                    const jsonData = JSON.parse(cleanedString);
-                    setDebugData(jsonData);
-                    setSortOptions(jsonData.sorts || null);
-                } catch (debugError) {
-                    console.warn('Debug data not available:', debugError);
-                }
+                // Load debug data using helper function
+                const { debugData, sortOptions } = await getFewShotDebugInfo(campaign.fold_id, fewShotRun);
+                setDebugData(debugData);
+                setSortOptions(sortOptions);
             } catch (error) {
                 console.error('Error loading FewShot data:', error);
                 notify.error(`Failed to load FewShot results: ${error}`);
@@ -181,6 +176,19 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
     const [fewShotTemplate, setFewShotTemplate] = useState<any>(null);
     const [priorRoundActivityData, setPriorRoundActivityData] = useState<Array<{ seq_id: string, activity: number }> | null>(null);
 
+    // Rerun few-shot function
+    const handleRerunFewShot = async () => {
+        try {
+            await updateCampaignRound(campaign.id!, currentRound.id, {
+                few_shot_run_id: null
+            });
+            notify.success('Few-shot run cleared. The page will refresh.');
+            onRefresh();
+        } catch (error: any) {
+            notify.error(error.response?.data?.message || 'Failed to clear few-shot run');
+        }
+    };
+
     // All useEffect hooks must come before any conditional returns
     useEffect(() => {
         const fetchPriorRoundActivityData = async () => {
@@ -218,7 +226,8 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
         if (!currentRound.input_templates || !fold?.embeddings) return;
 
         const allMatchingEmbeddings = fold.embeddings.filter(embedding =>
-            embedding.embedding_model === campaign.embedding_model
+            embedding.embedding_model === campaign.embedding_model &&
+            embedding.domain_boundaries === campaign.domain_boundaries
         );
 
         if (allMatchingEmbeddings.length === 0) return;
@@ -268,7 +277,8 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
 
     // Variables and functions used throughout the component - defined before any conditional returns
     const allMatchingEmbeddings = fold?.embeddings?.filter(embedding =>
-        embedding.embedding_model === campaign.embedding_model
+        embedding.embedding_model === campaign.embedding_model &&
+        embedding.domain_boundaries === campaign.domain_boundaries
     ) || [];
 
     const inputTemplates = currentRound.input_templates?.split(',').map(t => t.trim()) || [];
@@ -650,9 +660,10 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
             run.id === selectedNaturalnessRun
         );
 
-        // Get selected embedding paths
+        // Get selected embedding paths (deduplicated)
         const embeddingPaths: string[] = [];
-        Object.values(selectedEmbeddings).forEach(embeddingId => {
+        const uniqueEmbeddingIds = Array.from(new Set(Object.values(selectedEmbeddings)));
+        uniqueEmbeddingIds.forEach(embeddingId => {
             const embedding = allMatchingEmbeddings.find(e => e.id === embeddingId);
             if (embedding?.output_fpath) {
                 embeddingPaths.push(embedding.output_fpath);
@@ -749,6 +760,7 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
         const fewShotStatus = getFewShotStatus(currentRound.few_shot_run, fold.jobs || null);
         const statusDisplay = getStatusDisplay(fewShotStatus);
         const isComplete = statusDisplay.text === 'Complete';
+        console.log('currentRound.few_shot_run', currentRound.few_shot_run);
 
         return (
             <div style={{
@@ -785,7 +797,22 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
                             <Text type="secondary">
                                 FewShot run is {statusDisplay.text.toLowerCase()}. Please wait for it to complete.
                             </Text>
-                            <div style={{ marginTop: '16px' }}>
+                            <div style={{ marginTop: '16px', display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                <Button
+                                    type="default"
+                                    size="small"
+                                    onClick={onRefresh}
+                                >
+                                    Refresh
+                                </Button>
+                                <Button
+                                    type="default"
+                                    size="small"
+                                    onClick={handleRerunFewShot}
+                                    disabled={!!currentRound.slate_seq_ids}
+                                >
+                                    Rerun few-shot algorithm
+                                </Button>
                                 <Button
                                     type="default"
                                     size="small"
@@ -962,7 +989,8 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
                                 name: `${campaign.name}_naturalness_warmstart`,
                                 embedding_model: campaign.embedding_model,
                                 dms_starting_seq_ids: 'WT',
-                                extra_seq_ids: ''
+                                extra_seq_ids: '',
+                                domain_boundaries: campaign.domain_boundaries
                             }
                         }]}
                         selectedEmbeddings={selectedEmbeddings}
@@ -984,7 +1012,8 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
                                 name: `${campaign.name}_template_${template}`,
                                 embedding_model: campaign.embedding_model,
                                 dms_starting_seq_ids: template,
-                                extra_seq_ids: ''
+                                extra_seq_ids: '',
+                                domain_boundaries: campaign.domain_boundaries
                             }
                         }))}
                         selectedEmbeddings={selectedEmbeddings}
@@ -1023,7 +1052,8 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
                                 dms_starting_seq_ids: '',
                                 extra_seq_ids: priorRoundActivityData ?
                                     Array.from(new Set(priorRoundActivityData.map(item => item.seq_id))).join(',') :
-                                    ''
+                                    '',
+                                domain_boundaries: campaign.domain_boundaries
                             }
                         }]}
                         selectedEmbeddings={selectedEmbeddings}
