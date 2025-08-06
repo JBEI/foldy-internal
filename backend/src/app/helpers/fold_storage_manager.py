@@ -88,7 +88,7 @@ class StorageAccessor:
         raise NotImplementedError
 
     @abstractmethod
-    def get_blob(self, fold_id: int, relative_path: str) -> LocalBlob | Blob:
+    def get_blob(self, fold_id: int, file_path: str) -> LocalBlob | Blob:
         raise NotImplementedError
 
     @abstractmethod
@@ -173,8 +173,8 @@ class LocalStorageAccessor(StorageAccessor):
         )
         return blob_bytes
 
-    def get_blob(self, fold_id: int, relative_path: str) -> LocalBlob:
-        """Gets a Blob object from local storage based on fold_id and relative_path.
+    def get_blob(self, fold_id: int, file_path: str) -> LocalBlob:
+        """Gets a Blob object from local storage based on fold_id and file_path.
 
         Retrieves a LocalBlob object for the specified file.
 
@@ -192,7 +192,7 @@ class LocalStorageAccessor(StorageAccessor):
             raise BadRequest("Local directory not initialized")
 
         padded_fold_id = f"{fold_id:06d}"
-        fpath = self.local_directory / padded_fold_id / relative_path
+        fpath = self.local_directory / padded_fold_id / file_path
 
         blob = LocalBlob(fpath)
 
@@ -327,7 +327,7 @@ class GcloudStorageAccessor(StorageAccessor):
         else:
             blob.upload_from_string(contents)
 
-    def get_binary(self, fold_id: int, relative_path: str) -> bytes:
+    def get_binary(self, fold_id: int, file_path: str) -> bytes:
         """Gets a file (as a binary string) from gcloud, with a relative path within the fold dir."""
         if self.client is None or self.bucket_name is None:
             raise BadRequest("GCloud client not initialized")
@@ -336,9 +336,9 @@ class GcloudStorageAccessor(StorageAccessor):
         padded_fold_id = "%06d" % fold_id
 
         if self.bucket_prefix:
-            gcloud_path = f"{self.bucket_prefix}/{padded_fold_id}/{relative_path}"
+            gcloud_path = f"{self.bucket_prefix}/{padded_fold_id}/{file_path}"
         else:
-            gcloud_path = f"{padded_fold_id}/{relative_path}"
+            gcloud_path = f"{padded_fold_id}/{file_path}"
         blobs = list(
             self.client.list_blobs(
                 bucket_or_name=self.bucket_name,
@@ -355,17 +355,17 @@ class GcloudStorageAccessor(StorageAccessor):
         )
         return blob_bytes
 
-    def get_blob(self, fold_id: int, relative_path: str) -> Blob:
-        """Gets a Blob object from GCS based on fold_id and relative_path."""
+    def get_blob(self, fold_id: int, file_path: str) -> Blob:
+        """Gets a Blob object from GCS based on fold_id and file_path."""
         if self.client is None or self.bucket_name is None:
             raise BadRequest("GCloud client not initialized")
 
         padded_fold_id = f"{fold_id:06d}"
-        relative_path = relative_path.lstrip("/")
+        file_path = file_path.lstrip("/")
         if self.bucket_prefix:
-            gcloud_path = f"{self.bucket_prefix}/{padded_fold_id}/{relative_path}"
+            gcloud_path = f"{self.bucket_prefix}/{padded_fold_id}/{file_path}"
         else:
-            gcloud_path = f"{padded_fold_id}/{relative_path}"
+            gcloud_path = f"{padded_fold_id}/{file_path}"
 
         bucket = self.client.bucket(self.bucket_name)
         blob = bucket.blob(gcloud_path)
@@ -480,8 +480,11 @@ class FoldStorageManager:
 
         query = (
             db.session.query(Fold)
-            .join(Fold.user)
-            .options(joinedload(Fold.jobs), joinedload(Fold.docks))
+            .join(Fold.user)  # type: ignore[reportArgumentType] # SQLAlchemy relationship property typing issue
+            .options(
+                joinedload(Fold.jobs),  # type: ignore[reportArgumentType] # SQLAlchemy joinedload expects QueryableAttribute
+                joinedload(Fold.docks),  # type: ignore[reportArgumentType] # SQLAlchemy joinedload expects QueryableAttribute
+            )
         )
 
         if tag:
@@ -495,7 +498,7 @@ class FoldStorageManager:
                 query = query.filter(
                     or_(
                         Fold.name.ilike(formatted_term),
-                        User.email.ilike(formatted_term),
+                        User.email.ilike(formatted_term),  # type: ignore[reportAttributeAccessIssue]
                         Fold.tagstring.op("~")(get_tag_regex(term)),
                     )
                 )
@@ -510,7 +513,7 @@ class FoldStorageManager:
             logging.error(
                 f"DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page}"
             )
-            pagination = query.paginate(page=page, per_page=per_page, error_out=True, count=True)
+            pagination = query.paginate(page=page, per_page=per_page, error_out=True, count=True)  # type: ignore[reportAttributeAccessIssue]
             folds = [fold for fold in pagination.items if fold is not None]
 
             return {

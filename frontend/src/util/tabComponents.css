@@ -6,17 +6,17 @@
         min-height: 44px; /* Apple's recommended minimum touch target */
         padding: 8px 16px;
     }
-    
+
     .uk-input, .uk-select, .uk-textarea {
         min-height: 44px;
         font-size: 16px; /* Prevents zoom on iOS */
     }
-    
+
     /* Better table scrolling indicators */
     .responsive-table-container {
         position: relative;
     }
-    
+
     .responsive-table-container::before,
     .responsive-table-container::after {
         content: '';
@@ -27,50 +27,50 @@
         pointer-events: none;
         z-index: 1;
     }
-    
+
     .responsive-table-container::before {
         left: 0;
         background: linear-gradient(90deg, rgba(0,0,0,0.1) 0%, transparent 100%);
     }
-    
+
     .responsive-table-container::after {
         right: 0;
         background: linear-gradient(270deg, rgba(0,0,0,0.1) 0%, transparent 100%);
     }
-    
+
     /* Improve spacing for mobile */
     .tab-container {
         padding: 12px !important;
     }
-    
+
     .section-card {
         margin-bottom: 15px !important;
         padding: 12px !important;
     }
-    
+
     /* Stack form fields on mobile */
     .form-row {
         flex-direction: column !important;
         gap: 15px !important;
     }
-    
+
     .form-field {
         min-width: 100% !important;
         flex: 1 1 100% !important;
     }
-    
+
     /* Better collapsible headers for mobile */
     .collapsible-header {
         padding: 15px !important;
         font-size: 16px;
     }
-    
+
     /* Improve button groups for mobile */
     .button-group {
         flex-direction: column !important;
         align-items: stretch !important;
     }
-    
+
     .button-group .uk-button {
         width: 100% !important;
         margin-bottom: 8px;
@@ -82,7 +82,7 @@
     .form-row {
         gap: 15px !important;
     }
-    
+
     .form-field {
         min-width: 280px !important;
     }
@@ -94,7 +94,7 @@
         max-width: 1200px;
         margin: 0 auto;
     }
-    
+
     .form-row {
         align-items: flex-end;
     }

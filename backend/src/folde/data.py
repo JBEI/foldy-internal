@@ -17,7 +17,14 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from app.helpers.sequence_util import allele_set_to_seq_id, get_loci_set, is_homolog_seq_id, maybe_get_allele_id_error_message, seq_id_to_seq, sort_seq_id_list
+from app.helpers.sequence_util import (
+    allele_set_to_seq_id,
+    get_loci_set,
+    is_homolog_seq_id,
+    maybe_get_allele_id_error_message,
+    seq_id_to_seq,
+    sort_seq_id_list,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -178,30 +185,42 @@ def get_proteingym_dataset(
     if dms_id == "FLIP-AAV":
         incomplete_activity_df = pd.read_csv(FLIP_AAV_DATA_FILE)
         incomplete_activity_df = incomplete_activity_df.rename(columns={"homolog_seq_id": "seq_id"})
-        incomplete_activity_df = incomplete_activity_df[~incomplete_activity_df.full_aa_sequence.duplicated(keep=False)]
+        incomplete_activity_df = incomplete_activity_df[
+            ~incomplete_activity_df.full_aa_sequence.duplicated(keep=False)
+        ]
 
         # Find if any of the seq_ids are in the naturalness df and rename where possible.
         logger.info(f"Converting seq_ids in naturalness df to full sequences")
-        tmp_naturalness_df = pd.DataFrame({'seq_id': incomplete_naturalness_df.index}, index=incomplete_naturalness_df.index)
+        tmp_naturalness_df = pd.DataFrame(
+            {"seq_id": incomplete_naturalness_df.index}, index=incomplete_naturalness_df.index
+        )
+
         def maybe_convert_seq_id_to_seq(seq_id: str):
             if maybe_get_allele_id_error_message(wt_aa_seq, seq_id) is not None:
                 return pd.NA
             return seq_id_to_seq(wt_aa_seq, seq_id)
-        tmp_naturalness_df['full_seq'] = tmp_naturalness_df.seq_id.apply(maybe_convert_seq_id_to_seq)
+
+        tmp_naturalness_df["full_seq"] = tmp_naturalness_df.seq_id.apply(
+            maybe_convert_seq_id_to_seq
+        )
         tmp_naturalness_df = tmp_naturalness_df[tmp_naturalness_df.full_seq.notna()]
         tmp_naturalness_df = tmp_naturalness_df[~tmp_naturalness_df.full_seq.duplicated()]
-        tmp_naturalness_df.set_index('full_seq', drop=True, inplace=True)
+        tmp_naturalness_df.set_index("full_seq", drop=True, inplace=True)
 
         logger.info(f"Reassigning seq_ids from activity df to matching naturalness seq_ids.")
         incomplete_activity_df = incomplete_activity_df.join(
-            tmp_naturalness_df.seq_id.rename('naturalness_seq_id'),
-            on='full_aa_sequence',
-            how='left',
+            tmp_naturalness_df.seq_id.rename("naturalness_seq_id"),
+            on="full_aa_sequence",
+            how="left",
         )
-        incomplete_activity_df['seq_id'] = incomplete_activity_df.apply(lambda x: x.naturalness_seq_id if pd.notna(x.naturalness_seq_id) else x.seq_id, axis=1)
+        incomplete_activity_df["seq_id"] = incomplete_activity_df.apply(
+            lambda x: x.naturalness_seq_id if pd.notna(x.naturalness_seq_id) else x.seq_id, axis=1
+        )
 
         incomplete_activity_df_seq_id_dupes = incomplete_activity_df.seq_id.duplicated()
-        logger.info(f'Dropping {incomplete_activity_df_seq_id_dupes.sum()} seq_ids from activity df that are duplicated such as {incomplete_activity_df[incomplete_activity_df_seq_id_dupes].seq_id.tolist()[:5]} and {incomplete_activity_df[incomplete_activity_df_seq_id_dupes].seq_id.tolist()[-5:]}')
+        logger.info(
+            f"Dropping {incomplete_activity_df_seq_id_dupes.sum()} seq_ids from activity df that are duplicated such as {incomplete_activity_df[incomplete_activity_df_seq_id_dupes].seq_id.tolist()[:5]} and {incomplete_activity_df[incomplete_activity_df_seq_id_dupes].seq_id.tolist()[-5:]}"
+        )
         incomplete_activity_df = incomplete_activity_df[~incomplete_activity_df_seq_id_dupes]
     else:
         # Check that the DMS data exists
@@ -233,8 +252,7 @@ def get_proteingym_dataset(
         category_df = pd.DataFrame(
             {
                 "one_vs_many_split": [
-                    len(get_loci_set(seq_id)) <= 1
-                    for seq_id in valid_activity_seq_ids
+                    len(get_loci_set(seq_id)) <= 1 for seq_id in valid_activity_seq_ids
                 ],
             },
             index=valid_activity_seq_ids,
@@ -244,16 +262,13 @@ def get_proteingym_dataset(
         category_df = pd.DataFrame(
             {
                 "one_vs_many_split": [
-                    len(get_loci_set(seq_id)) <= 1
-                    for seq_id in valid_activity_seq_ids
+                    len(get_loci_set(seq_id)) <= 1 for seq_id in valid_activity_seq_ids
                 ],
                 "two_vs_many_split": [
-                    len(get_loci_set(seq_id)) <= 2
-                    for seq_id in valid_activity_seq_ids
+                    len(get_loci_set(seq_id)) <= 2 for seq_id in valid_activity_seq_ids
                 ],
                 "three_vs_many_split": [
-                    len(get_loci_set(seq_id)) <= 3
-                    for seq_id in valid_activity_seq_ids
+                    len(get_loci_set(seq_id)) <= 3 for seq_id in valid_activity_seq_ids
                 ],
             },
             index=valid_activity_seq_ids,
@@ -275,9 +290,15 @@ def get_proteingym_dataset(
                 )
 
     # We lose ordering with the set operations but recover it with a sort later.
-    logging.info(f'seq_ids_with_embeddings & seq_ids_with_naturalness: {len(seq_ids_with_embeddings & seq_ids_with_naturalness)}')
-    logging.info(f'seq_ids_with_embeddings & seq_ids_with_activity: {len(seq_ids_with_embeddings & seq_ids_with_activity)}')
-    logging.info(f'seq_ids_with_naturalness & seq_ids_with_activity: {len(seq_ids_with_naturalness & seq_ids_with_activity)}')
+    logging.info(
+        f"seq_ids_with_embeddings & seq_ids_with_naturalness: {len(seq_ids_with_embeddings & seq_ids_with_naturalness)}"
+    )
+    logging.info(
+        f"seq_ids_with_embeddings & seq_ids_with_activity: {len(seq_ids_with_embeddings & seq_ids_with_activity)}"
+    )
+    logging.info(
+        f"seq_ids_with_naturalness & seq_ids_with_activity: {len(seq_ids_with_naturalness & seq_ids_with_activity)}"
+    )
     common_seq_ids = list(
         seq_ids_with_embeddings & (seq_ids_with_naturalness | seq_ids_with_activity)
     )

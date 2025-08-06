@@ -10,9 +10,7 @@ from folde.campaign import simulate_campaigns_with_config_checkpoints
 from folde.types import FolDEModelConfig, ModelDiff
 from folde.util import apply_diff_list_to_config
 
-dms_ids = [
-    "SPG1_STRSG_Olson_2014"
-]
+dms_ids = ["SPG1_STRSG_Olson_2014"]
 
 # Example configuration
 NAME = "250717-spg1-ablation"
@@ -35,23 +33,23 @@ random_forest_config = FolDEModelConfig(
     zero_shot_model_params={},
     few_shot_model_name="RandomForestFewShotModel",
     few_shot_model_params={
-                "n_estimators": 100,
-                "criterion": "friedman_mse",
-                "max_depth": None,
-                "min_samples_split": 2,
-                "min_samples_leaf": 1,
-                "min_weight_fraction_leaf": 0.0,
-                "max_features": 1.0,
-                "max_leaf_nodes": None,
-                "min_impurity_decrease": 0.0,
-                "bootstrap": True,
-                "oob_score": False,
-                "n_jobs": None,
-                "verbose": 0,
-                "warm_start": False,
-                "ccp_alpha": 0.0,
-                "max_samples": None,
-            },
+        "n_estimators": 100,
+        "criterion": "friedman_mse",
+        "max_depth": None,
+        "min_samples_split": 2,
+        "min_samples_leaf": 1,
+        "min_weight_fraction_leaf": 0.0,
+        "max_features": 1.0,
+        "max_leaf_nodes": None,
+        "min_impurity_decrease": 0.0,
+        "bootstrap": True,
+        "oob_score": False,
+        "n_jobs": None,
+        "verbose": 0,
+        "warm_start": False,
+        "ccp_alpha": 0.0,
+        "max_samples": None,
+    },
 )
 
 folde_config = FolDEModelConfig(
@@ -84,57 +82,80 @@ folde_config = FolDEModelConfig(
 mlp_config_list = apply_diff_list_to_config(
     folde_config,
     [
-        ModelDiff(name="no-constantliar", diffs={
-            "few_shot_model_params.decision_mode": "mean"
-        }),
-        ModelDiff(name="no-BTLoss", diffs={
-            "few_shot_model_params.use_mse_loss": True
-        }),
-        ModelDiff(name="no-naturalnessTraining", diffs={
-            "few_shot_model_params.pretrain": False
-        }),
-        ModelDiff(name="no-zeroShot", diffs={
-            "zero_shot_model_name": "RandomZeroShotModel"
-        }),
-        ModelDiff(name="no-MLP", diffs={
-            "few_shot_model_name": "RandomForestFewShotModel",
-            "few_shot_model_params": random_forest_config.few_shot_model_params.copy()
-        }),
-        ModelDiff(name="no-ensemble", diffs={
-            "few_shot_model_params.ensemble_size": 1,
-            "few_shot_model_params.decision_mode": "mean"
-        }),
-        ModelDiff(name="long-training", diffs={
-            "few_shot_model_params.train_epochs": 600,
-            "few_shot_model_params.train_patience": 120,
-        }),
-        ModelDiff(name="no-naturalnessTraining-or-ensemble", diffs={
-            "few_shot_model_params.train_epochs": 600,
-            "few_shot_model_params.ensemble_size": 1,
-            "few_shot_model_params.decision_mode": "mean"
-        }),
-        ModelDiff(name="no-naturalnessTraining-or-constantLiar", diffs={
-            "few_shot_model_params.train_epochs": 600,
-            "few_shot_model_params.decision_mode": "mean"
-        }),
-        ModelDiff(name="with-Devariancing", diffs={
-            "few_shot_model_params.enable_ensemble_devariancing": True
-        }),
-        ModelDiff(name="less-naturalnessTraining-20epochs", diffs={
-            "few_shot_model_params.pretrain_epochs": 20,
-        }),
-        ModelDiff(name="less-naturalnessTraining-5epochs", diffs={
-            "few_shot_model_params.pretrain_epochs": 5,
-        }),
-        ModelDiff(name="less-naturalnessTraining-1epochs", diffs={
-            "few_shot_model_params.pretrain_epochs": 1,
-        }),
-        ModelDiff(name="shrink-and-perturb-06-01", diffs={
-            "few_shot_model_params.shrink_and_perturb_params": [0.6, 0.1],
-        }),
-        ModelDiff(name="shrink-and-perturb-02-01", diffs={
-            "few_shot_model_params.shrink_and_perturb_params": [0.2, 0.1],
-        }),
+        ModelDiff(name="no-constantliar", diffs={"few_shot_model_params.decision_mode": "mean"}),
+        ModelDiff(name="no-BTLoss", diffs={"few_shot_model_params.use_mse_loss": True}),
+        ModelDiff(name="no-naturalnessTraining", diffs={"few_shot_model_params.pretrain": False}),
+        ModelDiff(name="no-zeroShot", diffs={"zero_shot_model_name": "RandomZeroShotModel"}),
+        ModelDiff(
+            name="no-MLP",
+            diffs={
+                "few_shot_model_name": "RandomForestFewShotModel",
+                "few_shot_model_params": random_forest_config.few_shot_model_params.copy(),
+            },
+        ),
+        ModelDiff(
+            name="no-ensemble",
+            diffs={
+                "few_shot_model_params.ensemble_size": 1,
+                "few_shot_model_params.decision_mode": "mean",
+            },
+        ),
+        ModelDiff(
+            name="long-training",
+            diffs={
+                "few_shot_model_params.train_epochs": 600,
+                "few_shot_model_params.train_patience": 120,
+            },
+        ),
+        ModelDiff(
+            name="no-naturalnessTraining-or-ensemble",
+            diffs={
+                "few_shot_model_params.train_epochs": 600,
+                "few_shot_model_params.ensemble_size": 1,
+                "few_shot_model_params.decision_mode": "mean",
+            },
+        ),
+        ModelDiff(
+            name="no-naturalnessTraining-or-constantLiar",
+            diffs={
+                "few_shot_model_params.train_epochs": 600,
+                "few_shot_model_params.decision_mode": "mean",
+            },
+        ),
+        ModelDiff(
+            name="with-Devariancing",
+            diffs={"few_shot_model_params.enable_ensemble_devariancing": True},
+        ),
+        ModelDiff(
+            name="less-naturalnessTraining-20epochs",
+            diffs={
+                "few_shot_model_params.pretrain_epochs": 20,
+            },
+        ),
+        ModelDiff(
+            name="less-naturalnessTraining-5epochs",
+            diffs={
+                "few_shot_model_params.pretrain_epochs": 5,
+            },
+        ),
+        ModelDiff(
+            name="less-naturalnessTraining-1epochs",
+            diffs={
+                "few_shot_model_params.pretrain_epochs": 1,
+            },
+        ),
+        ModelDiff(
+            name="shrink-and-perturb-06-01",
+            diffs={
+                "few_shot_model_params.shrink_and_perturb_params": [0.6, 0.1],
+            },
+        ),
+        ModelDiff(
+            name="shrink-and-perturb-02-01",
+            diffs={
+                "few_shot_model_params.shrink_and_perturb_params": [0.2, 0.1],
+            },
+        ),
     ],
 )
 

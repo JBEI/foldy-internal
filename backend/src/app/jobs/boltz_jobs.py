@@ -5,7 +5,12 @@ import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from Bio.PDB import PDBIO, MMCIFParser
+from Bio.PDB.MMCIFParser import (
+    MMCIFParser,  # type: ignore[reportPrivateImportUsage] # Bio.PDB module structure quirk
+)
+from Bio.PDB.PDBIO import (
+    PDBIO,  # type: ignore[reportPrivateImportUsage] # Bio.PDB module structure quirk
+)
 from werkzeug.exceptions import BadRequest
 
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper

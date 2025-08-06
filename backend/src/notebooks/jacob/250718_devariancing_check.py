@@ -56,7 +56,10 @@ base_config = FolDEModelConfig(
 config_list = apply_diff_list_to_config(
     base_config,
     [
-        ModelDiff(name="withDevariancing", diffs={"few_shot_model_params.enable_ensemble_devariancing": True}),
+        ModelDiff(
+            name="withDevariancing",
+            diffs={"few_shot_model_params.enable_ensemble_devariancing": True},
+        ),
     ],
 )
 

@@ -80,8 +80,8 @@ class MockZeroShotModel(ZeroShotModel):
         self.predict_called = False
         self.predict_inputs = []
 
-    def predict(self, naturalness_series, embedding_series=None):
-        """Mock predict method."""
+    def predict(self, naturalness_series, embedding_series=None):  # type: ignore[reportIncompatibleMethodOverride]
+        """Mock predict method - TODO(jacob): Fix signature mismatch in test refactor."""
         self.predict_called = True
         self.predict_inputs.append((naturalness_series, embedding_series))
 
@@ -112,8 +112,8 @@ class MockFewShotModel(FewShotModel):
             temperature: Temperature for sampling
             epsilon: Epsilon for epsilon-greedy exploration
         """
-        # TODO(jbr): Base class FewShotModel missing required wt_aa_seq parameter
-        super().__init__(decision_mode=decision_mode, temperature=temperature, epsilon=epsilon)
+        # TODO(jacob): Fix FewShotModel constructor in test refactor - missing required wt_aa_seq parameter
+        super().__init__(decision_mode=decision_mode, temperature=temperature, epsilon=epsilon)  # type: ignore[reportCallIssue]
         self.return_values = return_values
         self.random_state = random_state
         self.fit_called = False
@@ -121,7 +121,7 @@ class MockFewShotModel(FewShotModel):
         self.predict_called = False
         self.predict_inputs = []
 
-    def fit(
+    def fit(  # type: ignore[reportIncompatibleMethodOverride]
         self,
         naturalness_series: pd.Series,
         embedding_series: pd.Series,
@@ -131,7 +131,7 @@ class MockFewShotModel(FewShotModel):
         validation_activity_series=None,
         **kwargs,
     ) -> "MockFewShotModel":
-        """Mock fit method."""
+        """Mock fit method - TODO(jacob): Fix signature mismatch in test refactor."""
         self.fit_called = True
         self.fit_inputs.append((naturalness_series, embedding_series, measured_activity_series))
         return self

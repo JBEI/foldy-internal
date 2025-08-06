@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
+
 from folde.campaign import (
     CampaignWorldState,
     _evaluate_metrics,
@@ -99,7 +100,14 @@ class MockZeroShotModel(ZeroShotModel):
 class MockFewShotModel(FewShotModel):
     """Mock FewShotModel for testing campaign simulations."""
 
-    def __init__(self, return_values=None, decision_mode="median", temperature=0.0, epsilon=0.0, random_state=42):
+    def __init__(
+        self,
+        return_values=None,
+        decision_mode="median",
+        temperature=0.0,
+        epsilon=0.0,
+        random_state=42,
+    ):
         """Initialize mock model.
 
         Args:
@@ -116,7 +124,14 @@ class MockFewShotModel(FewShotModel):
         self.predict_called = False
         self.predict_inputs = []
 
-    def fit(self, naturalness_series, embedding_series, measured_activity_series, validation_activity_series=None, **kwargs):
+    def fit(
+        self,
+        naturalness_series,
+        embedding_series,
+        measured_activity_series,
+        validation_activity_series=None,
+        **kwargs,
+    ):
         """Mock fit method."""
         self.fit_called = True
         self.fit_inputs.append((naturalness_series, embedding_series, measured_activity_series))
@@ -219,7 +234,9 @@ class TestCampaignWorldState:
 
         # Verify unmeasured variants
         assert len(unmeasured_activity_series) == len(activity_series) - len(seq_ids_to_measure)
-        assert len(unmeasured_naturalness_series) == len(naturalness_series) - len(seq_ids_to_measure)
+        assert len(unmeasured_naturalness_series) == len(naturalness_series) - len(
+            seq_ids_to_measure
+        )
         assert len(unmeasured_embeddings_series) == len(embedding_series) - len(seq_ids_to_measure)
 
         # Verify measured variants are excluded

@@ -10,6 +10,7 @@ from typing import (
     Optional,
     Tuple,
     Union,
+    cast,
 )
 
 from flask import (
@@ -167,7 +168,7 @@ class FileDownloadResource(Resource):
                         chunk = f.read(1024 * 1024)  # 1MB chunks
                         if not chunk:
                             break
-                        yield chunk
+                        yield cast(bytes, chunk)  # blob opened in 'rb' mode guarantees bytes
             except Exception as e:
                 print(f"Error during file streaming: {str(e)}")
                 return
