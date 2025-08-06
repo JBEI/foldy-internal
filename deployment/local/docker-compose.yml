@@ -7,6 +7,7 @@ version: "3.6"
 #
 # Optional Environment Variables:
 #   FOLDY_VERSION          - Version tag for Docker images (default: latest)
+#   FOLDY_FRONTEND_PORT    - Port for frontend (default: 3000)
 #   FOLDY_SECRET_KEY       - Flask secret key (default: auto-generated)
 #   FOLDY_DOCKERHUB_USER   - DockerHub username (default: jbrlbl)
 #
@@ -20,7 +21,7 @@ version: "3.6"
 x-common-env: &common-env
   ENV: development
   DEBUG: "false"
-  FRONTEND_URL: http://localhost:3000
+  FRONTEND_URL: http://localhost:${FOLDY_FRONTEND_PORT:-3000}
   BACKEND_URL: http://localhost:8080
   DATABASE_URL: postgresql+psycopg2://user:password@db:5432/postgres
   RQ_REDIS_URL: redis://redis:6379/0
@@ -49,7 +50,7 @@ services:
     networks:
       - default
     ports:
-      - "3000:80"
+      - "${FOLDY_FRONTEND_PORT:-3000}:80"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80"]
