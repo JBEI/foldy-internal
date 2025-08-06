@@ -1,12 +1,6 @@
 import urllib
 from re import DEBUG
 
-from app.authorization import (
-    email_should_get_edit_permission_by_default,
-    email_should_get_upgraded_to_admin,
-)
-from app.extensions import db, rq
-from app.models import Invokation, User
 from authlib.integrations.flask_client import OAuth
 from flask import current_app, jsonify, redirect, request, url_for
 from flask_jwt_extended import (
@@ -15,6 +9,14 @@ from flask_jwt_extended import (
     unset_jwt_cookies,
 )
 from flask_restx import Namespace, Resource, fields
+
+from app.authorization import (
+    email_should_get_edit_permission_by_default,
+    email_should_get_upgraded_to_admin,
+)
+from app.extensions import db
+from app.helpers.rq_helpers import get_queue
+from app.models import Invokation, User
 
 ns = Namespace("open_views")
 
@@ -33,7 +35,7 @@ class CheckForDeadJobsResource(Resource):
         ).all()
         # Check if each invokation is in flask-rq2
         for invokation in invokations:
-            if invokation.id not in rq.get_queue().get_job_ids():
+            if invokation.id not in get_queue().get_job_ids():
                 invokation.status = "failed"
                 db.session.commit()
         return True

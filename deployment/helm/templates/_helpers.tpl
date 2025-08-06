@@ -84,8 +84,8 @@ metadata:
   namespace: default
 spec:
   # pollingInterval: 30                         # Optional. Default: 30 seconds
-  successfulJobsHistoryLimit: 5               # Optional. Default: 100. How many completed jobs should be kept.
-  failedJobsHistoryLimit: 5                   # Optional. Default: 100. How many failed jobs should be kept.
+  successfulJobsHistoryLimit: 20               # Optional. Default: 100. How many completed jobs should be kept.
+  failedJobsHistoryLimit: 20                   # Optional. Default: 100. How many failed jobs should be kept.
   # envSourceContainerName: {container-name}    # Optional. Default: .spec.JobTargetRef.template.spec.containers[0]
   minReplicaCount: 0                          # Optional. Default: 0
   maxReplicaCount: {{ if (eq .RqQueueName "cpu") -}}
@@ -127,11 +127,16 @@ spec:
     # activeDeadlineSeconds: 600                 #  Specifies the duration in seconds relative to the startTime that the job may be active before the system tries to terminate it; value must be positive integer
     backoffLimit: 3                            # Specifies the number of retries before marking this job failed. Defaults to 6
 
+    # Uncomment to keep each Job for 24 h after it completes
+    ttlSecondsAfterFinished: 86400
+
     template:
       spec:
         serviceAccountName: foldy-ksa
 
         restartPolicy: Never
+        # allow 25 for clean shutdown. Spot nodes are terminated with only 30s notice...
+        terminationGracePeriodSeconds: 25
 
         volumes:
           - name: foldydbs
@@ -144,8 +149,10 @@ spec:
 
         nodeSelector:
           iam.gke.io/gke-metadata-server-enabled: "true"
-        {{- if or (or (or (eq .RqQueueName "gpu") (eq .RqQueueName "biggpu")) (eq .RqQueueName "esm")) (eq .RqQueueName "boltz") }}
+        {{- if or (eq .RqQueueName "gpu") (eq .RqQueueName "biggpu") }}
           cloud.google.com/gke-nodepool: spota100nodes
+        {{- else if or (eq .RqQueueName "esm") (eq .RqQueueName "boltz") }}
+          cloud.google.com/gke-nodepool: ondemanda100nodes
         {{- else if (eq .RqQueueName "cpu") }}
           cloud.google.com/gke-nodepool: spothighmemnodes
         {{- end }}
@@ -160,18 +167,30 @@ spec:
         - name: master
           image: {{ .Values.GoogleCloudRegion }}-docker.pkg.dev/{{ .Values.GoogleProjectId }}/{{ .Values.ArtifactRepo }}/{{ required "image name is required" .ImageName }}:{{  .Values.ImageVersion }}
           command: ["/opt/conda/envs/worker/bin/python"]
-          args: ["-m", "flask", "rq", "worker", {{ required "RqQueueName is required." .RqQueueName | quote }}, "--burst", "--max-jobs", "1"]
+          args: ["/backend/src/rq_worker_main.py", {{ required "RqQueueName is required." .RqQueueName | quote }}, "--burst", "--max-jobs", "1"]
           env:
           - name: FLASK_APP
             value: rq_worker_main.py
-          - name: RUN_AF2_PATH
-            value: /worker/run_alphafold.sh
-          - name: DECOMPRESS_PKLS_PATH
-            value: /worker/decompress_pkls.sh
           - name: RUN_ANNOTATE_PATH
             value: /worker/run_annotate.sh
           - name: RUN_DOCK
             value: /worker/run_dock.sh
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: NODE_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.hostIP
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
           envFrom:
           - configMapRef:
               name: foldy-configmap

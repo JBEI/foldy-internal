@@ -1,12 +1,19 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { EditableTagList } from "../../util/editableTagList";
 import SeqViz from "seqviz";
-import { AiFillEdit } from "react-icons/ai";
 import { BoltzYamlHelper, ChainSequence, LigandData } from "../../util/boltzYamlHelper";
 import BoltzYamlBuilder from "../../util/boltzYamlBuilder";
 import UIkit from "uikit";
 import { Selection } from "./StructurePane";
 import { notify } from "../../services/NotificationService";
+import { TabContainer, SectionCard, CollapsibleSection } from "../../util/tabComponents";
+import { Alert, Modal, Button as AntButton, Typography, Input, Switch, Space } from 'antd';
+import { QuestionCircleOutlined, EditOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { getFile } from "../../api/fileApi";
+import { getFoldAffinityPrediction } from "../../api/foldApi";
+import { AffinityPrediction, RenderableAnnotations } from "src/types/types";
+
+const { Text, Paragraph, Title } = Typography;
 
 export interface SubsequenceSelection {
     chainIdx: number;
@@ -14,6 +21,7 @@ export interface SubsequenceSelection {
     endResidue: number;
     subsequence: string;
 }
+
 
 interface SequenceTabProps {
     foldId: number;
@@ -27,15 +35,11 @@ interface SequenceTabProps {
 
     // Old AlphaFold inputs.
     sequence: string | null;
-    foldModelPreset: string | null;
-    foldDisableRelaxation: boolean | null;
 
-    colorScheme: string;
+    renderablePfamAnnotations: RenderableAnnotations | null;
 
     setPublic: (is_public: boolean) => void;
-    setDisableRelaxation: (disable_relaxation: boolean) => void;
     setFoldName: () => void;
-    setFoldModelPreset: () => void;
     addTag: (tagToAdd: string) => void;
     deleteTag: (tagToDelete: string) => void;
     handleTagClick: (tagToOpen: string) => void;
@@ -46,10 +50,85 @@ interface SequenceTabProps {
     setYamlConfig: (yaml: string) => void;
 }
 
+// Utility function to format molar concentration with appropriate units
+const formatMolarConcentration = (valueInMolar: number): string => {
+    if (valueInMolar >= 1) {
+        return `${(valueInMolar).toFixed(1)} M`;
+    } else if (valueInMolar >= 1e-3) {
+        return `${(valueInMolar * 1e3).toFixed(1)} mM`;
+    } else if (valueInMolar >= 1e-6) {
+        return `${(valueInMolar * 1e6).toFixed(1)} μM`;
+    } else if (valueInMolar >= 1e-9) {
+        return `${(valueInMolar * 1e9).toFixed(1)} nM`;
+    } else {
+        return `${(valueInMolar * 1e12).toFixed(1)} pM`;
+    }
+};
+
+// Convert RenderableAnnotations to SeqViz format
+const convertToSeqVizAnnotations = (renderableAnnotations: RenderableAnnotations | null, chainName: string) => {
+    if (!renderableAnnotations || !renderableAnnotations[chainName]) {
+        return [];
+    }
+
+    return renderableAnnotations[chainName].map(annotation => ({
+        name: annotation.type,
+        start: annotation.start,
+        end: annotation.end,
+        direction: 1 as const,
+        color: annotation.color
+    }));
+};
+
 const SequenceTab = React.memo((props: SequenceTabProps) => {
     const [showYamlSection, setShowYamlSection] = useState<boolean>(false);
+    const [affinityPrediction, setAffinityPrediction] = useState<AffinityPrediction | null>(null);
+
+    // Handler to color structure by pfam annotations
+    const colorStructureByPfam = () => {
+        if (!props.renderablePfamAnnotations) return;
+
+        const selectionData: {
+            struct_asym_id: string;
+            start_residue_number: number;
+            end_residue_number: number;
+            color: string;
+        }[] = [];
+
+        // Convert RenderableAnnotations to Selection format
+        for (const [chainName, annotations] of Object.entries(props.renderablePfamAnnotations)) {
+            annotations.forEach(annotation => {
+                selectionData.push({
+                    struct_asym_id: chainName,
+                    start_residue_number: annotation.start,
+                    end_residue_number: annotation.end,
+                    color: annotation.color
+                });
+            });
+        }
+
+        const selection: Selection = {
+            data: selectionData,
+            nonSelectedColor: "#CCCCCC" // Light gray for non-pfam regions
+        };
+
+        console.log("Setting structure selection for pfam coloring:", selection);
+        props.setSelectedSubsequence(selection);
+    };
 
     const configHelper = props.yamlConfig ? new BoltzYamlHelper(props.yamlConfig) : null;
+
+    // Add a memo to load affinity predictions
+    useMemo(async () => {
+        getFoldAffinityPrediction(props.foldId).then(
+            (affinityPrediction: AffinityPrediction) => {
+                setAffinityPrediction(affinityPrediction);
+            },
+            (e: any) => {
+                console.log(e);
+            }
+        )
+    }, [props.foldId]);
 
     var sequenceNames: string[];
     var sequences: string[];
@@ -65,10 +144,77 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
     }
 
     const renderSequenceViewer = () => {
+        // Get affinity binder if specified
+        const affinityProperties = configHelper?.getProperties() || [];
+        const affinityBinder = affinityProperties[0]?.affinity?.binder;
+
+        // Organize sequences by type
+        const ligands = configHelper?.getLigands() || [];
+        const proteins = configHelper?.getProteinSequences() || [];
+        const dnaSequences = configHelper?.getDNASequences() || [];
+        const rnaSequences = configHelper?.getRNASequences() || [];
+
+        // Find the affinity ligand if it exists
+        const affinityLigand = ligands.find(ligand =>
+            ligand.chain_ids.includes(affinityBinder || '')
+        );
+
         return <>
-            {sequences.map((ss: string, idx: number) => {
-                const chainName = sequenceNames[idx];
-                const chainSeq = ss;
+            {/* Render affinity ligand first if it exists */}
+            {affinityLigand && (
+                <div key="affinity-ligand" style={{
+                    marginBottom: "20px",
+                    backgroundColor: "#f0f8ff", // Light blue background
+                    padding: "15px",
+                    borderRadius: "8px",
+                    border: "1px solid #d1e8ff"
+                }}>
+                    <h3>{affinityLigand.chain_ids.join(", ")} (Ligand - Affinity Target)</h3>
+                    <div style={{ overflowWrap: "break-word" }}>
+                        {affinityLigand.smiles || affinityLigand.ccd}
+                    </div>
+                    {affinityPrediction && (
+                        <div style={{ marginTop: "10px" }}>
+                            <div>
+                                <strong>Predicted Affinity:</strong>{' '}
+                                {' '}
+                                {formatMolarConcentration(Math.pow(10, affinityPrediction.affinity_pred_value - 6))}
+                                {' '}
+                                ({((6 - affinityPrediction.affinity_pred_value) * 1.364).toFixed(2)} kJ/mol)
+                                <a
+                                    href="https://github.com/jwohlwend/boltz/blob/main/docs/prediction.md"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    <InfoCircleOutlined style={{ color: '#1890ff', marginLeft: '4px' }} />
+                                </a>
+                            </div>
+                            <div>
+                                <strong>Binding Probability:</strong>{' '}
+                                {(affinityPrediction.affinity_probability_binary * 100).toFixed(1)}%
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Render other ligands */}
+            {ligands
+                .filter(ligand => ligand !== affinityLigand)
+                .map((ligand: LigandData, idx: number) => (
+                    <div key={idx} style={{ marginBottom: "20px" }}>
+                        <h3>{ligand.chain_ids.join(", ")} (Ligand)</h3>
+                        <div style={{ overflowWrap: "break-word" }}>
+                            {ligand.smiles || ligand.ccd}
+                        </div>
+                    </div>
+                ))
+            }
+
+            {/* Render protein sequences */}
+            {proteins.map((ss: ChainSequence, idx: number) => {
+                const chainName = ss[0];
+                const chainSeq = ss[1];
 
                 const onSelectionHandler = (chainName: string, selection: any) => {
                     if (!configHelper) {
@@ -80,7 +226,6 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                         console.log(`Could not find chain ${chainName} in boltz config: ${configHelper?.getProteinSequences()}`);
                         return;
                     }
-                    const chainId = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[chainIndex]
                     if (selection.start && selection.end) {
                         console.log(selection);
                         var start = Math.min(selection.start, selection.end);
@@ -92,7 +237,7 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                         console.log(`${start}, ${end}`)
                         props.setSelectedSubsequence({
                             data: [{
-                                struct_asym_id: chainId,
+                                struct_asym_id: chainName,
                                 start_residue_number: start + 1,
                                 end_residue_number: end,
                                 color: "white",
@@ -113,6 +258,7 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                             viewer="linear"
                             showComplement={false}
                             zoom={{ linear: 10 }}
+                            annotations={convertToSeqVizAnnotations(props.renderablePfamAnnotations, chainName)}
                             style={{
                                 width: "100%",
                                 marginBottom: "20px",
@@ -124,16 +270,10 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                     </div>
                 );
             })}
-            {configHelper?.getLigands().map((ligand: LigandData, idx: number) => {
-                return <div key={idx} style={{ marginBottom: "20px" }}>
-                    <h3>{ligand.chain_ids.join(", ")} (Ligand)</h3>
-                    <div>
-                        {ligand.smiles || ligand.ccd}
-                    </div>
-                </div>
-            })}
-            {configHelper?.getDNASequences().map((dna: ChainSequence, idx: number) => {
-                return <div key={idx} style={{ marginBottom: "20px" }}>
+
+            {/* Render DNA sequences */}
+            {dnaSequences.map((dna: ChainSequence, idx: number) => (
+                <div key={idx} style={{ marginBottom: "20px" }}>
                     <h3>{dna[0]} (DNA)</h3>
                     <div>
                         <SeqViz
@@ -150,9 +290,11 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                         />
                     </div>
                 </div>
-            })}
-            {configHelper?.getRNASequences().map((rna: ChainSequence, idx: number) => {
-                return <div key={idx} style={{ marginBottom: "20px" }}>
+            ))}
+
+            {/* Render RNA sequences */}
+            {rnaSequences.map((rna: ChainSequence, idx: number) => (
+                <div key={idx} style={{ marginBottom: "20px" }}>
                     <h3>{rna[0]} (RNA)</h3>
                     <div>
                         <SeqViz
@@ -170,208 +312,195 @@ const SequenceTab = React.memo((props: SequenceTabProps) => {
                         {rna[1]}
                     </div>
                 </div>
-            })}
+            ))}
         </>
     };
 
     const canEditYaml = props.userType !== "viewer";
 
+    const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+
     return (
-        <div style={{ padding: "20px" }}>
+        <TabContainer>
             {/* Sequence Viewer */}
-            <section
-                style={{
-                    backgroundColor: "#f8f9fa",
-                    borderRadius: "8px",
-                    padding: "15px",
-                    boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
-                }}
-            >
+            <SectionCard>
                 {renderSequenceViewer()}
-            </section>
+                {/* Color by Pfam button */}
+                {props.renderablePfamAnnotations && Object.keys(props.renderablePfamAnnotations).length > 0 && (
+                    <div style={{ marginBottom: '16px' }}>
+                        <AntButton
+                            onClick={colorStructureByPfam}
+                        >
+                            Color Structure by Pfam Domains
+                        </AntButton>
+                    </div>
+                )}
+            </SectionCard>
 
             {/* YAML Builder Section - only show if user has permission */}
             {canEditYaml && (
-                <div>
-                    <div
-                        className='uk-margin-top uk-margin-bottom'
-                        style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            padding: "10px 15px",
-                            backgroundColor: "#f8f9fa",
-                            border: "1px solid #e0e0e0",
-                            borderRadius: "8px",
-                            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                            cursor: "pointer",
-                            fontWeight: "bold",
+                <CollapsibleSection
+                    title="Edit YAML Configuration"
+                    isOpen={showYamlSection}
+                    onToggle={() => setShowYamlSection(!showYamlSection)}
+                    style={{ marginBottom: '20px' }}
+                >
+                    <BoltzYamlBuilder
+                        initialYaml={props.yamlConfig || undefined}
+                        onSave={(yaml) => {
+                            console.log(`YAML: ${yaml}`);
+                            UIkit.modal
+                                .confirm(
+                                    `Are you sure you want to update the YAML configuration?`
+                                )
+                                .then(async () => {
+                                    await props.setYamlConfig(yaml);
+                                    notify.info("Updated YAML configuration. You can refold the protein from Actions > Refold.");
+                                });
                         }}
-                        onClick={() => setShowYamlSection(!showYamlSection)}
-                    >
-                        <span>Edit YAML Configuration</span>
-                        <span>{showYamlSection ? "▲" : "▼"}</span>
-                    </div>
-                    {showYamlSection && (
-                        <div style={{
-                            padding: '15px',
-                            backgroundColor: '#ffffff',
-                            borderRadius: '8px',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                            marginBottom: '20px'
-                        }}>
-                            <BoltzYamlBuilder
-                                initialYaml={props.yamlConfig || undefined}
-                                onSave={(yaml) => {
-                                    console.log(`YAML: ${yaml}`);
-                                    UIkit.modal
-                                        .confirm(
-                                            `Are you sure you want to update the YAML configuration?`
-                                        )
-                                        .then(async () => {
-                                            await props.setYamlConfig(yaml);
-                                            notify.info("Updated YAML configuration. You can refold the protein from Actions > Refold.");
-                                        });
-                                }}
-                            />
-                        </div>
-                    )}
-                </div>
+                        foldName={props.foldName}
+                        setFoldName={null}
+                    />
+                </CollapsibleSection>
             )}
 
             {/* Form Section */}
-            <form
-                style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 2fr",
-                    gap: "15px",
-                    marginTop: "20px",
-                    backgroundColor: "#ffffff",
-                    borderRadius: "8px",
-                    padding: "15px",
-                    boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
-                }}
-            >
-                {/* Name */}
-                <label>Name</label>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                    <input
-                        className="uk-input"
-                        value={props.foldName}
-                        disabled
-                        style={{ flex: 1 }}
-                    />
-                    <button
-                        className="uk-button uk-button-default"
-                        onClick={(e) => {
-                            e.preventDefault();
-                            props.setFoldName();
-                        }}
-                        style={{
-                            marginLeft: "10px",
-                            border: "1px solid #ccc",
-                            borderRadius: "5px",
-                        }}
-                        disabled={props.userType === "viewer"}
-                    >
-                        <AiFillEdit />
-                    </button>
-                </div>
-
-                {/* Diffusion Samples */}
-                <label>Diffusion Samples</label>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                    <input
-                        className="uk-input"
-                        value={props.foldDiffusionSamples || undefined}
-                        disabled
-                    />
-                </div>
-
-                {/* Owner */}
-                <label>Owner</label>
-                <input
-                    className="uk-input"
-                    value={props.foldOwner}
-                    disabled
+            <SectionCard>
+                {/* Help Alert */}
+                <Alert
+                    message="Protein Properties & Settings"
+                    description={
+                        <div>
+                            <Paragraph>
+                                Configure basic protein properties, tags, and folding parameters.
+                                Use the edit buttons to make changes.
+                            </Paragraph>
+                            <AntButton
+                                type="link"
+                                icon={<QuestionCircleOutlined />}
+                                onClick={() => setShowHelpModal(true)}
+                                style={{ padding: 0 }}
+                            >
+                                View detailed property guide
+                            </AntButton>
+                        </div>
+                    }
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: '20px' }}
                 />
 
-                {/* Created */}
-                <label>Created</label>
-                <input
-                    className="uk-input"
-                    value={props.foldCreateDate}
-                    disabled
-                />
+                {/* Detailed Help Modal */}
+                <Modal
+                    title="Protein Properties Guide"
+                    open={showHelpModal}
+                    onCancel={() => setShowHelpModal(false)}
+                    footer={[
+                        <AntButton key="close" onClick={() => setShowHelpModal(false)}>
+                            Close
+                        </AntButton>
+                    ]}
+                    width={700}
+                >
+                    <div>
+                        <Title level={4}>Basic Properties</Title>
+                        <ul>
+                            <li><Text strong>Name:</Text> Descriptive identifier for your protein</li>
+                            <li><Text strong>Owner:</Text> User who created this fold</li>
+                            <li><Text strong>Created:</Text> Timestamp of fold creation</li>
+                            <li><Text strong>Diffusion Samples:</Text> Number of samples used in structure generation</li>
+                        </ul>
 
-                {/* Public */}
-                <label>Public</label>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                    <input
-                        type="checkbox"
-                        checked={props.foldPublic || false}
-                        onChange={(e) => props.setPublic(!props.foldPublic)}
-                        style={{
-                            width: "20px",
-                            height: "20px",
-                            marginRight: "10px",
-                        }}
-                    />
-                    <span>{props.foldPublic ? "Yes" : "No"}</span>
+                        <Title level={4}>Visibility & Organization</Title>
+                        <ul>
+                            <li><Text strong>Visibility:</Text> Make this fold visible to other users</li>
+                            <li><Text strong>Tags:</Text> Add descriptive labels for organization and search</li>
+                        </ul>
+
+                        <Alert
+                            message="Parameter Changes"
+                            description="Changes to folding parameters require refolding the protein to take effect."
+                            type="warning"
+                            showIcon
+                            style={{ marginTop: '16px' }}
+                        />
+                    </div>
+                </Modal>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px', maxWidth: '800px' }}>
+                    {/* Row 1 */}
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Name</Text>
+                        <Space.Compact style={{ width: '100%' }}>
+                            <Input
+                                value={props.foldName}
+                                disabled
+                                style={{ width: 'calc(100% - 40px)' }}
+                                size="small"
+                            />
+                            <AntButton
+                                icon={<EditOutlined />}
+                                onClick={props.setFoldName}
+                                disabled={props.userType === "viewer"}
+                                title="Edit name"
+                                size="small"
+                            />
+                        </Space.Compact>
+                    </div>
+
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Diffusion Samples</Text>
+                        <Input
+                            value={props.foldDiffusionSamples || ''}
+                            disabled
+                            size="small"
+                        />
+                    </div>
+
+                    {/* Row 2 */}
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Owner</Text>
+                        <Input
+                            value={props.foldOwner}
+                            disabled
+                            size="small"
+                        />
+                    </div>
+
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Created</Text>
+                        <Input
+                            value={props.foldCreateDate}
+                            disabled
+                            size="small"
+                        />
+                    </div>
+
+                    {/* Row 3 */}
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: '4px' }}>Visibility</Text>
+                        <Switch
+                            checked={props.foldPublic || false}
+                            onChange={(checked) => props.setPublic(checked)}
+                            checkedChildren="Public"
+                            unCheckedChildren="Private"
+                            size="small"
+                        />
+                    </div>
+
+                    {/* Tags section - spans both columns */}
+                    <div>
+                        <Text strong style={{ display: 'block', marginBottom: '8px' }}>Tags</Text>
+                        <EditableTagList
+                            tags={props.foldTags || []}
+                            addTag={props.addTag}
+                            deleteTag={props.deleteTag}
+                            handleTagClick={props.handleTagClick}
+                        />
+                    </div>
                 </div>
-
-                {/* Tags */}
-                <label>Tags</label>
-                <EditableTagList
-                    tags={props.foldTags || []}
-                    addTag={props.addTag}
-                    deleteTag={props.deleteTag}
-                    handleTagClick={props.handleTagClick}
-                />
-
-                {/* Model Preset */}
-                <label>Model Preset</label>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                    <input
-                        className="uk-input"
-                        value={props.foldModelPreset || "unset"}
-                        disabled
-                    />
-                    <button
-                        className="uk-button uk-button-default"
-                        onClick={(e) => {
-                            e.preventDefault();
-                            props.setFoldModelPreset();
-                        }}
-                        style={{
-                            marginLeft: "10px",
-                            border: "1px solid #ccc",
-                            borderRadius: "5px",
-                        }}
-                    >
-                        <AiFillEdit />
-                    </button>
-                </div>
-
-                {/* Disable Relaxation */}
-                <label>Disable Relaxation</label>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                    <input
-                        type="checkbox"
-                        checked={props.foldDisableRelaxation !== null ? props.foldDisableRelaxation : true}
-                        onChange={(e) =>
-                            props.setDisableRelaxation(!props.foldDisableRelaxation)
-                        }
-                        style={{
-                            width: "20px",
-                            height: "20px",
-                            marginRight: "10px",
-                        }}
-                    />
-                    <span>{props.foldDisableRelaxation ? "Yes" : "No"}</span>
-                </div>
-            </form>
-        </div>
+            </SectionCard>
+        </TabContainer>
     );
 });
 

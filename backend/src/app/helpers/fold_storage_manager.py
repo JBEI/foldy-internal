@@ -7,18 +7,16 @@ import shutil
 import tempfile
 import time
 import zipfile
+from abc import abstractmethod
 from datetime import UTC, datetime, timezone
 from pathlib import Path, PurePosixPath
 from re import fullmatch
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 
 import numpy as np
-from app.extensions import compress, db, rq
-from app.helpers.boltz_yaml_helper import BoltzYamlHelper
-from app.helpers.sequence_util import back_translate
-from app.models import Dock, Fold, Invokation, User
 from dnachisel import biotools
 from flask import abort, current_app
+from google.cloud.storage import Blob
 from google.cloud.storage.client import Client
 from redis import Redis
 from rq.job import Retry
@@ -26,25 +24,10 @@ from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.sql.elements import or_
 from werkzeug.exceptions import BadRequest
 
-
-class StorageAccessor:
-    def list_files(self, fold_id: int, subfolder: Optional[str] = None) -> List[Dict[str, Any]]:
-        raise NotImplementedError
-
-    def write_file(self, fold_id: int, file_path: str, contents: Any, binary: bool = False) -> None:
-        """Write contents to a file under the specified fold directory."""
-        raise NotImplementedError
-
-    def get_binary(self, fold_id: int, file_path: str) -> bytes:
-        raise NotImplementedError
-
-    def get_blob(self, fold_id: int, file_path: str) -> Any:
-        raise NotImplementedError
-
-    def upload_folder(
-        self, fold_id: int, local_absolute_folder_path: str, relative_folder_path: str
-    ) -> None:
-        raise NotImplementedError
+from app.extensions import compress, db
+from app.helpers.boltz_yaml_helper import BoltzYamlHelper
+from app.helpers.sequence_util import back_translate
+from app.models import Dock, Fold, Invokation, User
 
 
 class LocalBlob:
@@ -59,7 +42,7 @@ class LocalBlob:
         """
         self.file_path = file_path
 
-    def open(self, mode="rb"):
+    def open(self, mode="r"):
         """
         Opens the local file in the specified mode.
 
@@ -88,6 +71,40 @@ class LocalBlob:
             int: Size of the file in bytes.
         """
         return os.path.getsize(self.file_path)
+
+
+class StorageAccessor:
+    @abstractmethod
+    def list_files(self, fold_id: int, subfolder: Optional[str] = None) -> List[Dict[str, Any]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def write_file(self, fold_id: int, file_path: str, contents: Any, binary: bool = False) -> None:
+        """Write contents to a file under the specified fold directory."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_binary(self, fold_id: int, file_path: str) -> bytes:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_blob(self, fold_id: int, file_path: str) -> LocalBlob | Blob:
+        raise NotImplementedError
+
+    @abstractmethod
+    def upload_folder(
+        self, fold_id: int, local_absolute_folder_path: str, relative_folder_path: str
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def delete_folder(
+        self,
+        fold_id: int,
+        relative_folder_path: str,
+        allow_list_suffixes: Optional[List[str]] = None,
+    ) -> None:
+        raise NotImplementedError
 
 
 class LocalStorageAccessor(StorageAccessor):
@@ -157,7 +174,7 @@ class LocalStorageAccessor(StorageAccessor):
         return blob_bytes
 
     def get_blob(self, fold_id: int, file_path: str) -> LocalBlob:
-        """Gets a Blob object from local storage based on fold_id and relative_path.
+        """Gets a Blob object from local storage based on fold_id and file_path.
 
         Retrieves a LocalBlob object for the specified file.
 
@@ -207,6 +224,26 @@ class LocalStorageAccessor(StorageAccessor):
                 )
                 out_file_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(local_file_path, out_file_path)
+
+    def delete_folder(
+        self,
+        fold_id: int,
+        relative_folder_path: str,
+        allow_list_suffixes: Optional[List[str]] = None,
+    ) -> None:
+        """Deletes a whole folder, like rm -r."""
+        if self.local_directory is None:
+            raise BadRequest("Local directory not initialized")
+
+        padded_fold_id = f"{fold_id:06d}"
+        dir = self.local_directory / padded_fold_id / relative_folder_path
+
+        if os.path.exists(dir):
+            for file in dir.glob("**/*"):
+                if allow_list_suffixes is None or not any(
+                    str(file).endswith(suffix) for suffix in allow_list_suffixes
+                ):
+                    file.unlink()
 
 
 class GcloudStorageAccessor(StorageAccessor):
@@ -290,7 +327,7 @@ class GcloudStorageAccessor(StorageAccessor):
         else:
             blob.upload_from_string(contents)
 
-    def get_binary(self, fold_id: int, relative_path: str) -> bytes:
+    def get_binary(self, fold_id: int, file_path: str) -> bytes:
         """Gets a file (as a binary string) from gcloud, with a relative path within the fold dir."""
         if self.client is None or self.bucket_name is None:
             raise BadRequest("GCloud client not initialized")
@@ -299,9 +336,9 @@ class GcloudStorageAccessor(StorageAccessor):
         padded_fold_id = "%06d" % fold_id
 
         if self.bucket_prefix:
-            gcloud_path = f"{self.bucket_prefix}/{padded_fold_id}/{relative_path}"
+            gcloud_path = f"{self.bucket_prefix}/{padded_fold_id}/{file_path}"
         else:
-            gcloud_path = f"{padded_fold_id}/{relative_path}"
+            gcloud_path = f"{padded_fold_id}/{file_path}"
         blobs = list(
             self.client.list_blobs(
                 bucket_or_name=self.bucket_name,
@@ -318,17 +355,17 @@ class GcloudStorageAccessor(StorageAccessor):
         )
         return blob_bytes
 
-    def get_blob(self, fold_id: int, relative_path: str) -> Any:
-        """Gets a Blob object from GCS based on fold_id and relative_path."""
+    def get_blob(self, fold_id: int, file_path: str) -> Blob:
+        """Gets a Blob object from GCS based on fold_id and file_path."""
         if self.client is None or self.bucket_name is None:
             raise BadRequest("GCloud client not initialized")
 
         padded_fold_id = f"{fold_id:06d}"
-        relative_path = relative_path.lstrip("/")
+        file_path = file_path.lstrip("/")
         if self.bucket_prefix:
-            gcloud_path = f"{self.bucket_prefix}/{padded_fold_id}/{relative_path}"
+            gcloud_path = f"{self.bucket_prefix}/{padded_fold_id}/{file_path}"
         else:
-            gcloud_path = f"{padded_fold_id}/{relative_path}"
+            gcloud_path = f"{padded_fold_id}/{file_path}"
 
         bucket = self.client.bucket(self.bucket_name)
         blob = bucket.blob(gcloud_path)
@@ -363,6 +400,31 @@ class GcloudStorageAccessor(StorageAccessor):
                 print(f"Uploaded {local_file_path} to {gcloud_path}", flush=True)
                 blob = bucket.blob(gcloud_path)
                 blob.upload_from_filename(local_file_path)
+
+    def delete_folder(
+        self,
+        fold_id: int,
+        relative_folder_path: str,
+        allow_list_suffixes: Optional[List[str]] = None,
+    ) -> None:
+        """Deletes a whole folder, like rm -r."""
+        if self.client is None or self.bucket_name is None:
+            raise BadRequest("GCloud client not initialized")
+
+        padded_fold_id = f"{fold_id:06d}"
+
+        if self.bucket_prefix:
+            gcloud_path = f"{self.bucket_prefix}/{padded_fold_id}/{relative_folder_path}"
+        else:
+            gcloud_path = f"{padded_fold_id}/{relative_folder_path}"
+
+        bucket = self.client.bucket(self.bucket_name)
+        blobs: Iterable[Blob] = bucket.list_blobs(prefix=gcloud_path)
+        for blob in blobs:
+            if allow_list_suffixes is None or not any(
+                str(blob.name).endswith(suffix) for suffix in allow_list_suffixes
+            ):
+                blob.delete()
 
 
 class FoldStorageManager:
@@ -402,26 +464,27 @@ class FoldStorageManager:
 
         return fold
 
-    def get_folds_with_state(
+    def get_folds_with_pagination(
         self,
         filter: Optional[str],
         tag: Optional[str],
         only_public: bool,
         page: Optional[int],
         per_page: Optional[int],
-    ) -> List[Fold]:
-        """Returns a list of folds with state populated."""
+    ) -> Dict[str, Any]:
+        """Returns a dictionary with fold data and pagination metadata."""
 
         def get_tag_regex(term):
             """Convert the tag into a regex for searching the tagstring CSV."""
             return "(^|,)" + term + "(,|$)"
 
         query = (
-            db.session.query(Fold).join(Fold.user)
-            # 2/13/25: Tried replacing joinedload with selectinload to try to speed up the query.
-            # Local testing actually shows that selectinload is slower than joinedload.
-            .options(joinedload(Fold.jobs), joinedload(Fold.docks))
-            # .options(selectinload(Fold.jobs), selectinload(Fold.docks))
+            db.session.query(Fold)
+            .join(Fold.user)  # type: ignore[reportArgumentType] # SQLAlchemy relationship property typing issue
+            .options(
+                joinedload(Fold.jobs),  # type: ignore[reportArgumentType] # SQLAlchemy joinedload expects QueryableAttribute
+                joinedload(Fold.docks),  # type: ignore[reportArgumentType] # SQLAlchemy joinedload expects QueryableAttribute
+            )
         )
 
         if tag:
@@ -435,14 +498,7 @@ class FoldStorageManager:
                 query = query.filter(
                     or_(
                         Fold.name.ilike(formatted_term),
-                        # 2/13/25:  For now we don't search on sequence or yaml_config
-                        # because the Dashboard is taking >10 seconds to load which is no good.
-                        # We are not sure that this search is the cause of the problem,
-                        # an alternative hypothesis is the joins with jobs and docks is the issue.
-                        # But we exclude this search for now to see if it helps.
-                        # Fold.sequence.ilike(formatted_term),
-                        # Fold.yaml_config.ilike(formatted_term),
-                        User.email.ilike(formatted_term),
+                        User.email.ilike(formatted_term),  # type: ignore[reportAttributeAccessIssue]
                         Fold.tagstring.op("~")(get_tag_regex(term)),
                     )
                 )
@@ -452,31 +508,42 @@ class FoldStorageManager:
 
         query = query.order_by(Fold.id.desc())
 
-        iterable = query
+        # Use pagination if page and per_page are provided
         if page and per_page:
-            iterable = query.paginate(page=page, per_page=per_page).items
+            logging.error(
+                f"DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page}"
+            )
+            pagination = query.paginate(page=page, per_page=per_page, error_out=True, count=True)  # type: ignore[reportAttributeAccessIssue]
+            folds = [fold for fold in pagination.items if fold is not None]
 
-        # folds = [fold for fold in iterable if fold is not None]
-        folds = []
-        for fold in iterable:
-            if not fold:
-                pass
-            # if not include_logs:
-            #   for job in fold.jobs:
-            #     # Since the log field is deferred, this will keep the
-            #     # response marshalling from accidentally triggering another
-            #     # sql query.
-            #     job.log = None
-            folds.append(fold)
-
-        # if not include_logs:
-        #   for job in fold.jobs:
-        #     # Since the log field is deferred, this will keep the
-        #     # response marshalling from accidentally triggering another
-        #     # sql query.
-        #     job.log = None
-
-        return folds
+            return {
+                "data": folds,
+                "pagination": {
+                    "page": pagination.page,
+                    "per_page": pagination.per_page,
+                    "total": pagination.total,
+                    "pages": pagination.pages,
+                    "has_prev": pagination.has_prev,
+                    "has_next": pagination.has_next,
+                },
+            }
+        else:
+            logging.error(
+                f"NOT DOING PAGINATION {page} {per_page} NOT DOING PAGINATION {page} {per_page} NOT DOING PAGINATION {page} {per_page} NOT DOING PAGINATION {page} {per_page}"
+            )
+            # If no pagination requested, return all results with basic pagination info
+            all_folds = [fold for fold in query.all() if fold is not None]
+            return {
+                "data": all_folds,
+                "pagination": {
+                    "page": 1,
+                    "per_page": len(all_folds),
+                    "total": len(all_folds),
+                    "pages": 1,
+                    "has_prev": False,
+                    "has_next": False,
+                },
+            }
 
     def write_fastas(self, id: int, yaml_config_str: str) -> None:
         """Raises an exception if writing fails."""
@@ -493,31 +560,11 @@ class FoldStorageManager:
         ]
         dna_contents = "\n\n".join(dna_fasta_entries)
 
-        # if ":" in sequence or ";" in sequence:
-        #     monomers = [m.split(":") for m in sequence.split(";")]
-        #     aa_fasta_entries = [f"> {m[0]}|protein\n{m[1]}" for m in monomers]
-        #     aa_contents = "\n\n".join(aa_fasta_entries)
-
-        #     dna_contents = "\n\n".join(
-        #         [f"> {m[0]}\n{back_translate(m[1])}" for m in monomers]
-        #     )
-        # else:
-        #     aa_contents = f"> {padded_fold_id}\n{sequence}"
-        #     dna_contents = f"> {padded_fold_id}\n{back_translate(sequence)}"
-
         if self.storage_manager is None:
             raise BadRequest("Storage manager not initialized")
 
         self.storage_manager.write_file(id, aa_blob_path, aa_contents)
         self.storage_manager.write_file(id, dna_blob_path, dna_contents)
-
-    def get_fold_pdb(self, fold_id: int, ranked_model_number: int) -> str:
-        if self.storage_manager is None:
-            raise BadRequest("Storage manager not initialized")
-
-        return self.storage_manager.get_binary(
-            fold_id, f"ranked_{ranked_model_number}.pdb"
-        ).decode()
 
     def get_fold_file_zip(
         self, fold_ids: List[int], relative_fpath: str, output_dirname: str
@@ -548,19 +595,13 @@ class FoldStorageManager:
         tmp.seek(0)
         return tmp
 
-    def get_fold_pkl(self, fold_id: int, ranked_model_number: int) -> bytes:
-        """Returns a byte string."""
-        if self.storage_manager is None:
-            raise BadRequest("Storage manager not initialized")
-
-        return self.storage_manager.get_binary(fold_id, f"ranked_{ranked_model_number}.pkl")
-
     def get_model_pae(self, fold_id: int, model_number: int) -> np.ndarray:
         if self.storage_manager is None:
             raise BadRequest("Storage manager not initialized")
 
         bytes_str = self.storage_manager.get_binary(
-            fold_id, f"ranked_{model_number}/predicted_aligned_error.npy"
+            fold_id,
+            f"boltz/boltz_results_input/predictions/input/pae_input_model_{model_number}.npz",
         )
         try:
             result = np.load(io.BytesIO(bytes_str), allow_pickle=True)

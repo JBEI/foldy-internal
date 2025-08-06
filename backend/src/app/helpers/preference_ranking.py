@@ -16,6 +16,7 @@ but contributes to multiple preference pairs.
 """
 
 import logging
+import random
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -25,7 +26,10 @@ import torch.nn.functional as F
 from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
+from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader, Dataset, TensorDataset
+
+from folde.util import get_top_percentile_recall_score
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +45,7 @@ class PreferenceDataset(Dataset):
         self,
         embeddings: np.ndarray,
         activity_labels: np.ndarray,
+        device: str | None = None,
     ):
         """Initialize the preference dataset.
 
@@ -48,15 +53,17 @@ class PreferenceDataset(Dataset):
             embeddings: Array of shape (n_samples, embedding_dim) with embeddings for all samples
             activity_labels: Array of shape (n_samples,) with activity measurements for all samples
         """
-        self.embeddings = torch.tensor(embeddings, dtype=torch.float32)
-        self.activity_labels = torch.tensor(activity_labels, dtype=torch.float32)
-        self.n_samples = len(embeddings)
+        self.embeddings: torch.Tensor = torch.tensor(embeddings, dtype=torch.float32, device=device)
+        self.activity_labels: torch.Tensor = torch.tensor(
+            activity_labels, dtype=torch.float32, device=device
+        )
+        self.n_samples: int = len(embeddings)
 
     def __len__(self) -> int:
         """Return the number of samples."""
         return self.n_samples
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         """Get a single sample.
 
         Args:
@@ -120,123 +127,128 @@ class BradleyTerryMLP(nn.Module):
         """
         return self.mlp(x)
 
-    def predict_preference(self, emb_i: torch.Tensor, emb_j: torch.Tensor) -> torch.Tensor:
-        """Predict preference between two embeddings.
-
-        Args:
-            emb_i: Tensor of shape (batch_size, embedding_dim) for first item
-            emb_j: Tensor of shape (batch_size, embedding_dim) for second item
-
-        Returns:
-            Tensor of shape (batch_size, 1) with preference probabilities
-            Values close to 1 indicate i is preferred over j
-            Values close to 0 indicate j is preferred over i
-        """
-        score_i = self.forward(emb_i)
-        score_j = self.forward(emb_j)
-        return torch.sigmoid(score_i - score_j)
-
 
 def batch_bradley_terry_loss(
-    scores,
-    labels,
-    exclude_pair_from_loss: Callable[[int, int], bool] = lambda i, j: False,
+    scores: torch.Tensor,
+    labels: torch.Tensor,
+    pair_mask: torch.Tensor | None,
+    importance_sampling_reweighting_strat: str | None,
+    importance_sampling_temperature: float | None,
 ):
-    # scores : (B,1)  labels : (B,)
+    B = scores.size(0)
+
+    # compute pairwise logits & targets
+    diff = scores.view(-1, 1) - scores.view(1, -1)  # (B, B)
+    Y = (labels.view(-1, 1) > labels.view(1, -1)).float()  # (B, B)
+
+    # get scores and weights
     s = scores.view(-1, 1)  # (B,1)
-    diff = s - s.T  # (B,B)
-    y = (labels.view(-1, 1) > labels).float()
-    mask = labels.view(-1, 1) != labels  # ignore ties
-    if mask.sum() == 0:
-        # add a tiny penalty to keep grads flowing
-        return (scores**2).mean() * 1e-4
-    loss = F.binary_cross_entropy_with_logits(diff[mask], y[mask])
+    s_i = s.expand(B, B).t()  # (B,B)
+    s_j = s.expand(B, B)  # (B,B)
+
+    if importance_sampling_reweighting_strat == "min":
+        w_full = torch.exp(torch.min(s_i, s_j) / importance_sampling_temperature)
+    elif importance_sampling_reweighting_strat == "max":
+        w_full = torch.exp(torch.max(s_i, s_j) / importance_sampling_temperature)
+    else:
+        w_full = torch.ones_like(diff)  # uniform
+
+    if pair_mask is None:
+        pair_mask = torch.ones_like(diff, dtype=torch.int).triu(diagonal=1)
+    pair_mask_bool = pair_mask.bool()
+
+    # compute weighted BCE for a given mask
+    logits = diff[pair_mask_bool]
+    targets = Y[pair_mask_bool]
+    w = w_full[pair_mask_bool]
+    w = w / w.sum()  # normalize within this split
+    w = w.detach()
+    losses = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
+    loss = (w * losses).sum()
+
     return loss
 
 
-# def batch_bradley_terry_loss(
-#     scores: torch.Tensor,  # (batch_size, 1)
-#     activity_labels: torch.Tensor,
-#     exclude_pair_from_loss: Callable[[int, int], bool] = lambda i, j: False,
-# ) -> torch.Tensor:
-#     batch_size = scores.shape[0]
-#     device = scores.device
+# function for masks
+def old_get_random_pair_split(B: int, labels: np.ndarray, val_fraction: float = 0.2, device=None):
+    """
+    two (BxB) boolean masks that stay *constant through all training*:
+    - train_mask: ~80% of all i≠j pairs
+    - val_mask:   ~20% of all i≠j pairs
+    """
+    # first, sample a uniform random matrix
+    rand = torch.rand((B, B), device=device)
 
-#     # Flatten
-#     scores = scores.view(-1)
+    # make a val‐mask by thresholding, then zero out diagonals
+    val_mask = rand < val_fraction
+    val_mask = val_mask.triu(diagonal=1)  # make the mask upper triangular (excluding diagonal).
 
-#     # i < j
-#     i_idx, j_idx = torch.triu_indices(batch_size, batch_size, offset=1, device=device)
+    # train is everything else off‐diagonal
+    train_mask = ~val_mask
+    train_mask = train_mask.triu(diagonal=1)  # make the mask upper triangular (excluding diagonal).
 
-#     # Filter out pairs i,j with equal label or excluded
-#     mask = []
-#     for i, j in zip(i_idx.tolist(), j_idx.tolist()):
-#         if exclude_pair_from_loss(i, j):
-#             continue
-#         if activity_labels[i] == activity_labels[j]:
-#             continue
-#         mask.append((i, j))
-#     if not mask:
-#         return torch.tensor(0.0, requires_grad=True, device=device)
-
-#     i_valid = torch.tensor([p[0] for p in mask], device=device)
-#     j_valid = torch.tensor([p[1] for p in mask], device=device)
-
-#     # 1 if label[i] > label[j]
-#     y_true = (activity_labels[i_valid] > activity_labels[j_valid]).float()
-#     y_pred = scores[i_valid] - scores[j_valid]
-
-#     return F.binary_cross_entropy_with_logits(y_pred, y_true)
-
-# pred_prob = torch.sigmoid(y_pred)
-# loss = -(y_true * torch.log(pred_prob + 1e-7) + (1 - y_true) * torch.log(1 - pred_prob + 1e-7))
-# return loss.mean()
+    return train_mask, val_mask
 
 
-#     embeddings: torch.Tensor,
-#     scores: torch.Tensor,
-#     activity_labels: torch.Tensor,
-#     exclude_pair_from_loss: Callable[[int, int], bool] = lambda i, j: False,
-# ) -> torch.Tensor:
-#     """Compute Bradley-Terry loss for batch-based preference learning.
+def get_random_pair_split(
+    B: int, labels: np.ndarray, rng_seed: int, val_fraction: float = 0.2, device=None
+):
+    """
+    Split directed pairs into training vs validation such that validation
+    masks only include pairs for which there is NO directed chain
+    through any intermediate in the training graph. This ensures that
+    the validation loss only contains nontrivial comparisons.
 
-#     Args:
-#         embeddings: Tensor of shape (batch_size, embedding_dim) with embeddings (for reference only)
-#         scores: Tensor of shape (batch_size, 1) with predicted scores for all samples in batch
-#         activity_labels: Tensor of shape (batch_size,) with activity measurements for all samples in batch
-#         exclude_pair_from_loss: Function that takes indices i, j and returns True if the pair
-#             should be excluded from the loss computation
+    Returns:
+      train_mask, val_mask : (BxB) boolean masks
+    """
+    torch.manual_seed(rng_seed)
+    random.seed(rng_seed)
+    # sample an initial undirected training graph with probability 1 - val_fraction
+    prob_train = 1 - val_fraction
+    train_graph = torch.rand((B, B), device=device) < prob_train
+    train_graph.fill_diagonal_(False)
 
-#     Returns:
-#         Bradley-Terry loss computed over all valid pairs within the batch
-#     """
-#     batch_size = scores.shape[0]
-#     losses = []  # Track individual pair losses
+    # build directed adjacency from training_graph + labels for BFS
+    labels_np = labels.tolist()
+    adj = [[] for _ in range(B)]
+    for u in range(B):
+        for v in range(B):
+            if train_graph[u, v] and labels_np[u] > labels_np[v]:
+                adj[u].append(v)
 
-#     for i in range(batch_size):
-#         for j in range(batch_size):
-#             if i == j or exclude_pair_from_loss(i, j):
-#                 continue
+    # do BFS
+    reach = [[False] * B for _ in range(B)]
+    for u in range(B):
+        visited = [False] * B
+        stack = [u]
+        visited[u] = True
+        while stack:
+            x = stack.pop()
+            for y in adj[x]:
+                if not visited[y]:
+                    visited[y] = True
+                    stack.append(y)
+        reach[u] = visited
 
-#             # Skip pairs with equal activity
-#             if activity_labels[i] == activity_labels[j]:
-#                 continue
+    # collect all non‐trivial directed pairs (i→j) with no path for validation loss
+    nontrivial = [(i, j) for i in range(B) for j in range(B) if i != j and not reach[i][j]]
 
-#             true_preference = 1.0 if activity_labels[i] > activity_labels[j] else 0.0
-#             score_diff = scores[i] - scores[j]
+    # sample exactly M = val_fraction * B*(B-1) of them for validation, note that B*(B-1) gets rid of the diagonal
+    M = int(val_fraction * B * (B - 1))
+    M = min(M, len(nontrivial))
+    logging.debug(f"Sampling {M} validation pairs from {len(nontrivial)} non-trivial pairs")
+    selected = random.sample(nontrivial, M)
 
-#             # Use binary cross entropy loss instead
-#             pred_prob = torch.sigmoid(score_diff)
-#             loss = -1 * (
-#                 true_preference * torch.log(pred_prob + 1e-7)
-#                 + (1 - true_preference) * torch.log(1 - pred_prob + 1e-7)
-#             )
-#             losses.append(loss)
+    # build boolean masks as before
+    val_mask = torch.zeros((B, B), dtype=torch.bool, device=device)
+    for i, j in selected:
+        val_mask[i, j] = True
+    train_mask = ~val_mask
+    train_mask.fill_diagonal_(False)
+    val_mask.fill_diagonal_(False)
 
-#     # Return mean loss if we have valid pairs, otherwise return zero loss
-#     if losses:
-#         return torch.mean(torch.stack(losses))
-#     return torch.tensor(0.0, device=scores.device, requires_grad=True)
+    return train_mask, val_mask
 
 
 class PreferenceTrainer:
@@ -250,9 +262,7 @@ class PreferenceTrainer:
         self,
         model: BradleyTerryMLP,
         random_state: int,
-        learning_rate: float = 1e-4,
-        weight_decay: float = 1e-5,
-        device: Optional[str] = None,
+        device: str | None = None,
     ):
         """Initialize the preference trainer.
 
@@ -264,94 +274,123 @@ class PreferenceTrainer:
                 If None, will use CUDA if available, otherwise CPU
         """
         if device is None:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.device: str = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             self.device = device
 
         self.random_state = random_state
-        torch.manual_seed(random_state)  # Set PyTorch random seed
-        np.random.seed(random_state)  # Set NumPy random seed
 
         self.model = model.to(self.device)
-        self.optimizer = torch.optim.Adam(
-            model.parameters(), lr=learning_rate, weight_decay=weight_decay
-        )
+        self.scaler = GradScaler()  # Add this line
 
     def train(
         self,
-        embeddings: np.ndarray,
-        activity_labels: np.ndarray,
-        batch_size: int = 32,
-        epochs: int = 100,
-        val_ratio_or_indices: Union[float, List[int], np.ndarray] = 0.1,
-        patience: int = 10,
-        exclude_pair_from_loss: Callable[[int, int], bool] = lambda i, j: False,
-        verbose: bool = True,
-        use_mse_loss: bool = False,
+        train_embeddings: np.ndarray,
+        train_activity_labels: np.ndarray,
+        batch_size: int,
+        epochs: int,
+        learning_rate: float,
+        weight_decay: float,
+        patience: int | None,
+        use_mse_loss: bool,
+        importance_sampling_reweighting_strat: str | None,
+        importance_sampling_temperature: float | None,
+        use_exponential_learning_rate_decay: bool,
+        use_plateau_learning_rate_decay: bool,
+        val_embeddings: np.ndarray | None = None,
+        val_activity_labels: np.ndarray | None = None,
+        do_validation_with_pair_fraction: float | None = None,
         val_frequency: int = 10,
-    ) -> Dict[str, List[float]]:
+        test_embeddings: np.ndarray | None = None,
+        test_activity_labels: np.ndarray | None = None,
+    ) -> dict[str, Any]:
         """Train the Bradley-Terry model using batch-based training.
 
         Args:
-            embeddings: Array of shape (n_samples, embedding_dim) with embeddings for all samples
-            activity_labels: Array of shape (n_samples,) with activity measurements for all samples
+            train_embeddings: Array of shape (n_samples, embedding_dim) with embeddings for all samples
+            train_activity_labels: Array of shape (n_samples,) with activity measurements for all samples
             batch_size: Number of samples to include in each batch
             epochs: Maximum number of epochs to train
-            val_ratio_or_indices: Proportion of data to use for validation, or list of indices to use for validation
+            learning_rate: Learning rate for optimizer
+            weight_decay: Weight decay for regularization
             patience: Number of epochs to wait for validation improvement before early stopping
-            exclude_pair_from_loss: Function that takes indices i, j and returns True if the pair
-                should be excluded from the loss computation
-            verbose: Whether to print progress during training
             use_mse_loss: Whether to use MSE loss instead of Bradley-Terry loss
+            do_importance_sampling: Whether to use importance sampling / reweighting in BT loss
+            val_embeddings: embeddings for validation set or None
+            val_activity_labels: activity labels for validation set or None
             val_frequency: Frequency of validation runs
         Returns:
             Dictionary with training metrics:
                 'train_loss': List of training losses for each epoch
                 'val_loss': List of validation losses for each epoch
         """
-        # Split data into train and validation sets
-        train_indices: np.ndarray
-        val_indices: np.ndarray
-        if isinstance(val_ratio_or_indices, float):
-            indices = np.arange(len(embeddings))
-            train_indices, val_indices = train_test_split(
-                indices, test_size=val_ratio_or_indices, random_state=42
-            )
-        elif isinstance(val_ratio_or_indices, (list, np.ndarray)):
-            # Ensure val_indices is a proper numpy array, never None
-            val_indices = (
-                np.array(val_ratio_or_indices)
-                if val_ratio_or_indices is not None
-                else np.array([], dtype=int)
-            )
-            all_indices = np.arange(len(embeddings))
-            val_set = set(val_indices.tolist())
-            train_indices = np.array([v for v in all_indices if v not in val_set])
-        else:
-            raise KeyError(
-                f"val_ratio_or_indices should be float or list, got {type(val_ratio_or_indices)} {val_ratio_or_indices}"
-            )
 
-        # Create datasets
-        train_embeddings = embeddings[train_indices]
-        train_activity_labels = activity_labels[train_indices]
-        val_embeddings = embeddings[val_indices] if len(val_indices) > 0 else None
-        val_activity_labels = activity_labels[val_indices] if len(val_indices) > 0 else None
+        torch.manual_seed(self.random_state)
+        random.seed(self.random_state)
+        np.random.seed(self.random_state)
 
         # Create datasets and dataloaders
-        train_dataset = PreferenceDataset(train_embeddings, train_activity_labels)
+        train_dataset = PreferenceDataset(
+            train_embeddings, train_activity_labels, device=self.device
+        )
+        val_dataset = None
+        if val_embeddings is not None and val_activity_labels is not None:
+            val_dataset = PreferenceDataset(val_embeddings, val_activity_labels, device=self.device)
+        test_dataset = None
+        if test_embeddings is not None and test_activity_labels is not None:
+            test_dataset = PreferenceDataset(
+                test_embeddings, test_activity_labels, device=self.device
+            )
+
+        shuffle_train_batches = True
+        train_mask, val_mask = None, None
+        if do_validation_with_pair_fraction is not None:
+            assert val_embeddings is None and val_activity_labels is None
+            shuffle_train_batches = False
+            if batch_size < train_activity_labels.shape[0]:
+                raise ValueError(
+                    f"Batch size {batch_size} is less than the number of training samples {train_activity_labels.shape[0]}."
+                )
+            train_mask, val_mask = get_random_pair_split(
+                train_activity_labels.shape[0],
+                train_activity_labels,
+                self.random_state,
+                do_validation_with_pair_fraction,
+                device=self.device,
+            )
 
         # Create datasets and dataloaders with fixed random seed
         g = torch.Generator()
         g.manual_seed(self.random_state)
         train_loader = DataLoader(
-            train_dataset, batch_size=batch_size, shuffle=True, drop_last=False, generator=g
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=shuffle_train_batches,
+            drop_last=False,
+            generator=g,
+            # Irrelevant for GPU-loaded datasets.
+            # persistent_workers=True,
+            # num_workers=4,
+            # pin_memory=True,
         )
 
-        metrics: Dict[str, List[float]] = {"train_loss": [], "val_loss": []}
+        metrics: dict[str, list[float]] = {"train_loss": [], "val_loss": [], "test_recall_1pct": []}
 
         best_val_loss = float("inf")
-        no_improve_epochs = 0
+        best_val_loss_epoch = 0
+        best_model_state = None
+        optimizer = torch.optim.Adam(
+            self.model.parameters(), lr=learning_rate, weight_decay=weight_decay
+        )
+
+        exponential_lr_schedule = None
+        plateau_lr_schedule = None
+        if use_exponential_learning_rate_decay:
+            exponential_lr_schedule = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
+        elif use_plateau_learning_rate_decay:
+            plateau_lr_schedule = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, mode="min", factor=0.1, patience=10, verbose=True
+            )
 
         for epoch in range(epochs):
             # Training
@@ -360,145 +399,186 @@ class PreferenceTrainer:
             num_batches = 0
 
             for batch_number, (batch_embeddings, batch_activity_labels) in enumerate(train_loader):
-                batch_embeddings = batch_embeddings.to(self.device)
-                batch_activity_labels = batch_activity_labels.to(self.device)
+                batch_embeddings = batch_embeddings  # .to(self.device)
+                batch_activity_labels = batch_activity_labels  # .to(self.device)
 
-                self.optimizer.zero_grad()
-                scores = self.model(batch_embeddings)
+                optimizer.zero_grad()
 
-                # Add gradient debugging
-                pre_loss_params = [p.clone() for p in self.model.parameters()]
+                # "Autocase" is the first part of automatic mixed precision training, which gives a speedup.
+                with autocast():
+                    scores = self.model(batch_embeddings)
 
-                if use_mse_loss:
-                    loss = F.mse_loss(scores.squeeze(-1), batch_activity_labels)
-                else:
-                    loss = batch_bradley_terry_loss(
-                        scores,
-                        batch_activity_labels,
-                        exclude_pair_from_loss,
-                    )
+                    if use_mse_loss:
+                        loss = F.mse_loss(scores.squeeze(-1), batch_activity_labels)
+                    else:
+                        loss = batch_bradley_terry_loss(
+                            scores,
+                            batch_activity_labels,
+                            train_mask,
+                            importance_sampling_reweighting_strat,
+                            importance_sampling_temperature,
+                        )
 
-                if loss.item() == 0:
-                    logger.warning(
-                        f"Zero loss encountered in batch {batch_number} in epoch {epoch} with {len(batch_embeddings)} members"
-                    )
+                    if loss.item() == 0:
+                        # logger.warning(f'Zero loss encountered in batch {batch_number} in epoch {epoch} with {len(batch_embeddings)} members.')
+                        logger.warning(
+                            f"Zero loss encountered in batch {batch_number} in epoch {epoch} with {len(batch_embeddings)} members. "
+                            f"Score variance: {scores.var().detach().cpu().item()}; "
+                            f"activity level variance: {batch_activity_labels.var().detach().cpu().item()}; "
+                            f"train mask occupancy: {'NA' if train_mask is None else (train_mask.sum() / train_mask.numel()).item()}"
+                        )
 
-                loss.backward()
-
-                # Check if gradients are being computed
-                has_grad = all(
-                    p.grad is not None and torch.any(p.grad != 0) for p in self.model.parameters()
-                )
-                # if not has_grad:
-                #     logger.warning(
-                #         f"No gradients computed for batch {batch_number} in epoch {epoch} with {len(batch_embeddings)} members"
-                #     )
-
-                self.optimizer.step()
-
-                # Verify parameters are actually changing
-                params_changed = any(
-                    not torch.equal(p1, p2)
-                    for p1, p2 in zip(pre_loss_params, self.model.parameters())
-                )
-                if not params_changed:
-                    logger.warning("Model parameters did not change after optimization step")
+                # "Scaler" is the second part of automatic mixed precision training.
+                self.scaler.scale(loss).backward()
+                self.scaler.step(optimizer)
+                self.scaler.update()
 
                 train_loss += loss.item()
                 num_batches += 1
 
+            if exponential_lr_schedule is not None:
+                exponential_lr_schedule.step()
+
             # Average training loss
             if num_batches > 0:
                 train_loss /= num_batches
-            metrics["train_loss"].append(train_loss)
 
             # Validation - only run every val_frequency epochs
             is_val_round = epoch == 0 or ((epoch + 1) % val_frequency == 0)
-            if is_val_round and len(val_indices) > 0:
-                val_loss = self.evaluate(
-                    val_embeddings,
-                    val_activity_labels,
-                    batch_size,
-                    exclude_pair_from_loss,
+            if is_val_round:
+                metrics["train_loss"].append(train_loss)
+
+                val_loss, test_recall_1pct = self.evaluate(
+                    train_dataset,
+                    val_dataset,
+                    test_dataset,
+                    val_mask,
+                    importance_sampling_reweighting_strat,
+                    importance_sampling_temperature,
                 )
-                metrics["val_loss"].append(val_loss)
+                metrics["val_loss"].append(val_loss if val_loss is not None else np.nan)
+                metrics["test_recall_1pct"].append(
+                    test_recall_1pct if test_recall_1pct is not None else np.nan
+                )
 
-                # Early stopping check
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
-                    no_improve_epochs = 0
-                else:
-                    no_improve_epochs += val_frequency  # Increment by val_frequency instead of 1
+                if val_loss is not None:
+                    if plateau_lr_schedule is not None:
+                        plateau_lr_schedule.step(val_loss, epoch=epoch)
 
-                if no_improve_epochs >= patience:
-                    if verbose:
+                    # Early stopping check
+                    if val_loss < best_val_loss:
+                        best_val_loss = val_loss
+                        best_val_loss_epoch = epoch
+                        best_model_state = {
+                            k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()
+                        }
+
+                    if patience is not None and epoch - best_val_loss_epoch >= patience:
                         logger.info(f"Early stopping at epoch {epoch+1}")
-                    break
-            else:
-                metrics["val_loss"].append(np.nan)
+                        break
 
-            # Logging
-            if verbose and (epoch + 1) % 10 == 0:
-                val_loss_str = (
-                    f"Val Loss: {metrics['val_loss'][-1]:.4f}"
-                    if (epoch + 1) % val_frequency == 0
-                    else "Val Loss: N/A"
-                )
-                logger.debug(
-                    f"Epoch {epoch+1}/{epochs} - "
-                    f"Train Loss: {train_loss:.4f}, "
-                    f"{val_loss_str}"
+        if best_model_state is not None:
+            with torch.no_grad():
+                self.model.load_state_dict(
+                    {k: v.to(self.device) for k, v in best_model_state.items()}
                 )
 
         return metrics
 
     def evaluate(
         self,
-        embeddings: np.ndarray,
-        activity_labels: np.ndarray,
-        batch_size: int = 32,
-        exclude_pair_from_loss: Callable[[int, int], bool] = lambda i, j: False,
-    ) -> float:
-        """Evaluate the model using batch-based evaluation.
+        train_dataset: PreferenceDataset,
+        val_dataset: PreferenceDataset | None = None,
+        test_dataset: PreferenceDataset | None = None,
+        val_mask: torch.Tensor | None = None,
+        importance_sampling_reweighting_strat: str | None = None,
+        importance_sampling_temperature: float | None = None,
+    ) -> tuple[float | None, float | None]:
+        """Evaluate the model using batch-based evaluation without leaking GPU memory.
 
         Args:
-            embeddings: Array of shape (n_samples, embedding_dim) with embeddings
-            activity_labels: Array of shape (n_samples,) with activity measurements
-            batch_size: Number of samples to include in each batch
-            exclude_pair_from_loss: Function that takes indices i, j and returns True if the pair
-                should be excluded from the loss computation
+            train_dataset: Dataset containing only the training samples
+            val_and_train_dataset: Dataset containing the union of train + val samples (or None)
+            test_dataset: Dataset containing held‑out test samples (or None)
 
         Returns:
-            Average loss across all valid pairs
+            Tuple ``(val_loss, test_recall_1pct)``. Either element may be ``None`` if the
+            corresponding dataset was not supplied.
         """
         self.model.eval()
 
-        # Create dataset and dataloader
-        dataset = PreferenceDataset(embeddings, activity_labels)
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-
-        total_loss = 0.0
-        num_batches = 0
-
+        # Ensure we never build a computation graph and aggressively free intermediates.
         with torch.no_grad():
-            for batch_embeddings, batch_activity_labels in dataloader:
-                batch_embeddings = batch_embeddings.to(self.device)
-                batch_activity_labels = batch_activity_labels.to(self.device)
+            val_loss: float | None = None
+            test_recall_1pct: float | None = None
 
-                # Forward pass
-                scores = self.model(batch_embeddings)
+            if val_dataset is not None:
+                if val_mask is not None:
+                    raise ValueError(
+                        "Cannot specify both a validation dataset and a validation mask"
+                    )
 
-                # Compute loss across all pairs in batch
-                loss = batch_bradley_terry_loss(
-                    scores,
-                    batch_activity_labels,
-                    exclude_pair_from_loss,
+                train_and_val_embeddings = torch.cat(
+                    [train_dataset.embeddings, val_dataset.embeddings], dim=0
+                )
+                train_and_val_scores = self.model(train_and_val_embeddings)
+
+                # Make a mask that ignores the block of training pairs in the loss calculation.
+                ignore_train_loss_mask = torch.ones(
+                    (train_and_val_scores.shape[0], train_and_val_scores.shape[0]), dtype=torch.int
+                )
+                ignore_train_loss_mask[
+                    : train_dataset.embeddings.shape[0], : train_dataset.embeddings.shape[0]
+                ] = 0
+                ignore_train_loss_mask = ignore_train_loss_mask.triu(diagonal=1)
+
+                activity_labels = torch.cat(
+                    [train_dataset.activity_labels, val_dataset.activity_labels], dim=0
                 )
 
-                total_loss += loss.item()
-                num_batches += 1
+                val_loss_tensor = batch_bradley_terry_loss(
+                    train_and_val_scores,
+                    activity_labels,
+                    ignore_train_loss_mask,
+                    importance_sampling_reweighting_strat=importance_sampling_reweighting_strat,
+                    importance_sampling_temperature=importance_sampling_temperature,
+                )
+                val_loss = float(val_loss_tensor.detach().cpu().item())
 
-        return total_loss / max(num_batches, 1)
+                del (
+                    train_and_val_embeddings,
+                    train_and_val_scores,
+                    ignore_train_loss_mask,
+                    activity_labels,
+                    val_loss_tensor,
+                )
+                torch.cuda.empty_cache()
+            elif val_mask is not None:
+                train_scores = self.model(train_dataset.embeddings)
+                val_loss_tensor = batch_bradley_terry_loss(
+                    train_scores,
+                    train_dataset.activity_labels,
+                    val_mask,
+                    importance_sampling_reweighting_strat=importance_sampling_reweighting_strat,
+                    importance_sampling_temperature=importance_sampling_temperature,
+                )
+                val_loss = float(val_loss_tensor.detach().cpu().item())
+                del train_scores, val_loss_tensor
+                torch.cuda.empty_cache()
+
+            if test_dataset is not None:
+                # Move only the scores to CPU for metric computation; labels are already on CPU.
+                test_scores_cpu = self.model(test_dataset.embeddings).detach().cpu()
+
+                test_recall_1pct = get_top_percentile_recall_score(
+                    test_dataset.activity_labels.detach().cpu().numpy(),
+                    test_scores_cpu.numpy(),
+                    1.0,
+                )
+                del test_scores_cpu
+                torch.cuda.empty_cache()
+
+        return val_loss, test_recall_1pct
 
     def predict_scores(self, embeddings: np.ndarray) -> np.ndarray:
         """Predict preference scores for embeddings.
@@ -517,145 +597,12 @@ class PreferenceTrainer:
 
         return scores
 
-    def evaluate_ranking(self, embeddings: np.ndarray, true_labels: np.ndarray) -> Dict[str, float]:
-        """Evaluate ranking performance on embeddings.
-
-        Args:
-            embeddings: Array of shape (n_samples, embedding_dim) with embeddings
-            true_labels: Array of shape (n_samples,) with true scores/activities
-
-        Returns:
-            Dictionary with evaluation metrics:
-                'spearman_corr': Spearman rank correlation between predicted and true scores
-                'preference_accuracy': Accuracy of pairwise preference predictions
-                'auc': ROC AUC for preference prediction
-        """
-        predicted_scores = self.predict_scores(embeddings)
-
-        # Spearman correlation
-        spearman_corr, _ = spearmanr(predicted_scores, true_labels)
-
-        # Generate all possible preference pairs
-        n_samples = len(true_labels)
-        pairs = []
-        y_true = []
-
-        for i in range(n_samples):
-            for j in range(n_samples):
-                if i == j:
-                    continue
-
-                # Skip pairs with equal activity (no clear preference)
-                if true_labels[i] == true_labels[j]:
-                    continue
-
-                pairs.append((i, j))
-                y_true.append(1.0 if true_labels[i] > true_labels[j] else 0.0)
-
-        if not pairs:  # No valid pairs
-            return {
-                "spearman_corr": spearman_corr,
-                "preference_accuracy": 0.0,
-                "auc": 0.5,  # Random classifier
-            }
-
-        # Convert to numpy arrays explicitly with type annotation
-        pairs_array: np.ndarray = np.array(pairs)
-        y_true_array = np.array(y_true)
-
-        # Compute preference predictions
-        y_pred: List[float] = []
-        for i, j in pairs_array:
-            pred_i = predicted_scores[int(i)]
-            pred_j = predicted_scores[int(j)]
-            y_pred.append(float(pred_i - pred_j))
-
-        y_pred_array = np.array(y_pred)
-
-        # Compute preference accuracy
-        correct_prefs: int = int(np.sum((y_pred_array > 0) == (y_true_array > 0.5)))
-        preference_accuracy = correct_prefs / len(pairs)
-
-        # Compute ROC AUC for preference prediction
-        auc = roc_auc_score(y_true_array, y_pred_array)
-
-        return {
-            "spearman_corr": spearman_corr,
-            "preference_accuracy": preference_accuracy,
-            "auc": auc,
-        }
-
-    def evaluate_ranking_vectorized(
-        self, embeddings: np.ndarray, true_labels: np.ndarray
-    ) -> Dict[str, float]:
-        """Evaluate ranking performance on embeddings in a more efficient, vectorized way.
-
-        Args:
-            embeddings: Array of shape (n_samples, embedding_dim) with embeddings
-            true_labels: Array of shape (n_samples,) with true scores/activities
-
-        Returns:
-            Dictionary with evaluation metrics:
-                'spearman_corr': Spearman rank correlation between predicted and true scores
-                'preference_accuracy': Accuracy of pairwise preference predictions
-                'auc': ROC AUC for preference prediction
-        """
-        # 1. Predict scores
-        predicted_scores = self.predict_scores(embeddings)
-
-        # 2. Spearman correlation
-        spearman_corr, _ = spearmanr(predicted_scores, true_labels)
-
-        # 3. Gather all i < j pairs via np.triu_indices
-        n_samples = len(true_labels)
-        i_idx, j_idx = np.triu_indices(n_samples, k=1)
-
-        # 4. Filter out pairs where labels are equal (no preference)
-        unequal_mask = true_labels[i_idx] != true_labels[j_idx]
-        if not np.any(unequal_mask):
-            # No valid pairs: return defaults
-            return {
-                "spearman_corr": spearman_corr,
-                "preference_accuracy": 0.0,
-                "auc": 0.5,  # Random classifier
-            }
-
-        i_valid = i_idx[unequal_mask]
-        j_valid = j_idx[unequal_mask]
-
-        # 5. True preference = 1 if label[i] > label[j], else 0
-        y_true = (true_labels[i_valid] > true_labels[j_valid]).astype(float)
-
-        # 6. Predicted preference = predicted_scores[i] - predicted_scores[j]
-        y_pred = predicted_scores[i_valid] - predicted_scores[j_valid]
-
-        # 7. Compute preference accuracy
-        correct_count: int = int(np.sum((y_pred > 0) == (y_true > 0.5)))
-        preference_accuracy = correct_count / len(y_true)
-
-        # 8. Compute ROC AUC for preference prediction
-        auc_val = roc_auc_score(y_true, y_pred)
-
-        # assert False, "MUST FINISH GETTING THIS THRESHOLDING FUNCTION FINISHED"
-        # top16_binarization = true_labels.rank(descending=False) < 16
-        # top16_auc = compute_auc(predicted_scores, top16_binarization)
-        top16_auc = 0.0
-
-        return {
-            "spearman_corr": spearman_corr,
-            "preference_accuracy": preference_accuracy,
-            "auc": auc_val,
-            "top16_auc": top16_auc,
-        }
-
 
 def create_preference_model(
     embedding_dim: int,
-    hidden_dims: List[int] = [128, 64],
+    hidden_dims: list[int],
     dropout: float = 0.2,
-    learning_rate: float = 1e-4,
-    weight_decay: float = 1e-5,
-    device: Optional[str] = None,
+    device: str | None = None,
     random_state: int = 0,
 ) -> Tuple[BradleyTerryMLP, PreferenceTrainer]:
     """Create a preference model and trainer with standard parameters.
@@ -675,13 +622,16 @@ def create_preference_model(
     Returns:
         Tuple containing (model, trainer)
     """
+    # This... might be where we should set seeds for initialization of model weights.
+    torch.manual_seed(random_state)
+    random.seed(random_state)
+    np.random.seed(random_state)
     model = BradleyTerryMLP(embedding_dim=embedding_dim, hidden_dims=hidden_dims, dropout=dropout)
+    # model = torch.compile(model)
 
     trainer = PreferenceTrainer(
         model=model,
         random_state=random_state,
-        learning_rate=learning_rate,
-        weight_decay=weight_decay,
         device=device,
     )
 

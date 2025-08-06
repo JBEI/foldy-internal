@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import torch
+
 from app.helpers.esm_util import get_naturalness
 
 
@@ -111,7 +112,7 @@ def test_add_pdb_file_path_fails_for_esmc(mock_esm_setup):
     pdb_file_path = "app/tests/testdata/rubisco-boltz.pdb"
 
     with pytest.raises(ValueError, match="does not support PDB"):
-        get_naturalness(wt_aa_seq, "esmc_mock_model", pdb_file_path=pdb_file_path)
+        get_naturalness(wt_aa_seq, "esmc_mock_model", cif_file_path=pdb_file_path)
 
 
 def test_add_pdb_file_path_works_for_esm3(mock_esm_setup):
@@ -120,7 +121,7 @@ def test_add_pdb_file_path_works_for_esm3(mock_esm_setup):
     pdb_file_path = "app/tests/testdata/rubisco-boltz.pdb"
 
     logits_json, melted_df = get_naturalness(
-        wt_aa_seq, "esm3_mock_model", pdb_file_path=pdb_file_path
+        wt_aa_seq, "esm3_mock_model", cif_file_path=pdb_file_path
     )
     assert logits_json is not None
     assert melted_df is not None

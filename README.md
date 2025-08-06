@@ -13,15 +13,27 @@
 
 ## Deployment Options
 
-Foldy is a composable set of services which can be deployed lots of  ways. We currently document three types of deployment: Development, Foldy-in-a-Box, and Helm. The development deployment is not fully featured - it cannot run jobs - but supports the frontend features and it can easily be run on a laptop for development purposes. Foldy-in-a-box is a quick deployment option - it can be run in under ten minutes - for creating a full featured Foldy instance on a Google Cloud machine. It could also be the starting point for a more bespoke deployment on a large local machine. Finally the Helm deployment is the horizontally scalable, cloud deployment, built on Kubernetes. The name comes from Helm Charts, which are a tool for specifying Kubernetes deployments. The Helm deployment is involved, but it is secure and can be scaled to hundreds of users and tens of thousands of folds.
+### 🚀 Quick Start: Run Locally
 
-You can find more information about employing the different deployment options in their respective `deployment` directories.
+**Want to try Foldy right now?** Run this single command:
 
-|Deployment Type|Features|Ease of setup|Setup|
-|---|---|---|---|
-|Development|No tools, just an interface|Extremely easy|[Instructions](deployment/development/README.md)|
-|Foldy-in-a-Box|All tools can run|Easy|[Instructions](deployment/foldy-in-a-box/README.md)|
-|Helm|Scalable to hundreds of users|Hard|[Instructions](deployment/helm/README.md)|
+```bash
+FOLDY_STORAGE_DIRECTORY=$HOME/foldy-data \
+  docker-compose -f <(curl -s https://raw.githubusercontent.com/JBEI/foldy/main/deployment/local/docker-compose.yml) up -d
+```
+
+Foldy will be available at **http://localhost:3000** in ~2 minutes.
+
+### All Deployment Options
+
+Foldy is a composable set of services which can be deployed many ways. We document four types of deployment: Local (one-command Docker setup), Development (frontend-only for coding), Foldy-in-a-Box (Google Cloud VM), and Helm (scalable Kubernetes).
+
+|Deployment Type|Features|Ease of setup|Best for|Setup|
+|---|---|---|---|---|
+|**Local**|**Full featured Foldy**|**One command**|**Trying Foldy locally**|**[Instructions](deployment/local/README.md)**|
+|Development|Frontend only, no jobs|Very easy|Development work|[Instructions](deployment/development/README.md)|
+|Foldy-in-a-Box|Full featured|Easy|Small teams, cloud VM|[Instructions](deployment/foldy-in-a-box/README.md)|
+|Helm|Horizontally scalable|Hard|Large institutions|[Instructions](deployment/helm/README.md)|
 
 ## The Interface
 
@@ -37,86 +49,17 @@ There is a rich ecosystem for running structural biology tools, and Foldy is not
 
 ## Development Setup
 
-### Python Environment Setup
-1. Install Python 3.12:
-   - On macOS with Homebrew: `brew install python@3.12`
-   - On Ubuntu/Debian: `sudo apt install python3.12 python3.12-venv`
-   - On Windows: Download Python 3.12 from [python.org](https://www.python.org/downloads/)
+For complete development environment setup instructions, including Python virtual environment, Node.js/npm, pre-commit hooks, and Docker configuration, see:
 
-2. Create and activate a virtual environment with Python 3.12:
-```bash
-# From the project root
-# On Unix/macOS
-python3.12 -m venv .venv
-source .venv/bin/activate
+**[Development Environment Setup Guide](deployment/development/README.md)**
 
-# On Windows
-py -3.12 -m venv .venv
-.venv\Scripts\activate
-```
-
-3. Verify correct Python version:
-```bash
-python --version  # Should output Python 3.12.x
-```
-
-4. Install the project dependencies:
-```bash
-cd backend
-pip install -r requirements.txt
-pip install -r requirements-dev.txt  # Development dependencies
-```
-
-### Pre-commit Setup
-We use pre-commit hooks to ensure code quality. The hooks run:
-- mypy (type checking)
-- black (code formatting)
-- isort (import sorting)
-- basic file checks
-
-1. Install pre-commit:
-```bash
-pip install pre-commit
-```
-
-2. Install the git hooks:
-```bash
-pre-commit install --install-hooks
-pre-commit install -t pre-push  # Also install pre-push hooks
-```
-
-3. (Optional) Run against all files:
-```bash
-pre-commit run --all-files
-```
-
-### Updating Pre-commit Hooks
-When the `.pre-commit-config.yaml` file changes (either by you or after pulling updates), run:
-```bash
-pre-commit autoupdate  # Updates hooks to latest versions
-pre-commit clean       # Cleans out old hooks
-pre-commit install --install-hooks  # Reinstalls hooks
-```
-
-### Notes on mypy
-- mypy configuration is in `backend/mypy.ini`
-- Type checking runs on the `backend/src` directory
-- Required type stubs are automatically installed by pre-commit
-- The virtual environment's Python version should match the one specified in mypy.ini (Python 3.12)
-
-### Troubleshooting
-If you encounter mypy errors:
-1. Ensure you're using Python 3.12
-2. Try clearing the pre-commit cache:
-```bash
-pre-commit clean
-pre-commit gc
-```
-3. Verify all dependencies are installed:
-```bash
-pip install -r backend/requirements.txt
-pip install -r backend/requirements-dev.txt
-```
+The guide covers:
+- Python 3.12 and virtual environment setup
+- Node.js installation with nvm
+- Pre-commit hooks (pyright, black, isort)
+- Docker-based development environment
+- Database setup and migrations
+- Testing and troubleshooting
 
 
 ## Acknowledgements

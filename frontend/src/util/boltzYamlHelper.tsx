@@ -31,20 +31,24 @@ export type LigandData = {
  * Boltz YAML configurations.
  */
 export class BoltzYamlHelper {
+    private yamlStr: string
     private data: any
     private version: number | null
     private sequences: any[]
     private constraints: any[]
+    private properties: any[]
 
     /**
      * Construct a new BoltzYamlHelper by parsing an existing YAML string.
      * @param yamlStr The YAML content as a string.
      */
     constructor(yamlStr: string) {
+        this.yamlStr = yamlStr;
         this.data = parse(yamlStr)
         this.version = this.data?.version ?? null
         this.sequences = this.data?.sequences ?? []
         this.constraints = this.data?.constraints ?? []
+        this.properties = this.data?.properties ?? []
     }
 
     /**
@@ -229,6 +233,56 @@ export class BoltzYamlHelper {
     }
 
     /**
+     * Add a new DNA entry to sequences.
+     * @param params.id One or more chain IDs
+     * @param params.sequence The DNA sequence
+     * @param params.modifications (Optional) Array of modifications
+     */
+    addDNA(params: {
+        id: string[] | string
+        sequence: string
+        modifications?: { position: number; ccd: string }[]
+    }) {
+        const { id, sequence, modifications } = params
+        const chainIds = Array.isArray(id) ? id : [id]
+
+        const dnaData: any = {
+            id: chainIds,
+            sequence
+        }
+        if (modifications !== undefined) {
+            dnaData.modifications = modifications
+        }
+
+        this.pushSequenceEntry('dna', dnaData)
+    }
+
+    /**
+     * Add a new RNA entry to sequences.
+     * @param params.id One or more chain IDs
+     * @param params.sequence The RNA sequence
+     * @param params.modifications (Optional) Array of modifications
+     */
+    addRNA(params: {
+        id: string[] | string
+        sequence: string
+        modifications?: { position: number; ccd: string }[]
+    }) {
+        const { id, sequence, modifications } = params
+        const chainIds = Array.isArray(id) ? id : [id]
+
+        const rnaData: any = {
+            id: chainIds,
+            sequence
+        }
+        if (modifications !== undefined) {
+            rnaData.modifications = modifications
+        }
+
+        this.pushSequenceEntry('rna', rnaData)
+    }
+
+    /**
      * Add a bond constraint.
      * For example:
      *   addBondConstraint({ atom1: ["A", 42, "CA"], atom2: ["LIG", 1, "C1"] })
@@ -271,13 +325,33 @@ export class BoltzYamlHelper {
     }
 
     /**
+     * Add an affinity property.
+     * @param params.binder The chain ID that should bind
+     */
+    addAffinityProperty(params: { binder: string }) {
+        if (!Array.isArray(this.properties)) {
+            this.properties = []
+        }
+        this.properties.push({
+            affinity: {
+                binder: params.binder
+            }
+        })
+    }
+
+    /**
      * Convert the current data back into a YAML string.
      */
     toYAML(): string {
-        const obj = {
+        const obj: any = {
             version: this.version,
-            sequences: this.sequences,
-            constraints: this.constraints
+            sequences: this.sequences
+        }
+        if (this.constraints.length > 0) {
+            obj.constraints = this.constraints
+        }
+        if (this.properties.length > 0) {
+            obj.properties = this.properties
         }
         return stringify(obj)
     }
@@ -362,6 +436,15 @@ export class BoltzYamlHelper {
         }
 
         return normalized;
+    }
+
+    getProperties(): Array<{ affinity: { binder: string } }> {
+        return this.properties || [];
+    }
+
+    equals(other: BoltzYamlHelper | null): boolean {
+        if (!other) return false;
+        return this.yamlStr === other.yamlStr;
     }
 }
 

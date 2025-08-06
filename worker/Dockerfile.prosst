@@ -1,9 +1,12 @@
 # FROM nvidia/cuda:12.2.0-devel-ubuntu20.04
 FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 
+COPY worker/scripts/base_setup.sh /scripts/base_setup.sh
+RUN /scripts/base_setup.sh
+
 COPY backend/requirements.txt /backend/
-COPY worker/scripts/setup.sh /scripts/setup.sh
-RUN /scripts/setup.sh
+COPY worker/scripts/conda_env_setup.sh /scripts/conda_env_setup.sh
+RUN /scripts/conda_env_setup.sh
 
 # COPY worker/schmirler_et_al_finetune.yml /schmirler_et_al_finetune.yml
 # RUN /opt/conda/bin/conda env update -n worker --file /schmirler_et_al_finetune.yml

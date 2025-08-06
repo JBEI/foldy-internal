@@ -4,6 +4,7 @@ import 'pdbe-molstar/build/pdbe-molstar-plugin.js';
 import 'pdbe-molstar/build/pdbe-molstar.css';
 // import 'pdbe-molstar-plugin';   // JavaScript bundle
 // import 'pdbe-molstar.css';         // Viewer styling
+import { Spin } from 'antd';
 import { FoldyMascot } from '../../util/foldyMascot';
 // If you prefer light theme, use this instead:
 
@@ -29,20 +30,38 @@ export interface Selection {
 }
 
 interface StructurePaneProps {
+    cifString: string | null;
     pdbString: string | null;
-    pdbFailedToLoad: boolean;
+    structureFailedToLoad: boolean;
     selection: Selection | null;
 }
 
-const StructurePane: React.FC<StructurePaneProps> = ({ pdbString, pdbFailedToLoad, selection }) => {
+const StructurePane: React.FC<StructurePaneProps> = ({ cifString, pdbString, structureFailedToLoad, selection }) => {
     const viewerRef = useRef<HTMLDivElement>(null);
     const pluginRef = useRef<any | null>(null);
 
     useEffect(() => {
-        if (!viewerRef.current || !pdbString) return;
+        if (!viewerRef.current) return;
 
         if (!window.PDBeMolstarPlugin) {
             console.error('PDBeMolstarPlugin not found on window object');
+            return;
+        }
+
+        let fileData;
+        if (cifString) {
+            fileData = {
+                url: URL.createObjectURL(new Blob([cifString], { type: 'text/plain' })),
+                format: 'cif',
+                binary: false
+            };
+        } else if (pdbString) {
+            fileData = {
+                url: URL.createObjectURL(new Blob([pdbString], { type: 'text/plain' })),
+                format: 'pdb',
+                binary: false
+            };
+        } else {
             return;
         }
 
@@ -50,13 +69,9 @@ const StructurePane: React.FC<StructurePaneProps> = ({ pdbString, pdbFailedToLoa
         pluginRef.current = viewer;
 
         // API for PDBe-Molstar:
-        // https://github.com/molstar/pdbe-molstar/wiki/1.-PDBe-Molstar-as-JS-plugin 
+        // https://github.com/molstar/pdbe-molstar/wiki/1.-PDBe-Molstar-as-JS-plugin
         const options = {
-            customData: {
-                url: URL.createObjectURL(new Blob([pdbString], { type: 'text/plain' })),
-                format: 'pdb',
-                binary: false
-            },
+            customData: fileData,
             bgColor: 'white',
             defaultPreset: 'default',
             visualStylesSpec: {
@@ -75,6 +90,7 @@ const StructurePane: React.FC<StructurePaneProps> = ({ pdbString, pdbFailedToLoa
                     }
                 }
             },
+            alphafoldView: true,
             hideCanvasControls: ['expand'],
             domainAnnotation: true,
             hideControls: true,
@@ -91,19 +107,13 @@ const StructurePane: React.FC<StructurePaneProps> = ({ pdbString, pdbFailedToLoa
                 }
             }
         };
-    }, [pdbString]);
+    }, [cifString, pdbString]);
 
     // Separate effect for handling selection changes
     useEffect(() => {
         if (!pluginRef.current) return;
 
-        selection?.data.forEach(residue => {
-            console.log(`RESIDUE: ${residue}`);
-            console.log(`residue.struct_asym_id: ${residue.struct_asym_id}`);
-            console.log(`start: ${residue.start_residue_number}`);
-            console.log(`end: ${residue.end_residue_number}`);
-            console.log(`color: ${residue.color}`);
-        });
+        console.log("SELECTION: ", selection?.data);
         pluginRef.current.visual.clearSelection();
 
         if (!selection) {
@@ -117,18 +127,18 @@ const StructurePane: React.FC<StructurePaneProps> = ({ pdbString, pdbFailedToLoa
         });
     }, [selection]);
 
-    if (pdbFailedToLoad) {
+    if (structureFailedToLoad) {
         return (
-            <div className="uk-text-center">
-                <FoldyMascot text={"Looks like your structure isn't ready."} moveTextAbove={false} />
+            <div style={{ textAlign: 'center' }}>
+                <FoldyMascot text={"Looks like your structure failed to load."} moveTextAbove={false} isCartwheeling={false} isKanKaning={false} />
             </div>
         );
     }
 
-    if (!pdbString) {
+    if (!cifString && !pdbString) {
         return (
-            <div className="uk-text-center">
-                <div uk-spinner="ratio: 4"></div>
+            <div style={{ textAlign: 'center', padding: '60px 0' }}>
+                <Spin size="large" />
             </div>
         );
     }

@@ -1,0 +1,43 @@
+{
+    "editor.formatOnSave": true,
+    "python.formatting.provider": "none",
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter"
+    },
+    "jupyter.notebookFileRoot": "${workspaceFolder}/backend/src",
+    "files.exclude": {
+        "**/.git": false
+    },
+    "python.analysis.typeCheckingMode": "off",
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.extraPaths": [
+        "\"${workspaceFolder}/backend/src\""
+    ],
+    "python.languageServer": "None",
+    "python.pythonPath": "./.venv/bin/python",
+    "editor.detectIndentation": false,
+    "docker.enableDockerComposeLanguageService": false,
+    "cursor.general.disableHttp2": true,
+    "workbench.colorCustomizations": {
+        "activityBar.activeBackground": "#1f6fd0",
+        "activityBar.background": "#1f6fd0",
+        "activityBar.foreground": "#e7e7e7",
+        "activityBar.inactiveForeground": "#e7e7e799",
+        "activityBarBadge.background": "#ee90bb",
+        "activityBarBadge.foreground": "#15202b",
+        "commandCenter.border": "#e7e7e799",
+        "sash.hoverBorder": "#1f6fd0",
+        "statusBar.background": "#1857a4",
+        "statusBar.foreground": "#e7e7e7",
+        "statusBarItem.hoverBackground": "#1f6fd0",
+        "statusBarItem.remoteBackground": "#1857a4",
+        "statusBarItem.remoteForeground": "#e7e7e7",
+        "titleBar.activeBackground": "#1857a4",
+        "titleBar.activeForeground": "#e7e7e7",
+        "titleBar.inactiveBackground": "#1857a499",
+        "titleBar.inactiveForeground": "#e7e7e799"
+    },
+    "peacock.color": "#1857a4",
+    "peacock.remoteColor": "#832561",
+}
+// BasedPyright settings in vscode are ignored when using pyrightconfig.json is provided.

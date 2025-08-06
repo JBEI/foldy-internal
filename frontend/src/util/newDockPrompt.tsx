@@ -1,8 +1,11 @@
 import React, { useState } from "react";
 import UIkit from "uikit";
+import { Button, Select, Input, Form, Checkbox, Row, Col, Space } from 'antd';
 import { postDock } from "../api/dockApi";
 import { DockInput } from "../types/types";
 import { notify } from "../services/NotificationService";
+
+const { TextArea } = Input;
 
 const getLigandNameErrorMessage = (ligandName: string | null) => {
     if (!ligandName) {
@@ -225,140 +228,107 @@ export function NewDockPrompt(props: newDockTextboxInterface) {
 
     return (
         <div>
-            <div className="uk-margin-small">
-                <div className="uk-form-controls">
-                    <select
-                        className="uk-select"
-                        id="form-horizontal-select"
-                        style={{ borderRadius: "20px" }}
-                        onChange={(e) => setToolName(e.target.value)}
-                        value={toolName}
-                    >
-                        <option value={""}>Select a docking program...</option>
-                        <option value={"vina"}>Docking with Autodock Vina</option>
-                        <option value={"diffdock"}>Docking with Diffdock</option>
-                    </select>
-                </div>
+            <div style={{ marginBottom: "16px" }}>
+                <Select
+                    placeholder="Select a docking program..."
+                    style={{ width: "100%" }}
+                    onChange={(value) => setToolName(value)}
+                    value={toolName || undefined}
+                    options={[
+                        { value: "vina", label: "Docking with Autodock Vina" },
+                        { value: "diffdock", label: "Docking with Diffdock" },
+                    ]}
+                />
             </div>
 
             {showTextbox ? (
-                <textarea
-                    className="uk-textarea"
+                <TextArea
                     rows={5}
                     placeholder={
                         "ligand1_name,ligand1_smiles[,bbox_residue,bbox_radius]\nligand2_name,ligand2_smiles[,bbox_residue,bbox_radius]"
                     }
-                    style={{ fontFamily: 'consolas,"Liberation Mono",courier,monospace' }}
+                    style={{ fontFamily: 'consolas,"Liberation Mono",courier,monospace', marginBottom: "16px" }}
                     value={textboxContents || ""}
                     onChange={(e) => setTextboxContents(e.target.value)}
-                ></textarea>
+                />
             ) : (
-                <form className="uk-grid-small" uk-grid={1}>
-                    <div className="uk-width-1-1">
-                        <input
-                            className={
-                                "uk-input " +
-                                (getLigandNameErrorMessage(ligandName)
-                                    ? "uk-form-danger"
-                                    : null)
-                            }
-                            type="text"
-                            placeholder="Ligand Name"
-                            id="name"
-                            uk-tooltip="Name this ligand, something alphanumeric."
-                            value={ligandName || ""}
-                            style={{ borderRadius: "500px" }}
-                            onChange={(e) =>
-                                validateAndSetInput(
-                                    e.target,
-                                    getLigandNameErrorMessage,
-                                    setLigandName,
-                                    e.target.value
-                                )
-                            }
-                        />
-                    </div>
-                    <div className="uk-width-1-1">
-                        <input
-                            className={"uk-input "}
-                            type="text"
-                            placeholder="Ligand SMILES"
-                            id="name"
-                            uk-tooltip="Ligand SMILES string."
-                            value={ligandSmiles || ""}
-                            style={{ borderRadius: "500px" }}
-                            onChange={(e) => setLigandSmiles(e.target.value)}
-                        />
-                    </div>
-                    <div className="uk-width-1-2">
-                        <input
-                            className={
-                                "uk-input " +
-                                (getBBResidueErrorMessage(boundingBoxResidue)
-                                    ? "uk-form-danger"
-                                    : null)
-                            }
-                            type="text"
-                            placeholder="[Bounding Box Residue Center]"
-                            id="name"
-                            uk-tooltip="Residue ID, like W73, around which to set bounding box.  Ignored by Diffdock."
-                            value={boundingBoxResidue || ""}
-                            style={{ borderRadius: "500px" }}
-                            onChange={(e) =>
-                                validateAndSetInput(
-                                    e.target,
-                                    getBBResidueErrorMessage,
-                                    setBoundingBoxResidue,
-                                    e.target.value
-                                )
-                            }
-                            disabled={toolName === "diffdock"}
-                        />
-                    </div>
-                    <div className="uk-width-1-2">
-                        <input
-                            className={"uk-input "}
-                            type="number"
-                            min="0"
-                            placeholder="[Bounding Box Radius (Angstroms)]"
-                            id="name"
-                            uk-tooltip="Radius of bounding box in Angstroms. Ignored by Diffdock."
-                            value={boundingBoxRadiusAngstrom || ""}
-                            style={{ borderRadius: "500px" }}
-                            onChange={(e) => setBoundingBoxRadiusAngstrom(e.target.value)}
-                            disabled={toolName === "diffdock"}
-                        />
-                    </div>
-                    <div className="uk-grid-small uk-child-width-auto uk-grid">
-                        <label>
-                            <input
-                                className="uk-checkbox uk-margin-small-right uk-margin-small-left"
-                                id="form-horizontal-text"
-                                type="checkbox"
-                                checked={overrideExistingLigands || false}
-                                onChange={(e) =>
-                                    setOverrideExistingLigands(!overrideExistingLigands)
-                                }
+                <div style={{ marginBottom: "16px" }}>
+                    <Row gutter={[16, 16]}>
+                        <Col span={24}>
+                            <Input
+                                placeholder="Ligand Name"
+                                value={ligandName || ""}
+                                status={getLigandNameErrorMessage(ligandName) ? "error" : ""}
+                                onChange={(e) => {
+                                    const value = e.target.value;
+                                    const errorMessage = getLigandNameErrorMessage(value);
+                                    setLigandName(value);
+                                }}
                             />
-                            Override Existing Docking Runs
-                        </label>
-                    </div>
-                </form>
+                            {getLigandNameErrorMessage(ligandName) && (
+                                <div style={{ color: "#ff4d4f", fontSize: "12px", marginTop: "4px" }}>
+                                    {getLigandNameErrorMessage(ligandName)}
+                                </div>
+                            )}
+                        </Col>
+                        <Col span={24}>
+                            <Input
+                                placeholder="Ligand SMILES"
+                                value={ligandSmiles || ""}
+                                onChange={(e) => setLigandSmiles(e.target.value)}
+                            />
+                        </Col>
+                        <Col span={12}>
+                            <Input
+                                placeholder="[Bounding Box Residue Center]"
+                                value={boundingBoxResidue || ""}
+                                status={getBBResidueErrorMessage(boundingBoxResidue) ? "error" : ""}
+                                disabled={toolName === "diffdock"}
+                                onChange={(e) => {
+                                    const value = e.target.value;
+                                    const errorMessage = getBBResidueErrorMessage(value);
+                                    setBoundingBoxResidue(value);
+                                }}
+                            />
+                            {getBBResidueErrorMessage(boundingBoxResidue) && (
+                                <div style={{ color: "#ff4d4f", fontSize: "12px", marginTop: "4px" }}>
+                                    {getBBResidueErrorMessage(boundingBoxResidue)}
+                                </div>
+                            )}
+                        </Col>
+                        <Col span={12}>
+                            <Input
+                                type="number"
+                                placeholder="[Bounding Box Radius (Angstroms)]"
+                                value={boundingBoxRadiusAngstrom || ""}
+                                disabled={toolName === "diffdock"}
+                                onChange={(e) => setBoundingBoxRadiusAngstrom(e.target.value)}
+                            />
+                        </Col>
+                        <Col span={24}>
+                            <Checkbox
+                                checked={overrideExistingLigands || false}
+                                onChange={(e) => setOverrideExistingLigands(e.target.checked)}
+                            >
+                                Override Existing Docking Runs
+                            </Checkbox>
+                        </Col>
+                    </Row>
+                </div>
             )}
-            <button
-                type="button"
-                className="uk-button uk-button-default uk-margin-small uk-margin-small-right"
-                onClick={() => setShowTextbox(!showTextbox)}
-            >
-                {showTextbox ? "Hide" : "Show"} Bulk Input
-            </button>
-            <button
-                type="button"
-                className="uk-button uk-button-primary"
-                onClick={runDocks}
-            >
-                Dock
-            </button>
+            <Space>
+                <Button
+                    onClick={() => setShowTextbox(!showTextbox)}
+                >
+                    {showTextbox ? "Hide" : "Show"} Bulk Input
+                </Button>
+                <Button
+                    type="primary"
+                    onClick={runDocks}
+                >
+                    Dock
+                </Button>
+            </Space>
         </div>
     );
 }

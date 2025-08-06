@@ -2,10 +2,15 @@ import React, { useState, useEffect, useRef } from "react";
 import { getResidueHeatmap } from "../../util/plots";
 import { getFoldPae } from "../../api/foldApi";
 import { FoldPae } from "../../types/types";
+import { TabContainer, DescriptionSection, SectionCard } from "../../util/tabComponents";
+import { Spin } from "antd";
+import { notify } from "src/services/NotificationService";
+import { BoltzYamlHelper } from "../../util/boltzYamlHelper";
 
 interface PaeTabProps {
     foldId: number;
     foldSequence: string | undefined;
+    yamlConfig: string | undefined;
 }
 
 const PaeTab = React.memo(
@@ -45,8 +50,8 @@ const PaeTab = React.memo(
         const getPaeProbHeatmap = () => {
             if (isLoading) {
                 return (
-                    <div className="uk-text-center">
-                        <div uk-spinner="ratio: 4"></div>
+                    <div style={{ textAlign: 'center', padding: '60px 0' }}>
+                        <Spin size="large" />
                         <p>Loading PAE data...</p>
                     </div>
                 );
@@ -69,7 +74,37 @@ const PaeTab = React.memo(
                 );
             }
 
-            if (!props.foldSequence) {
+            let sequence: string;
+            if (props.foldSequence) {
+                sequence = props.foldSequence;
+            }
+            else if (props.yamlConfig) {
+                const configHelper = new BoltzYamlHelper(props.yamlConfig);
+                if (configHelper.getAllSequences().length > 1) {
+                    sequence = configHelper.getAllSequences().map(seq => {
+                        if (seq.sequence) {
+                            return `${seq.id}:${seq.sequence}`
+                        }
+                        else if (seq.ccd) {
+                            return `${seq.id}:${seq.ccd}`
+                        }
+                        else {
+                            // TODO: Use Rdkit or openchemlib to count heavy atoms.
+                            const heavyAtomString = (seq.smiles?.match(/[A-Z]/g) || [])
+                                .filter(letter => letter !== 'H')
+                                .join('');
+                            return `${seq.id}:${heavyAtomString}`
+                        }
+                    }).join(';');
+                }
+                else {
+                    if (configHelper.getAllSequences()[0].entity_type !== 'protein') {
+                        return <div>If there is only one entity, it must be protein.</div>;
+                    }
+                    sequence = configHelper.getAllSequences()[0].sequence || '';
+                }
+            }
+            else {
                 return (
                     <div className="uk-alert-warning" uk-alert>
                         <p>Fold sequence is required to display PAE heatmap.</p>
@@ -79,7 +114,7 @@ const PaeTab = React.memo(
 
             try {
                 return getResidueHeatmap(
-                    props.foldSequence,
+                    sequence,
                     pae.pae,
                     "Jet",
                     "min",
@@ -89,7 +124,7 @@ const PaeTab = React.memo(
             } catch (error) {
                 console.error("Error rendering PAE heatmap:", error);
                 return (
-                    <div className="uk-alert-danger" uk-alert>
+                    <div className="uk-alert-danger">
                         <p>Error rendering PAE heatmap: {error instanceof Error ? error.message : "Unknown error"}</p>
                     </div>
                 );
@@ -97,15 +132,19 @@ const PaeTab = React.memo(
         };
 
         return (
-            <div className="uk-text-center" key="Pae">
-                <h3>PAE</h3>
-                <p>
-                    Predicted alignment error (PAE) may indicate whether two domains are
-                    rigid with respect to one another (
-                    <a href="https://alphafold.ebi.ac.uk/faq">AlphaFold FAQ</a>).
-                </p>
-                {getPaeProbHeatmap()}
-            </div>
+            <TabContainer key="Pae">
+                <DescriptionSection title="PAE">
+                    <p>
+                        Predicted alignment error (PAE) may indicate whether two domains are
+                        rigid with respect to one another (
+                        <a href="https://alphafold.ebi.ac.uk/faq">AlphaFold FAQ</a>).
+                    </p>
+                </DescriptionSection>
+
+                <SectionCard style={{ textAlign: 'center' }}>
+                    {getPaeProbHeatmap()}
+                </SectionCard>
+            </TabContainer>
         );
     },
     (prevProps: PaeTabProps, nextProps: PaeTabProps) => {

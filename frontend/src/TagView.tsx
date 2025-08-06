@@ -3,13 +3,16 @@ import React, { useEffect, useState } from "react";
 import { CSVLink } from "react-csv";
 import { useParams } from "react-router-dom";
 import UIkit from "uikit";
+import { Button, Space, Input, Select, Spin } from "antd";
 import { queueJob } from "./api/commonApi";
-import { getFoldFileZip, getJobStatus } from "./api/foldApi";
+import { getFoldFileZip, getFoldsWithPagination, getJobStatus } from "./api/foldApi";
 import { makeFoldTable } from "./util/foldTable";
 import { NewDockPrompt } from "./util/newDockPrompt";
-import { getFolds, updateFold } from "./api/foldApi";
+import { updateFold, getFoldAffinityPrediction } from "./api/foldApi";
 import { Dock, Fold } from "./types/types";
 import { notify } from "./services/NotificationService";
+import { NaturalnessModal } from "./components/shared/NaturalnessModal";
+import { EmbeddingModal } from "./components/shared/EmbeddingModal";
 
 function TagView() {
     let { tagStringParam } = useParams();
@@ -19,15 +22,25 @@ function TagView() {
         string | null
     >(null);
     const [stageToStart, setStageToStart] = useState<string | null>(null);
+    const [affinityData, setAffinityData] = useState<any[]>([]);
+    const [showNaturalnessModal, setShowNaturalnessModal] = useState<boolean>(false);
+    const [showEmbeddingModal, setShowEmbeddingModal] = useState<boolean>(false);
 
     if (!tagStringParam) {
         throw Error("Somehow wound up with an invalid tagstring.");
     }
 
+    const fetchAllFoldData = () => {
+        getFoldsWithPagination(null, tagString, null, null).then(
+            (v) => {
+                setFolds(v.data);
+            }, (e) => {
+                notify.error(e.toString());
+            });
+    };
+
     useEffect(() => {
-        getFolds(null, tagString, null, null).then(setFolds, (e) => {
-            notify.error(e.toString());
-        });
+        fetchAllFoldData();
     }, [tagString]);
 
     const refoldAnyFailedFolds = () => {
@@ -97,27 +110,6 @@ function TagView() {
         }
     };
 
-    const getFoldsDataForCsv = () => {
-        if (!folds) {
-            return "";
-        }
-        return folds?.map((fold) => {
-            const copy: any = structuredClone(fold);
-            delete copy["docks"];
-            delete copy["jobs"];
-            if (fold.docks) {
-                fold.docks.forEach((dock: Dock) => {
-                    copy[`dock_${dock.ligand_name}_smiles`] = dock.ligand_smiles;
-                    const energy = dock.pose_energy === null ? NaN : dock.pose_energy;
-                    copy[`dock_${dock.ligand_name}_dg`] = energy;
-                    const confidences =
-                        dock.pose_confidences === null ? NaN : dock.pose_confidences;
-                    copy[`dock_${dock.ligand_name}_confidences`] = confidences;
-                });
-            }
-            return copy;
-        });
-    };
 
     const downloadFoldPdbZip = () => {
         if (!folds) {
@@ -128,8 +120,8 @@ function TagView() {
             return;
         }
         const fold_ids = folds.map((fold) => fold.id || 0);
-        const output_dirname = `${tagString}_pdbs`;
-        getFoldFileZip(fold_ids, "ranked_0.pdb", output_dirname).then(
+        const output_dirname = `${tagString}_cifs`;
+        getFoldFileZip(fold_ids, "ranked_0.cif", output_dirname).then(
             (fold_pdb_blob) => {
                 fileDownload(fold_pdb_blob, `${output_dirname}.zip`);
             },
@@ -137,6 +129,52 @@ function TagView() {
                 notify.error(e);
             }
         );
+    };
+
+    const loadAffinityData = async () => {
+        if (!folds) {
+            return;
+        }
+
+        const affinityData = await Promise.all(
+            folds.map(async (fold) => {
+                const baseRow = {
+                    fold_id: fold.id,
+                    fold_name: fold.name,
+                    fold_tags: fold.tags,
+                    affinity_pred_value: '',
+                    affinity_probability_binary: '',
+                    affinity_pred_value1: '',
+                    affinity_probability_binary1: '',
+                    affinity_pred_value2: '',
+                    affinity_probability_binary2: ''
+                };
+
+                if (!fold.id) {
+                    return baseRow;
+                }
+
+                try {
+                    const predictedAffinity = await getFoldAffinityPrediction(fold.id);
+                    return {
+                        fold_id: fold.id,
+                        fold_name: fold.name,
+                        fold_tags: fold.tags,
+                        affinity_pred_value: predictedAffinity.affinity_pred_value,
+                        affinity_probability_binary: predictedAffinity.affinity_probability_binary,
+                        affinity_pred_value1: predictedAffinity.affinity_pred_value1,
+                        affinity_probability_binary1: predictedAffinity.affinity_probability_binary1,
+                        affinity_pred_value2: predictedAffinity.affinity_pred_value2,
+                        affinity_probability_binary2: predictedAffinity.affinity_probability_binary2
+                    };
+                } catch (e) {
+                    console.log(`Failed to get affinity prediction for fold ${fold.id}:`, e);
+                    return baseRow;
+                }
+            })
+        );
+
+        setAffinityData(affinityData);
     };
 
     const downloadFoldFileZip = () => {
@@ -194,10 +232,13 @@ function TagView() {
 
             {/* Folds Table */}
             {folds ? (
-                <div key="loadedDiv">{makeFoldTable(folds)}</div>
+                <div key="loadedDiv">{makeFoldTable(folds, {
+                    editable: true,
+                    onTagsChange: fetchAllFoldData
+                })}</div>
             ) : (
-                <div className="uk-text-center" key="unloadedDiv">
-                    <div uk-spinner="ratio: 4" key="spinner"></div>
+                <div style={{ textAlign: 'center', padding: '60px 0' }} key="unloadedDiv">
+                    <Spin size="large" key="spinner" />
                 </div>
             )}
 
@@ -210,133 +251,167 @@ function TagView() {
             }}>
                 {/* Downloads Section */}
                 <section style={sectionStyle}>
-                    <h3>Downloads</h3>
-                    <div style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "10px",
-                    }}>
+                    <h3 style={{ marginBottom: "16px", color: "#1890ff", fontWeight: 600 }}>Downloads</h3>
+                    <Space direction="vertical" style={{ width: "100%" }}>
                         <CSVLink
                             data={folds ? folds : []}
-                            className="uk-button uk-button-primary"
                             filename={`${tagString}_metadata.csv`}
+                            style={{ display: "block", textAlign: "center", textDecoration: "none" }}
                         >
-                            Download Metadata as CSV
+                            <Button block>Download Metadata as CSV</Button>
                         </CSVLink>
-                        <button
-                            className="uk-button uk-button-primary"
+                        <Button
                             onClick={downloadFoldPdbZip}
+                            block
                         >
                             Download Fold PDBs in ZIP
-                        </button>
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                            <input
-                                type="text"
+                        </Button>
+                        {
+                            affinityData.length > 0 ?
+                                <CSVLink
+                                    data={affinityData}
+                                    className="ant-btn ant-btn-primary"
+                                    filename={`${tagString}_affinity.csv`}
+                                    style={{ display: "block", textAlign: "center", textDecoration: "none" }}
+                                >
+                                    <Button block>Download Affinity CSV</Button>
+                                </CSVLink> : <Button onClick={loadAffinityData} block>Prepare Affinity Data for Download</Button>
+                        }
+
+                        <Space.Compact style={{ width: "100%" }}>
+                            <Input
                                 placeholder="ranked_0/plddt.npy"
                                 value={relativeFpathToDownload || ""}
                                 onChange={(e) => setRelativeFpathToDownload(e.target.value)}
-                                style={inputStyle}
                             />
-                            <button
-                                className="uk-button uk-button-primary"
+                            <Button
+                                type="primary"
                                 onClick={downloadFoldFileZip}
                             >
                                 Download File
-                            </button>
-                        </div>
-                    </div>
+                            </Button>
+                        </Space.Compact>
+                    </Space>
                 </section>
 
                 {/* Visibility Section */}
                 <section style={sectionStyle}>
-                    <h3>Visibility</h3>
-                    <button
-                        className="uk-button uk-button-primary"
+                    <h3 style={{ marginBottom: "16px", color: "#1890ff", fontWeight: 600 }}>Visibility</h3>
+                    <Button
+                        type="primary"
                         onClick={makeAllFoldsPublic}
+                        block
                     >
                         Make All Structures Public
-                    </button>
+                    </Button>
                 </section>
 
                 {/* Job Management Section */}
                 <section style={sectionStyle}>
-                    <div
-                        style={{ display: "flex", justifyContent: "space-between", cursor: "pointer" }}
-                    >
-                        <h3>Job Management</h3>
-                    </div>
-                    <div>
-                        <button
-                            className="uk-button uk-button-primary"
+                    <h3 style={{ marginBottom: "16px", color: "#1890ff", fontWeight: 600 }}>Job Management</h3>
+                    <Space direction="vertical" style={{ width: "100%" }}>
+                        <Button
+                            type="primary"
                             onClick={() => refoldAnyFailedFolds()}
+                            block
                         >
                             Refold Failed Folds
-                        </button>
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }} className="uk-margin-small-top">
-                            <select
-                                value={stageToStart || ""}
-                                onChange={(e) => setStageToStart(e.target.value)}
-                                style={inputStyle}
+                        </Button>
+                        <Space.Compact style={{ width: "100%" }}>
+                            <Select
+                                value={stageToStart || undefined}
+                                onChange={setStageToStart}
+                                placeholder="Select a Stage..."
+                                style={{ width: "60%" }}
                             >
-                                <option value="">Select a Stage...</option>
-                                <option value="both">Both</option>
-                                <option value="annotate">Annotate</option>
-                                <option value="write_fastas">Write FASTAs</option>
-                                <option value="features">Features</option>
-                                <option value="models">Models</option>
-                                <option value="decompress_pkls">Decompress PKLs</option>
-                            </select>
-                            <button
-                                className="uk-button uk-button-primary"
+                                <Select.Option value="both">Fold and Annotate</Select.Option>
+                                <Select.Option value="annotate">Annotate</Select.Option>
+                                <Select.Option value="write_fastas">Write FASTAs</Select.Option>
+                            </Select>
+                            <Button
+                                type="primary"
                                 onClick={startStageForAllFolds}
                             >
-                                Start Stage for All Folds
-                            </button>
-                        </div>
-                    </div>
+                                Start Stage
+                            </Button>
+                        </Space.Compact>
+                    </Space>
                 </section>
 
                 {/* Docking Section */}
                 <section style={sectionStyle}>
-                    <h3>Docking</h3>
+                    <h3 style={{ marginBottom: "16px", color: "#1890ff", fontWeight: 600 }}>Docking</h3>
                     {folds && (
                         <NewDockPrompt
                             foldIds={folds.map((fold) => fold.id ?? -1)}
                             existingLigands={{
                                 ...(folds.reduce((acc, fold) => {
-                                    acc[fold.id] = fold.docks?.map((dock: Dock) => dock.ligand_name) || [];
+                                    if (fold.id !== null) {
+                                        acc[fold.id] = fold.docks?.map((dock: Dock) => dock.ligand_name) || [];
+                                    }
                                     return acc;
                                 }, {} as Record<number, string[]>)),
                             }}
                         />
                     )}
                 </section>
+
+                {/* ML Analysis Section */}
+                <section style={sectionStyle}>
+                    <h3 style={{ marginBottom: "16px", color: "#1890ff", fontWeight: 600 }}>ML Analysis</h3>
+                    <Space direction="vertical" style={{ width: "100%" }}>
+                        <Button
+                            type="primary"
+                            onClick={() => setShowNaturalnessModal(true)}
+                            block
+                            disabled={!folds || folds.length === 0}
+                        >
+                            Run Naturalness Analysis
+                        </Button>
+                        <Button
+                            type="primary"
+                            onClick={() => setShowEmbeddingModal(true)}
+                            block
+                            disabled={!folds || folds.length === 0}
+                        >
+                            Generate Embeddings
+                        </Button>
+                    </Space>
+                </section>
             </div>
+
+            {/* Modal Components */}
+            {folds && (
+                <>
+                    <NaturalnessModal
+                        open={showNaturalnessModal}
+                        onClose={() => setShowNaturalnessModal(false)}
+                        foldIds={folds.map((fold) => fold.id).filter((id): id is number => id !== null)}
+                        title={`Run Naturalness Analysis (${tagString})`}
+                    />
+                    <EmbeddingModal
+                        open={showEmbeddingModal}
+                        onClose={() => setShowEmbeddingModal(false)}
+                        foldIds={folds.map((fold) => fold.id).filter((id): id is number => id !== null)}
+                        title={`Generate Embeddings (${tagString})`}
+                        disableSequenceFields={true}
+                    />
+                </>
+            )}
         </div>
     );
 }
 
 const sectionStyle = {
     backgroundColor: "#ffffff",
-    borderRadius: "8px",
-    padding: "15px",
+    borderRadius: "12px",
+    padding: "20px",
     marginBottom: "20px",
-    boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+    border: "1px solid #f0f0f0",
     width: "350px",  // Fixed width for each section
     flex: "0 0 auto",  // Prevent sections from growing or shrinking
 };
 
-const buttonContainerStyle = {
-    display: "flex",
-    flexDirection: "column",
-    gap: "10px",
-};
-
-const inputStyle = {
-    padding: "8px",
-    borderRadius: "5px",
-    border: "1px solid #ccc",
-    flex: 1,
-};
 
 export default TagView;

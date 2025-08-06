@@ -26,8 +26,6 @@ class BoltzYamlHelper:
 
         if type(self.data) != dict:
             raise ValueError("Boltz YAML config is not a dictionary!")
-        if "version" not in self.data:
-            raise ValueError("Boltz YAML config does not have a 'version' field!")
         if "sequences" not in self.data:
             raise ValueError("Boltz YAML config does not have a 'sequences' field!")
 
@@ -53,7 +51,6 @@ class BoltzYamlHelper:
                 )
 
         # Optionally, you can store top-level fields for easy reference:
-        self.version = self.data.get("version", None)
         self.sequences = self.data.get("sequences", [])
         self.constraints = self.data.get("constraints", [])
         print(f"YAMLSTR: {yaml_str}")
@@ -160,15 +157,6 @@ class BoltzYamlHelper:
             }
             ligands.append(ligand_info)
         return ligands
-
-    def get_version(self) -> Optional[int]:
-        """
-        Return the 'version' field in the YAML, if it exists.
-
-        Returns:
-            The integer version or None if not found.
-        """
-        return self.version
 
 
 # Example usage (uncomment to run it locally):

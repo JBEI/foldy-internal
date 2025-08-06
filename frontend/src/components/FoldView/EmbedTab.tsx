@@ -1,75 +1,116 @@
-import React, { useState, ChangeEvent } from 'react';
-import { startEmbeddings } from "../../api/embedApi";
-import UIkit from 'uikit';
+import React, { useState, useMemo } from 'react';
 import { Embedding, Invokation } from '../../types/types';
-import { FaDownload, FaRedo } from 'react-icons/fa';
-import { downloadFileStraightToFilesystem, getFile } from '../../api/fileApi';
+import { FaDownload, FaFileCode, FaRedo, FaTrash } from 'react-icons/fa';
+import { downloadFileStraightToFilesystem } from '../../api/fileApi';
+import { deleteEmbedding } from '../../api/embedApi';
 import { notify } from '../../services/NotificationService';
-import { ESMModelPicker } from './ESMModelPicker';
+import { TabContainer, DescriptionSection, TableSection } from '../../util/tabComponents';
+import { AntTable, createActionButtons } from '../../util/AntTable';
+import { Button as AntButton, Table } from 'antd';
+import { EmbeddingModal } from '../shared/EmbeddingModal';
+import { EmbeddingParametersModal } from '../shared/EmbeddingParametersModal';
+import { PlusOutlined } from '@ant-design/icons';
+import { getEmbeddingStatus } from '../../util/statusHelpers';
 
 interface EmbedTabProps {
     foldId: number;
     foldName: string | null;
     jobs: Invokation[] | null;
     embeddings: Embedding[] | null;
+    openUpLogsForJob: (jobId: number | undefined) => void;
 }
 
-const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings }) => {
-    const [batchName, setBatchName] = useState<string | null>(null);
-    const [dmsStartingSeqIds, setDmsStartingSeqIds] = useState<string>('WT');
-    const [extraSequenceIDs, setExtraSequenceIDs] = useState<string>('');
-    const [extraLayers, setExtraLayers] = useState<string>('');
-    const [showEmbeddingSection, setShowEmbeddingSection] = useState<boolean>(false);
-    const [model, setModel] = useState<string>('esmc_300m');
+// Custom expandable content for embeddings with text wrapping and line limits
+const embeddingExpandableContent = <T extends Record<string, any>>(record: T): React.ReactNode => {
+    const entries = Object.entries(record).filter(([key, value]) =>
+        value !== null && value !== undefined && value !== ''
+    );
 
-    const handleDmsStartingSeqIDsTextareaChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-        setDmsStartingSeqIds(event.target.value);
-    };
+    const detailColumns = [
+        {
+            title: 'Property',
+            dataIndex: 'key',
+            key: 'key',
+            width: 200,
+            render: (key: string) => <strong>{key}</strong>,
+        },
+        {
+            title: 'Value',
+            dataIndex: 'value',
+            key: 'value',
+            render: (value: any) => {
+                if (typeof value === 'object') {
+                    return <pre style={{ margin: 0, fontSize: '12px' }}>{JSON.stringify(value, null, 2)}</pre>;
+                }
+                if (typeof value === 'boolean') {
+                    return value ? 'true' : 'false';
+                }
 
-    const handleExtraSeqIDsTextareaChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-        setExtraSequenceIDs(event.target.value);
-    };
+                const stringValue = String(value);
+                // For long strings, apply wrapping and height constraints
+                if (stringValue.length > 100) {
+                    return (
+                        <div style={{
+                            maxHeight: '5rem', // Approximately 5 lines
+                            overflowY: 'auto',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            fontSize: '12px',
+                            lineHeight: '1rem',
+                            padding: '4px',
+                            backgroundColor: '#f5f5f5',
+                            border: '1px solid #d9d9d9',
+                            borderRadius: '4px'
+                        }}>
+                            {stringValue}
+                        </div>
+                    );
+                }
 
-    const handleExtraLayersTextareaChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-        setExtraLayers(event.target.value);
-    };
+                return stringValue;
+            },
+        },
+    ];
 
-    const handleStartDmsEmbeddings = async () => {
-        const dmsStartingSeqIdsArray: string[] = dmsStartingSeqIds
-            .split('\n')
-            .map(line => line.trim())
-            .filter(line => line !== '');
-        const extraIDsArray: string[] = extraSequenceIDs
-            .split('\n')
-            .map(line => line.trim())
-            .filter(line => line !== '');
-        const extraLayersArray: string[] = extraLayers
-            .split(',')
-            .map(line => line.trim())
-            .filter(line => line !== '');
+    const detailData = entries.map(([key, value]) => ({
+        key,
+        value,
+    }));
 
-        if (!batchName) {
-            notify.error('Batch name is required.');
-            return;
-        }
+    return (
+        <Table
+            columns={detailColumns}
+            dataSource={detailData}
+            pagination={false}
+            size="small"
+            bordered
+            rowKey="key"
+            style={{ margin: '16px 0' }}
+        />
+    );
+};
 
-        try {
-            await startEmbeddings(foldId, batchName, dmsStartingSeqIdsArray, extraIDsArray, extraLayersArray, model);
-            notify.success('Started embedding run.');
-        } catch (error) {
-            notify.error(`Failed to start embedding run: ${error}`);
-        }
-    };
+const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings, openUpLogsForJob }) => {
+    const [showEmbeddingModal, setShowEmbeddingModal] = useState<boolean>(false);
+    const [selectedEmbedding, setSelectedEmbedding] = useState<Embedding | null>(null);
+    const [templateEmbedding, setTemplateEmbedding] = useState<Embedding | null>(null);
 
-    const getEmbeddingStatus = (embedding: Embedding): string => {
-        const job = jobs?.find(job => job.id === embedding.invokation_id);
-        return job?.state || 'Unknown';
-    };
+    // Sort embeddings by date_created (newest first)
+    const sortedEmbeddings = useMemo(() => {
+        if (!embeddings) return [];
+        return [...embeddings].sort((a, b) => {
+            if (!a.date_created && !b.date_created) return 0;
+            if (!a.date_created) return 1; // null values go to end
+            if (!b.date_created) return -1;
+            return new Date(b.date_created).getTime() - new Date(a.date_created).getTime();
+        });
+    }, [embeddings]);
+
 
     const downloadEmbedding = (embedding: Embedding) => {
         const paddedFoldId = foldId.toString().padStart(6, '0');
-        const embeddingPath = `embed/${paddedFoldId}_embeddings_${embedding.embedding_model}_${embedding.name}.csv`;
-        notify.info(`Downloading embedding ${embedding.id} at path ${embeddingPath}`);
+        const embeddingPath = embedding.output_fpath_computed;
+        notify.info(`Downloading embedding ${embedding.id} at path ${embeddingPath}, do not close this window until the download is complete.`);
 
         const newFileName = `${foldName || paddedFoldId}_embedding_${embedding.name}.csv`;
         downloadFileStraightToFilesystem(embedding.fold_id, embeddingPath, newFileName, (progress: number) => {
@@ -77,179 +118,137 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings 
         });
     };
 
-    const rerunEmbedding = async (embedding: Embedding) => {
-        notify.info(`Repopulating "New Embedding Run" with parameters from ${embedding.name}.`);
-        console.log(embedding);
-        setBatchName(embedding.name);
-        setDmsStartingSeqIds(embedding.dms_starting_seq_ids?.split(',').join('\n') || '');
-        setExtraSequenceIDs(embedding.extra_seq_ids?.split(',').join('\n') || '');
-        setExtraLayers(embedding.extra_layers?.split(',').join(',') || '');
-        setShowEmbeddingSection(true);
-        setModel(embedding.embedding_model);
+    const redoEmbedding = (embedding: Embedding) => {
+        setTemplateEmbedding(embedding);
+        setShowEmbeddingModal(true);
+    };
+
+    const deleteEmbeddingHelper = async (embedding: Embedding) => {
+        if (!window.confirm(`Are you sure you want to delete embedding run "${embedding.name}"? This action cannot be undone.`)) {
+            return;
+        }
+
+        try {
+            await deleteEmbedding(embedding.id);
+            notify.success(`Embedding run "${embedding.name}" deleted successfully`);
+            window.location.reload(); // Refresh the page to update the data
+        } catch (error: any) {
+            notify.error(error.response?.data?.message || 'Failed to delete embedding run');
+        }
     };
 
     return (
-        <div style={{ padding: '20px', backgroundColor: '#f8f9fa', boxShadow: '0 2px 6px rgba(0, 0, 0, 0.1)', borderRadius: '8px' }}>
+        <TabContainer>
             {/* Description Section */}
-            <section style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                <h3 style={{ marginBottom: '10px' }}>DMS Embedding Overview</h3>
-                <div>
-                    This tab allows you to embed protein sequences using large language
-                    models like <a href="https://github.com/evolutionaryscale/esm">ESMC</a>.
-                    These embeddings can be used to do low-N directed evolution, as in the
-                    Evolve tab. Each run takes in:
-                    <ul>
-                        <li>
-                            <code>Extra Sequence IDs</code>: "WT" to embed the WT sequence, as well as other
-                            variants to embed. Eg, "A43W_T67G" to embed the mutant with those two mutations.
-                        </li>
-                        <li>
-                            <code>DMS Starting Sequence IDs</code>: For each line in this
-                            field, all possible single amino acid mutants will be embedded.
-                            For each input here, this produces a large number of embeddings,
-                            ~19X the number of amino acids in the protein.
-                        </li>
-                    </ul>
-                    You can embed just the wild type sequence by entering "WT" in
-                    the "Extra Sequence IDs" field, as well as any other variants of interest.
-                    Additionally you can get embeddings for a large number of mutants with the
-                    "DMS Starting Sequence IDs" field - for each line in this field, all
-                    possible single amino acid mutants will be embedded.
-                    <p>
-                        <code>Estimated cost:</code>~$100 for a DMS of a 500AA protein.
-                    </p>
-                </div>
-            </section>
+            <DescriptionSection title="Protein Embeddings Overview">
+                Generate high-dimensional vector representations of protein sequences using large language
+                models like <a href="https://github.com/evolutionaryscale/esm">ESMC</a>.
+                These embeddings can be used for machine learning models in directed evolution.
+            </DescriptionSection>
 
             {/* Batch Status Section */}
-            <section style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                <h4>Ongoing Batches</h4>
-                <div style={{ overflowX: 'auto' }}>
-                    <table className="uk-table uk-table-striped">
-                        <thead>
-                            <tr>
-                                <th>Batch Name</th>
-                                <th>Batch Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {embeddings?.map(embedding => (
-                                <tr key={embedding.id}>
-                                    <td>{embedding.name}</td>
-                                    <td>{getEmbeddingStatus(embedding)}</td>
-                                    <td>
-                                        <FaDownload
-                                            uk-tooltip="Download embeddings CSV."
-                                            onClick={() => downloadEmbedding(embedding)} />
-                                        <FaRedo
-                                            uk-tooltip="Rerun embedding."
-                                            onClick={() => rerunEmbedding(embedding)} />
-                                    </td>
-                                </tr>
-                            ))
-                                || <tr><td colSpan={2}>No embeddings available</td></tr>}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+            <TableSection
+                title="Embedding Runs"
+                extra={
+                    <AntButton
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={() => {
+                            setTemplateEmbedding(null);
+                            setShowEmbeddingModal(true);
+                        }}
+                    >
+                        New
+                    </AntButton>
+                }
+            >
+                <AntTable<Embedding>
+                    dataSource={sortedEmbeddings}
+                    rowKey="id"
+                    expandableContent={embeddingExpandableContent}
+                    columns={[
+                        {
+                            key: 'name',
+                            title: 'Batch Name',
+                            dataIndex: 'name',
+                        },
+                        {
+                            key: 'date',
+                            title: 'Date',
+                            width: 80,
+                            render: (_, embedding) => {
+                                if (!embedding.date_created) return "N/A";
 
-            {/* Collapsible Section */}
-            <div>
-                <div
-                    className='uk-margin-top uk-margin-bottom'
-                    style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "10px 15px",
-                        backgroundColor: "#f8f9fa",
-                        border: "1px solid #e0e0e0",
-                        borderRadius: "8px",
-                        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                        cursor: "pointer",
-                        fontWeight: "bold",
-                    }}
-                    onClick={() => setShowEmbeddingSection(!showEmbeddingSection)}
-                >
-                    <span>New Embedding Run</span>
-                    <span>{showEmbeddingSection ? "▲" : "▼"}</span>
-                </div>
-                {showEmbeddingSection && (
-                    <div style={{ padding: '15px', backgroundColor: '#ffffff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                        <h4>Start a New Embedding Run</h4>
-                        {/* Batch Name */}
-                        <div style={{ flex: 1, minWidth: '200px' }}>
-                            <label htmlFor="batch-name" className="uk-form-label">Batch Name</label>
-                            <input
-                                id="batch-name"
-                                className="uk-input"
-                                type="text"
-                                placeholder="Enter batch name"
-                                value={batchName || ''}
-                                onChange={(e) => setBatchName(e.target.value)}
-                            />
-                        </div>
+                                try {
+                                    const date = new Date(embedding.date_created);
+                                    if (isNaN(date.getTime())) return "Invalid";
 
-                        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-                            {/* Extra Sequence IDs */}
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                <label htmlFor="extra-sequence-ids" className="uk-form-label">Extra Sequence IDs</label>
-                                <textarea
-                                    id="extra-sequence-ids"
-                                    className="uk-textarea"
-                                    rows={5}
-                                    placeholder="Enter one mutation per line, e.g., A37T, W100C_T431G"
-                                    value={extraSequenceIDs}
-                                    onChange={handleExtraSeqIDsTextareaChange}
-                                ></textarea>
-                            </div>
+                                    return new Intl.DateTimeFormat('en-US', {
+                                        dateStyle: "short",
+                                        timeZone: "America/Los_Angeles"
+                                    }).format(date);
+                                } catch (error) {
+                                    return "Error";
+                                }
+                            },
+                        },
+                        {
+                            key: 'status',
+                            title: 'Batch Status',
+                            render: (_, embedding) => getEmbeddingStatus(embedding, jobs),
+                        },
+                        {
+                            key: 'actions',
+                            title: 'Actions',
+                            width: 120,
+                            render: (_, embedding) => {
+                                const buttons = [
+                                    {
+                                        icon: <FaFileCode />,
+                                        onClick: () => openUpLogsForJob(embedding.invokation_id || undefined),
+                                        tooltip: 'View logs',
+                                    },
+                                    {
+                                        icon: <FaRedo />,
+                                        onClick: () => redoEmbedding(embedding),
+                                        tooltip: 'Redo embedding run',
+                                    },
+                                ];
 
-                            {/* DMS Starting Sequence IDs */}
-                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                <label htmlFor="dms-starting-seq-ids" className="uk-form-label">DMS Starting Sequence IDs</label>
-                                <textarea
-                                    id="dms-starting-seq-ids"
-                                    className="uk-textarea"
-                                    rows={5}
-                                    placeholder="Enter one mutation per line, e.g., WT, W100C_T431G"
-                                    value={dmsStartingSeqIds}
-                                    onChange={handleDmsStartingSeqIDsTextareaChange}
-                                ></textarea>
-                            </div>
-                        </div>
+                                if (getEmbeddingStatus(embedding, jobs) === 'finished') {
+                                    buttons.splice(1, 0, {
+                                        icon: <FaDownload />,
+                                        onClick: () => downloadEmbedding(embedding),
+                                        tooltip: 'Download embeddings CSV',
+                                    });
+                                }
 
-                        <ESMModelPicker
-                            value={model}
-                            onChange={setModel}
-                        />
+                                // Add delete button (always available)
+                                buttons.push({
+                                    icon: <FaTrash />,
+                                    onClick: () => deleteEmbeddingHelper(embedding),
+                                    tooltip: 'Delete embedding run',
+                                    danger: true,
+                                });
 
-                        {/* Extra Layers */}
-                        <div style={{ flex: 1, minWidth: '200px' }}>
-                            <label htmlFor="extra-layers" className="uk-form-label">Extra Layers</label>
-                            <textarea
-                                id="extra-layers"
-                                className="uk-input"
-                                // rows={5}
-                                placeholder="Enter extra embedding layers to extract like 5,10,15"
-                                value={extraLayers}
-                                onChange={handleExtraLayersTextareaChange}
-                            ></textarea>
-                        </div>
+                                return createActionButtons(buttons);
+                            },
+                        },
+                    ]}
+                />
+            </TableSection>
 
-                        <div style={{ marginTop: '20px' }}>
-                            <button
-                                className="uk-button uk-button-primary"
-                                onClick={() => handleStartDmsEmbeddings()}
-                            >
-                                Start Embedding
-                            </button>
 
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
+            {/* Embedding Modal */}
+            <EmbeddingModal
+                key={templateEmbedding ? `template-${JSON.stringify(templateEmbedding)}` : 'new-embedding'}
+                open={showEmbeddingModal}
+                onClose={() => setShowEmbeddingModal(false)}
+                foldIds={[foldId]}
+                title={templateEmbedding ? "Redo Embedding Run" : "New Embedding Run"}
+                templateEmbedding={templateEmbedding || undefined}
+            />
+        </TabContainer>
     );
 };
 

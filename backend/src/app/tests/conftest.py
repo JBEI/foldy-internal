@@ -4,12 +4,13 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
-from app.extensions import db
-from app.helpers.fold_storage_manager import FoldStorageManager
-from app.util import FoldStorageManager
-from app.models import Evolution, Fold, Invokation, User
 from flask import Flask
 from werkzeug.exceptions import BadRequest
+
+from app.extensions import db
+from app.helpers.fold_storage_manager import FoldStorageManager
+from app.models import Evolution, Fold, Invokation, User
+from app.util import FoldStorageManager
 
 
 @pytest.fixture(autouse=True)
@@ -86,13 +87,13 @@ sequences:
 """
         # Get a fresh user object from the database
         user = db.session.get(User, test_user.id)
-        fold = Fold(
-            name="test_fold",
-            user_id=test_user.id,  # Now using the refreshed user
-            yaml_config=FOLD_YAML_CONFIG,
-            tagstring="test",
-            af2_model_preset="monomer_ptm",
-        )
+        fold = Fold()
+        fold.name = "test_fold"
+        fold.user_id = test_user.id
+        fold.yaml_config = FOLD_YAML_CONFIG
+        fold.tagstring = "test"
+        fold.af2_model_preset = "monomer_ptm"
+        fold.sequence = "ACD"
         db.session.add(fold)
         db.session.commit()
         yield fold

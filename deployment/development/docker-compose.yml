@@ -43,7 +43,9 @@ services:
       - ./frontend/src:/app/src
 
   backend:
-    build: backend/
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     platform: linux/amd64
     depends_on:
       - db
@@ -73,7 +75,7 @@ services:
       - ./backend/src/integration_tests:/src/integration_tests
       - ./backend/src/migrations:/src/migrations
     restart: always
-    entrypoint: python /src/main.py
+    entrypoint: /opt/conda/envs/worker/bin/python /src/main.py
 
   worker_esm:
     <<: *worker-base
@@ -82,7 +84,7 @@ services:
       dockerfile: worker/Dockerfile.esm
     environment: *worker-env
     volumes: *worker-volumes
-    entrypoint: /opt/conda/envs/worker/bin/python -m flask rq worker cpu esm
+    entrypoint: /opt/conda/envs/worker/bin/python /backend/src/rq_worker_main.py cpu esm
 
   # worker_prosst:
   #   <<: *worker-base
@@ -106,18 +108,7 @@ services:
       - ./backend/src/integration_tests:/backend/src/integration_tests
       - ./backend/src/migrations:/backend/src/migrations
       - ./.boltz:/.boltz
-    entrypoint: /opt/conda/envs/worker/bin/python -m flask rq worker boltz
-
-  jupyter:
-    <<: *worker-base
-    build:
-      context: .
-      dockerfile: worker/Dockerfile.esm # Dockerfile.prosst
-    environment: *worker-env
-    volumes: *worker-volumes
-    ports:
-      - 127.0.0.1:8888:8888  # Expose Jupyter port
-    entrypoint: /opt/conda/envs/worker/bin/jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --notebook-dir=/backend/src --NotebookApp.token='thefoldytoken'
+    entrypoint: /opt/conda/envs/worker/bin/python /backend/src/rq_worker_main.py boltz
 
   db:
     environment:
@@ -135,3 +126,14 @@ services:
     image: "redis:7.2-alpine"
     ports:
       - 127.0.0.1:6379:6379
+
+  # jupyter:
+  #   <<: *worker-base
+  #   build:
+  #     context: .
+  #     dockerfile: worker/Dockerfile.esm # Dockerfile.prosst
+  #   environment: *worker-env
+  #   volumes: *worker-volumes
+  #   ports:
+  #     - 127.0.0.1:8888:8888  # Expose Jupyter port
+  #   entrypoint: /opt/conda/envs/worker/bin/jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --notebook-dir=/backend/src --NotebookApp.token='thefoldytoken'

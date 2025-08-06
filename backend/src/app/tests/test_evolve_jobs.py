@@ -1,16 +1,17 @@
 import random
 from unittest.mock import MagicMock, patch
 
-from app.helpers.sequence_util import VALID_AMINO_ACIDS
 import numpy as np
 import pandas as pd
 import pytest
-from app.extensions import db
-from app.helpers.fold_storage_manager import FoldStorageManager
-from app.jobs.evolve_jobs import run_evolvepro
-from app.models import Evolution, Fold, Invokation, User
 from flask import Flask
 from werkzeug.exceptions import BadRequest
+
+from app.extensions import db
+from app.helpers.fold_storage_manager import FoldStorageManager
+from app.helpers.sequence_util import VALID_AMINO_ACIDS
+from app.jobs.evolve_jobs import run_evolvepro
+from app.models import Evolution, Fold, Invokation, User
 
 
 @pytest.fixture
@@ -48,7 +49,7 @@ def test_fold_evolution(app, test_fold, test_invokation):
   "learning_rate": 0.001,
   "weight_decay": 1e-5,
   "train_epochs": 200
-}"""
+}""",
         )
         db.session.add(evolution)
         db.session.commit()
@@ -82,8 +83,8 @@ def mock_foldy_storage(app, tmp_path, test_fold, test_fold_evolution):
     )
     pd.DataFrame(
         {
-            "seq_id": ["WT","A1G_C2Y"] + [f"A1{aa}" for aa in VALID_AMINO_ACIDS],
-            "embedding": ["[1, 0, 0]", "[0, 2, 3]"] + ["[0, 2, 0]"] * len(VALID_AMINO_ACIDS)
+            "seq_id": ["WT", "A1G_C2Y"] + [f"A1{aa}" for aa in VALID_AMINO_ACIDS],
+            "embedding": ["[1, 0, 0]", "[0, 2, 3]"] + ["[0, 2, 0]"] * len(VALID_AMINO_ACIDS),
         }
     ).to_csv(embed_dir / "test_embedding_file.csv")
 
@@ -109,9 +110,10 @@ def test_old_modes_not_supported(
     """Basic test for run_evolvepro function."""
     with app.app_context():
         with pytest.raises(AssertionError, match="no longer supported"):
-            test_fold_evolution.update({'mode': 'randomforest'})
+            test_fold_evolution.update({"mode": "randomforest"})
 
             run_evolvepro(evolve_id=test_fold_evolution.id)
+
 
 def test_requires_few_shot_params(
     app, client, tmp_path, mock_storage_manager, test_fold_evolution, mock_foldy_storage
@@ -119,7 +121,7 @@ def test_requires_few_shot_params(
     """Basic test for run_evolvepro function."""
     with app.app_context():
         with pytest.raises(AssertionError, match="no longer supported"):
-            test_fold_evolution.update({'few_shot_params': None})
+            test_fold_evolution.update({"few_shot_params": None})
 
             run_evolvepro(evolve_id=test_fold_evolution.id)
 
@@ -140,11 +142,11 @@ def test_run_evolvepro_succeeds(
             evolve_dir / "predicted_activity.csv", keep_default_na=False
         )
         assert predicted_activity_df.shape[0] == 3
-        predicted_activity_df.index = predicted_activity_df.seq_id
+        predicted_activity_df = predicted_activity_df.set_index("seq_id")
 
         # The tool should know that both mutants are more active than WT.
         # If this were a linear model, it would know that the second mutant should
         # be more active than the first, based on the constructed embedding. But the
         # random forest model can't extrapolate.
-        assert predicted_activity_df.loc["A1G"].predicted_activity > 1.5
-        assert predicted_activity_df.loc["A1G_C2Y"].predicted_activity > 1.5
+        assert predicted_activity_df.loc["A1G"].predicted_activity > 1.5  # type: ignore[reportGeneralTypeIssues] # pandas Series boolean evaluation
+        assert predicted_activity_df.loc["A1G_C2Y"].predicted_activity > 1.5  # type: ignore[reportGeneralTypeIssues] # pandas Series boolean evaluation

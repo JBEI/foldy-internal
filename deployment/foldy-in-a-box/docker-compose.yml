@@ -59,8 +59,6 @@ services:
     ipc: host
     environment:
       - FLASK_APP=rq_worker_main.py
-      - RUN_AF2_PATH=/worker/run_alphafold.sh
-      - DECOMPRESS_PKLS_PATH=/worker/decompress_pkls.sh
       - RUN_ANNOTATE_PATH=/worker/run_annotate.sh
       - RUN_DOCK=/worker/run_dock.sh
       - FRONTEND_URL=${FOLDY_BOX_URL}
@@ -97,8 +95,6 @@ services:
     ipc: host
     environment:
       - FLASK_APP=rq_worker_main.py
-      - RUN_AF2_PATH=/worker/run_alphafold.sh
-      - DECOMPRESS_PKLS_PATH=/worker/decompress_pkls.sh
       - RUN_ANNOTATE_PATH=/worker/run_annotate.sh
       - RUN_DOCK=/worker/run_dock.sh
       - FRONTEND_URL=${FOLDY_BOX_URL}

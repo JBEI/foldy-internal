@@ -1,13 +1,9 @@
 """Flask views for admin usage (eg, upgrading DBs, killing jobs, etc)."""
 
 import logging
+from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
 
-from app.authorization import verify_has_edit_access
-from app.extensions import db, rq
-from app.jobs import other_jobs
-from app.models import Fold, Invokation
-from app.util import start_stage
 from flask import request
 from flask_jwt_extended import jwt_required
 from flask_migrate import stamp, upgrade
@@ -16,6 +12,14 @@ from rq.command import send_shutdown_command
 from rq.registry import FailedJobRegistry
 from sqlalchemy.sql.elements import and_
 from werkzeug.exceptions import BadRequest
+
+from app.authorization import verify_has_edit_access
+from app.extensions import db
+from app.helpers.fold_storage_manager import FoldStorageManager
+from app.helpers.rq_helpers import get_queue, get_redis_connection
+from app.jobs import other_jobs
+from app.models import Embedding, FewShot, Fold, Invokation, Naturalness
+from app.util import start_stage
 
 ns = Namespace("admin_views", decorators=[jwt_required(fresh=True), verify_has_edit_access])
 
@@ -81,7 +85,7 @@ class RemoveFailedJobsResource(Resource):
         """
         data = request.get_json()
         queue_name = data["queue"]
-        q = rq.get_queue(queue_name)
+        q = get_queue(queue_name)
         registry = FailedJobRegistry(queue=q)
 
         count = 0
@@ -110,7 +114,7 @@ class KillWorkerResource(Resource):
         data = request.get_json()
         worker_id = data["worker_id"]
         logging.info(f"Sending shutdown command to worker {worker_id}")
-        send_shutdown_command(rq.connection, worker_id)
+        send_shutdown_command(get_redis_connection(), worker_id)
 
 
 @ns.route("/set_all_unset_model_presets")
@@ -239,7 +243,7 @@ class SendTestEmailResource(Resource):
         Returns:
             True if email job was queued successfully
         """
-        q = rq.get_queue("emailparrot")
+        q = get_queue("emailparrot")
         job = q.enqueue(
             other_jobs.send_email,
             1,
@@ -316,3 +320,303 @@ class RunUnrunStagesResource(Resource):
 
         logging.info(f"Started {stage_name} stage for {count} folds")
         return True
+
+
+@ns.route("/populate_output_fpath_fields")
+class PopulateOutputFpathFieldsResource(Resource):
+    @verify_has_edit_access
+    def post(self) -> Dict[str, int]:
+        """Populate output_fpath fields for all existing naturalness, embedding, and few shot records.
+
+        This function sets the output_fpath field based on the computed path logic
+        for records that don't already have this field populated.
+
+        Returns:
+            Dictionary with counts of updated records for each model type
+        """
+        logging.info("Starting population of output_fpath fields for existing records")
+
+        naturalness_updated = 0
+        embedding_updated = 0
+        few_shot_updated = 0
+
+        # Update Naturalness records
+        naturalness_records = Naturalness.query.filter(
+            (Naturalness.output_fpath.is_(None)) | (Naturalness.output_fpath == "")
+        ).all()
+
+        for naturalness in naturalness_records:
+            if naturalness.fold_id is not None:
+                continue
+            padded_fold_id = str(naturalness.fold_id).zfill(6)
+            # Use the same logic as the computed property
+            computed_path = f"naturalness/logits_{naturalness.name}_melted.csv"
+            naturalness.update(output_fpath=computed_path)
+            naturalness_updated += 1
+            logging.info(
+                f"Updated naturalness {naturalness.id} ({naturalness.name}) with path: {computed_path}"
+            )
+
+        # Update Embedding records
+        embedding_records = Embedding.query.filter(
+            (Embedding.output_fpath.is_(None)) | (Embedding.output_fpath == "")
+        ).all()
+
+        for embedding in embedding_records:
+            if embedding.fold_id is not None:
+                continue
+            padded_fold_id = str(embedding.fold_id).zfill(6)
+            # Use the same logic as the computed property
+            computed_path = f"embed/{padded_fold_id}_embeddings_{embedding.embedding_model}_{embedding.name}.csv"
+            embedding.update(output_fpath=computed_path)
+            embedding_updated += 1
+            logging.info(
+                f"Updated embedding {embedding.id} ({embedding.name}) with path: {computed_path}"
+            )
+
+        # Update FewShot records
+        few_shot_records = FewShot.query.filter(
+            (FewShot.output_fpath.is_(None)) | (FewShot.output_fpath == "")
+        ).all()
+
+        for few_shot in few_shot_records:
+            if few_shot.fold_id is not None:
+                continue
+            padded_fold_id = str(few_shot.fold_id).zfill(6)
+            # Use the same logic as the computed property
+            computed_path = f"evolve/{few_shot.name}/predicted_activity.csv"
+            few_shot.update(output_fpath=computed_path)
+            few_shot_updated += 1
+            logging.info(
+                f"Updated few_shot {few_shot.id} ({few_shot.name}) with path: {computed_path}"
+            )
+
+        total_updated = naturalness_updated + embedding_updated + few_shot_updated
+
+        result = {
+            "naturalness_updated": naturalness_updated,
+            "embedding_updated": embedding_updated,
+            "few_shot_updated": few_shot_updated,
+            "total_updated": total_updated,
+        }
+
+        logging.info(
+            f"Population complete: {total_updated} total records updated - "
+            f"Naturalness: {naturalness_updated}, Embedding: {embedding_updated}, FewShot: {few_shot_updated}"
+        )
+
+        return result
+
+
+@ns.route("/backfill_date_created")
+class BackfillDateCreatedResource(Resource):
+    @verify_has_edit_access
+    def post(self) -> Dict[str, int]:
+        """Backfill date_created fields for all existing naturalness, embedding, and few shot records.
+
+        This function sets the date_created field based on the modification time of the output file
+        using FoldStorageManager.storage_manager.list_files, or 1/1/2024 if file doesn't exist.
+
+        Returns:
+            Dictionary with counts of updated records for each model type
+        """
+        logging.info("Starting backfill of date_created fields for existing records")
+
+        naturalness_updated = 0
+        embedding_updated = 0
+        few_shot_updated = 0
+
+        # Fallback date if file doesn't exist or can't get mtime
+        fallback_date = datetime(2024, 1, 1, tzinfo=UTC)
+
+        # Initialize storage manager
+        storage_manager = FoldStorageManager()
+        storage_manager.setup()
+
+        if not storage_manager.storage_manager:
+            logging.error("Storage manager not initialized, using fallback date for all records")
+
+        # Update Naturalness records
+        naturalness_records = Naturalness.query.filter(Naturalness.date_created.is_(None)).all()
+
+        for naturalness in naturalness_records:
+            date_to_set = fallback_date
+
+            try:
+                if (
+                    naturalness.fold_id
+                    and naturalness.output_fpath_computed
+                    and storage_manager.storage_manager
+                ):
+                    # Try to get file modification time from storage
+                    files = storage_manager.storage_manager.list_files(naturalness.fold_id)
+                    target_file = next(
+                        (f for f in files if f["key"] == naturalness.output_fpath_computed), None
+                    )
+
+                    if target_file and "modified" in target_file:
+                        # Convert from milliseconds to datetime
+                        date_to_set = datetime.fromtimestamp(
+                            target_file["modified"] / 1000.0, tz=UTC
+                        )
+                        logging.info(
+                            f"Found file modification time for naturalness {naturalness.id}: {date_to_set}"
+                        )
+                    else:
+                        logging.info(
+                            f"File not found for naturalness {naturalness.id}, using fallback date"
+                        )
+            except Exception as e:
+                logging.warning(
+                    f"Error getting file mtime for naturalness {naturalness.id}: {e}, using fallback date"
+                )
+
+            naturalness.update(date_created=date_to_set)
+            naturalness_updated += 1
+
+        # Update Embedding records
+        embedding_records = Embedding.query.filter(Embedding.date_created.is_(None)).all()
+
+        for embedding in embedding_records:
+            date_to_set = fallback_date
+
+            try:
+                if (
+                    embedding.fold_id
+                    and embedding.output_fpath_computed
+                    and storage_manager.storage_manager
+                ):
+                    # Try to get file modification time from storage
+                    files = storage_manager.storage_manager.list_files(embedding.fold_id)
+                    target_file = next(
+                        (f for f in files if f["key"] == embedding.output_fpath_computed), None
+                    )
+
+                    if target_file and "modified" in target_file:
+                        # Convert from milliseconds to datetime
+                        date_to_set = datetime.fromtimestamp(
+                            target_file["modified"] / 1000.0, tz=UTC
+                        )
+                        logging.info(
+                            f"Found file modification time for embedding {embedding.id}: {date_to_set}"
+                        )
+                    else:
+                        logging.info(
+                            f"File not found for embedding {embedding.id}, using fallback date"
+                        )
+            except Exception as e:
+                logging.warning(
+                    f"Error getting file mtime for embedding {embedding.id}: {e}, using fallback date"
+                )
+
+            embedding.update(date_created=date_to_set)
+            embedding_updated += 1
+
+        # Update FewShot records
+        few_shot_records = FewShot.query.filter(FewShot.date_created.is_(None)).all()
+
+        for few_shot in few_shot_records:
+            date_to_set = fallback_date
+
+            try:
+                if (
+                    few_shot.fold_id
+                    and few_shot.output_fpath_computed
+                    and storage_manager.storage_manager
+                ):
+                    # Try to get file modification time from storage
+                    files = storage_manager.storage_manager.list_files(few_shot.fold_id)
+                    target_file = next(
+                        (f for f in files if f["key"] == few_shot.output_fpath_computed), None
+                    )
+
+                    if target_file and "modified" in target_file:
+                        # Convert from milliseconds to datetime
+                        date_to_set = datetime.fromtimestamp(
+                            target_file["modified"] / 1000.0, tz=UTC
+                        )
+                        logging.info(
+                            f"Found file modification time for few_shot {few_shot.id}: {date_to_set}"
+                        )
+                    else:
+                        logging.info(
+                            f"File not found for few_shot {few_shot.id}, using fallback date"
+                        )
+            except Exception as e:
+                logging.warning(
+                    f"Error getting file mtime for few_shot {few_shot.id}: {e}, using fallback date"
+                )
+
+            few_shot.update(date_created=date_to_set)
+            few_shot_updated += 1
+
+        total_updated = naturalness_updated + embedding_updated + few_shot_updated
+
+        result = {
+            "naturalness_updated": naturalness_updated,
+            "embedding_updated": embedding_updated,
+            "few_shot_updated": few_shot_updated,
+            "total_updated": total_updated,
+        }
+
+        logging.info(
+            f"Backfill complete: {total_updated} total records updated - "
+            f"Naturalness: {naturalness_updated}, Embedding: {embedding_updated}, FewShot: {few_shot_updated}"
+        )
+
+        return result
+
+
+@ns.route("/backfill_input_activity_fpath")
+class BackfillInputActivityFpathResource(Resource):
+    @verify_has_edit_access
+    def post(self) -> Dict[str, int]:
+        """Backfill input_activity_fpath fields for all existing FewShot records.
+
+        This function sets the input_activity_fpath field using the following logic:
+        (A) Skip if input_activity_fpath is already set
+        (B) If output_fpath is set, use that directory but change filename to activity.xlsx
+        (C) Otherwise, set to few_shots/<few_shot_name>/activity.xlsx
+
+        Returns:
+            Dictionary with count of updated records
+        """
+        logging.info("Starting backfill of input_activity_fpath fields for FewShot records")
+
+        few_shot_updated = 0
+
+        # Get all FewShot records that don't have input_activity_fpath set
+        few_shot_records = FewShot.query.filter(
+            (FewShot.input_activity_fpath.is_(None)) | (FewShot.input_activity_fpath == "")
+        ).all()
+
+        for few_shot in few_shot_records:
+            input_activity_fpath = None
+
+            if few_shot.output_fpath and few_shot.output_fpath.strip():
+                # Case B: Use output_fpath directory but change filename to activity.xlsx
+                output_dir = "/".join(few_shot.output_fpath.split("/")[:-1])
+                input_activity_fpath = f"{output_dir}/activity.xlsx"
+                logging.info(
+                    f"Using output_fpath directory for few_shot {few_shot.id}: {input_activity_fpath}"
+                )
+            else:
+                # Case C: Default to few_shots/<name>/activity.xlsx
+                input_activity_fpath = f"few_shots/{few_shot.name}/activity.xlsx"
+                logging.info(
+                    f"Using default path for few_shot {few_shot.id}: {input_activity_fpath}"
+                )
+
+            few_shot.update(input_activity_fpath=input_activity_fpath)
+            few_shot_updated += 1
+            logging.info(
+                f"Updated few_shot {few_shot.id} ({few_shot.name}) with input_activity_fpath: {input_activity_fpath}"
+            )
+
+        result = {"few_shot_updated": few_shot_updated, "total_updated": few_shot_updated}
+
+        logging.info(
+            f"Completed backfill of input_activity_fpath fields. Updated {few_shot_updated} FewShot records"
+        )
+
+        return result

@@ -12,15 +12,16 @@ from datetime import UTC, datetime, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
 
-import docker
 import pandas as pd
-from app import email_to
-from app.database import db
-from app.extensions import rq
+from Bio import SeqIO
+from flask import current_app
+from werkzeug.exceptions import BadRequest
+
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.esm_client import FoldyESMClient
 from app.helpers.esm_util import get_naturalness
 from app.helpers.fold_storage_manager import FoldStorageManager
+from app.helpers.gpu_util import clean_up_torch_memory, log_memory_usage
 from app.helpers.jobs_util import (
     LoggingRecorder,
     _live_update_tail,
@@ -28,15 +29,59 @@ from app.helpers.jobs_util import (
     get_torch_cuda_is_available_and_add_logs,
 )
 from app.helpers.sequence_util import (
+    VALID_AMINO_ACIDS,
     get_loci_set,
     get_seq_ids_for_deep_mutational_scan,
+    is_homolog_seq_id,
     maybe_get_seq_id_error_message,
     process_and_validate_evolve_input_files,
     seq_id_to_seq,
 )
-from app.models import Dock, Embedding, Evolution, Fold, Invokation, Logit
-from flask import current_app
-from werkzeug.exceptions import BadRequest
+from app.models import Dock, Embedding, FewShot, Fold, Invokation, Naturalness
+
+
+def load_fasta_to_dict(homolog_fasta: str) -> dict[str, str]:
+    homolog_id_to_seq_map = {}
+    if homolog_fasta:
+        try:
+            fasta_io = SeqIO.parse(StringIO(homolog_fasta), "fasta")
+            for record in fasta_io:
+                homolog_id_to_seq_map[record.id] = str(record.seq)
+        except Exception as e:
+            raise ValueError(f"Invalid homolog fasta: {e}")
+    return homolog_id_to_seq_map
+
+
+def validate_embedding_inputs(
+    wt_aa_seq, extra_seq_ids, dms_starting_seq_ids, homolog_id_to_seq_map: dict[str, str]
+) -> None:
+    if ":" in wt_aa_seq or ";" in wt_aa_seq:
+        raise KeyError(
+            f"Fold seems to be a multimer which is not supported for ESM embeddings yet."
+        )
+
+    # Validate homolog IDs.
+    for seq_id, homolog_seq in homolog_id_to_seq_map.items():
+        if not is_homolog_seq_id(seq_id):
+            raise ValueError(f"Invalid homolog ID {seq_id}: must start with HOM-")
+        for aa in homolog_seq:
+            if aa not in VALID_AMINO_ACIDS:
+                raise ValueError(
+                    f"The Fasta is invalid: {seq_id} with sequence {homolog_seq}: {aa} is not a valid amino acid"
+                )
+
+    for extra_seq_id in extra_seq_ids:
+        if is_homolog_seq_id(extra_seq_id):
+            if extra_seq_id not in homolog_id_to_seq_map:
+                raise ValueError(f"Homolog sequence {extra_seq_id} not found in homolog fasta.")
+
+        seq_id_errors = maybe_get_seq_id_error_message(wt_aa_seq, extra_seq_id)
+        if seq_id_errors:
+            raise ValueError(f"Invalid extra seq id {extra_seq_id}: {seq_id_errors}")
+    for dms_starting_seq_id in dms_starting_seq_ids:
+        seq_id_errors = maybe_get_seq_id_error_message(wt_aa_seq, dms_starting_seq_id)
+        if seq_id_errors:
+            raise ValueError(f"Invalid DMS starting seq id {dms_starting_seq_id}: {seq_id_errors}")
 
 
 def get_esm_embeddings(
@@ -50,33 +95,43 @@ def get_esm_embeddings(
     # 1. Get records.
     embed_record = Embedding.get_by_id(embed_id)
     if not embed_record:
-        raise KeyError(f"Embedding ID {embed_id} ({embed_id}) not found!")
-
+        raise KeyError(f"Embedding ID {embed_id} not found!")
     embed_name = embed_record.name
     embedding_model = embed_record.embedding_model
-    dms_starting_seq_ids = (
-        embed_record.dms_starting_seq_ids.split(",") if embed_record.dms_starting_seq_ids else []
-    )
-    extra_seq_ids = embed_record.extra_seq_ids.split(",") if embed_record.extra_seq_ids else []
-    extra_layers = (
-        [int(ii) for ii in embed_record.extra_layers.split(",")]
-        if embed_record.extra_layers
-        else []
-    )
 
-    fold = embed_record.fold
-    if not fold:
-        raise KeyError(f"Embedding ID {embed_id} ({embed_name}) does not have an associated fold!")
     invokation = Invokation.get_by_id(embed_record.invokation_id)
     if not invokation:
         raise KeyError(
             f"Embedding ID {embed_id} ({embed_name}) does not have an associated invokation!"
         )
-
     with LoggingRecorder(invokation):
         logging.info(
             "Starting embedding...",
         )
+
+        dms_starting_seq_ids = (
+            embed_record.dms_starting_seq_ids.split(",")
+            if embed_record.dms_starting_seq_ids
+            else []
+        )
+        extra_seq_ids = embed_record.extra_seq_ids.split(",") if embed_record.extra_seq_ids else []
+        extra_layers = (
+            [int(ii) for ii in embed_record.extra_layers.split(",")]
+            if embed_record.extra_layers
+            else []
+        )
+        domain_boundaries = (
+            [int(ii) for ii in embed_record.domain_boundaries.split(",")]
+            if embed_record.domain_boundaries
+            else []
+        )
+        homolog_fasta = embed_record.homolog_fasta
+
+        fold = embed_record.fold
+        if not fold:
+            raise KeyError(
+                f"Embedding ID {embed_id} ({embed_name}) does not have an associated fold!"
+            )
 
         # 3. Validate seq_ids.
         if not fold.yaml_config:
@@ -88,22 +143,10 @@ def get_esm_embeddings(
             )
         wt_aa_seq = boltz_yaml_helper.get_protein_sequences()[0][1]
 
-        for extra_seq_id in extra_seq_ids:
-            error = maybe_get_seq_id_error_message(wt_aa_seq, extra_seq_id)
-            if error:
-                raise ValueError(f"Invalid seq_id in extra seq_ids: '{extra_seq_id}': {error}")
-        for dms_starting_seq_id in dms_starting_seq_ids:
-            error = maybe_get_seq_id_error_message(wt_aa_seq, dms_starting_seq_id)
-            if error:
-                raise ValueError(
-                    f"Invalid seq_id in DMS starting seq_ids: '{dms_starting_seq_id}': {error}"
-                )
-
-        # 4. Get the WT sequence.
-        if ":" in wt_aa_seq or ";" in wt_aa_seq:
-            raise KeyError(
-                f"Fold ID {fold.id} seems to be a multimer which is not supported for ESM embeddings yet."
-            )
+        homolog_id_to_seq_map = load_fasta_to_dict(homolog_fasta)
+        validate_embedding_inputs(
+            wt_aa_seq, extra_seq_ids, dms_starting_seq_ids, homolog_id_to_seq_map
+        )
 
         logging.info(
             f"Getting all sequence IDs (dms_starting_seq_ids: {dms_starting_seq_ids}; extra_seq_ids: {extra_seq_ids})"
@@ -121,7 +164,9 @@ def get_esm_embeddings(
         foldy_esm_client = FoldyESMClient.get_client(embedding_model)
 
         def get_embedding_dict(seq_id, seq):
-            embedding_list = foldy_esm_client.embed(seq, extra_layers=extra_layers)
+            embedding_list = foldy_esm_client.embed(
+                seq, extra_layers=extra_layers, domain_boundaries=domain_boundaries
+            )
             output_dict = {
                 "seq_id": seq_id,
                 "seq": seq,
@@ -136,9 +181,21 @@ def get_esm_embeddings(
         embedding_dicts = []
 
         for ii, seq_id in enumerate(dms_seq_ids):
-            embedding_dicts.append(get_embedding_dict(seq_id, seq_id_to_seq(wt_aa_seq, seq_id)))
+            if is_homolog_seq_id(seq_id):
+                if seq_id not in homolog_id_to_seq_map:
+                    raise ValueError(
+                        f"Full seq id {seq_id} not found in full_seq_id_to_seq_map populated from extra_seq_ids."
+                    )
+                sequence = homolog_id_to_seq_map[seq_id]
+            else:
+                sequence = seq_id_to_seq(wt_aa_seq, seq_id)
+
+            embedding_dicts.append(get_embedding_dict(seq_id, sequence))
             if ii % 100 == 0:
                 logging.info(f"Finished embedding {ii}/{len(dms_seq_ids)}")
+            if ii % 2000 == 0:
+                log_memory_usage()
+                clean_up_torch_memory()
 
         embedding_df = pd.DataFrame(embedding_dicts)
 
@@ -156,30 +213,43 @@ def get_esm_embeddings(
         fsm.setup()
         fsm.storage_manager.write_file(fold.id, embedding_path, embedding_csv_string)
 
+        # Try writing homolog_fasta to file.
+        if homolog_fasta:
+            try:
+                homolog_fasta_path = f"embed/{padded_fold_id}_embeddings_{embedding_model}_{embed_name}_homologs.fasta"
+                fsm.storage_manager.write_file(fold.id, homolog_fasta_path, homolog_fasta)
+            except Exception as e:
+                logging.error(f"Error writing homolog fasta to file: {e}")
 
-def get_esm_logits(logit_id: int):
-    """Compute the ESM logits and store them with the storage manager.
+        embed_record.output_fpath = embedding_path
+        embed_record.save()
+
+
+def get_esm_naturalness(naturalness_id: int):
+    """Compute the ESM naturalness and store them with the storage manager.
 
     Arguments:
-        logit_id: ID of the logit record to run.
+        naturalness_id: ID of the naturalness record to run.
     """
-    logit_record = Logit.get_by_id(logit_id)
-    if not logit_record:
-        raise KeyError(f"Logit ID {logit_id} not found!")
+    naturalness_record = Naturalness.get_by_id(naturalness_id)
+    if not naturalness_record:
+        raise KeyError(f"Naturalness ID {naturalness_id} not found!")
 
-    logit_name = logit_record.name
-    logit_model = logit_record.logit_model
-    fold = logit_record.fold
+    naturalness_name = naturalness_record.name
+    naturalness_model = naturalness_record.logit_model
+    fold = naturalness_record.fold
     if not fold:
-        raise KeyError(f"Logit ID {logit_id} ({logit_name}) does not have an associated fold!")
-    invokation = Invokation.get_by_id(logit_record.invokation_id)
+        raise KeyError(
+            f"Naturalness ID {naturalness_id} ({naturalness_name}) does not have an associated fold!"
+        )
+    invokation = Invokation.get_by_id(naturalness_record.invokation_id)
     if not invokation:
         raise KeyError(
-            f"Logit ID {logit_id} ({logit_name}) does not have an associated invokation!"
+            f"Naturalness ID {naturalness_id} ({naturalness_name}) does not have an associated invokation!"
         )
 
     with LoggingRecorder(invokation):
-        logging.info("Starting logit...")
+        logging.info("Starting naturalness...")
 
         fsm = FoldStorageManager()
         fsm.setup()
@@ -195,24 +265,24 @@ def get_esm_logits(logit_id: int):
         else:
             protein_input = boltz_yaml_helper.get_protein_sequences()[0][1]
 
-        get_depth_two_logits = logit_record.get_depth_two_logits or False
+        get_depth_two_logits = naturalness_record.get_depth_two_logits or False
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            if logit_record.use_structure:
-                pdb_binary = fsm.storage_manager.get_binary(fold.id, "ranked_0.pdb")
-                with open(os.path.join(temp_dir, "ranked_0.pdb"), "wb") as f:
+            if naturalness_record.use_structure:
+                pdb_binary = fsm.storage_manager.get_binary(fold.id, "ranked_0.cif")
+                with open(os.path.join(temp_dir, "ranked_0.cif"), "wb") as f:
                     f.write(pdb_binary)
-                pdb_file_path = os.path.join(temp_dir, "ranked_0.pdb")
+                cif_file_path = os.path.join(temp_dir, "ranked_0.cif")
             else:
-                pdb_file_path = None
+                cif_file_path = None
 
-            if logit_model == "esm1v_t33_650M_UR90S_ensemble":
+            if naturalness_model == "esm1v_t33_650M_UR90S_ensemble":
                 logits_dicts_list = []
                 melted_df_list = []
                 for ii in range(1, 6):
                     submodel = f"esm1v_t33_650M_UR90S_{ii}"
                     logits_json, melted_df = get_naturalness(
-                        protein_input, submodel, get_depth_two_logits, pdb_file_path
+                        protein_input, submodel, get_depth_two_logits, cif_file_path
                     )
                     logits_dicts_list.append(json.loads(logits_json))
                     melted_df_list.append(melted_df.assign(model=ii))
@@ -220,7 +290,7 @@ def get_esm_logits(logit_id: int):
                 melted_df = pd.concat(melted_df_list)
             else:
                 logits_json, melted_df = get_naturalness(
-                    protein_input, logit_model, get_depth_two_logits, pdb_file_path
+                    protein_input, naturalness_model, get_depth_two_logits, cif_file_path
                 )
 
         melted_csv_buffer = StringIO()
@@ -228,35 +298,39 @@ def get_esm_logits(logit_id: int):
         melted_csv_string = melted_csv_buffer.getvalue()
 
         # Save both formats using FoldStorageManager
-        logging.info("Saving logits to storage")
-        padded_fold_id = "%06d" % fold.id
-        logits_path = f"naturalness/logits_{logit_name}.json"
-        melted_path = f"naturalness/logits_{logit_name}_melted.csv"
+        logging.info("Saving naturalness to storage")
+        logits_path = f"naturalness/naturalness_{naturalness_name}.json"
+        melted_path = f"naturalness/naturalness_{naturalness_name}_melted.csv"
 
         fsm.storage_manager.write_file(fold.id, logits_path, logits_json)
         fsm.storage_manager.write_file(fold.id, melted_path, melted_csv_string)
 
-        logging.info("Logits computation and storage complete")
+        # Update the naturalness record with the output file path
+        naturalness_record.output_fpath = melted_path
+        naturalness_record.save()
+
+        logging.info("Naturalness computation and storage complete")
 
 
-def finetune_esm_model(evolve_id: int):
+def finetune_esm_model(few_shot_id: int):
     """Run the evolvepro workflow."""
 
-    evolve = Evolution.get_by_id(evolve_id)
-    if not evolve:
-        raise BadRequest(f"Evolution {evolve_id} not found")
-    fold = Fold.get_by_id(evolve.fold_id)
+    few_shot = FewShot.get_by_id(few_shot_id)
+    if not few_shot:
+        raise BadRequest(f"FewShot {few_shot_id} not found")
+    fold = Fold.get_by_id(few_shot.fold_id)
     if not fold:
-        raise BadRequest(f"Fold {evolve.fold_id} not found")
-    invokation = Invokation.get_by_id(evolve.invokation_id)
+        raise BadRequest(f"Fold {few_shot.fold_id} not found")
+    invokation = Invokation.get_by_id(few_shot.invokation_id)
     if not invokation:
-        raise BadRequest(f"Invokation {evolve.invokation_id} not found")
+        raise BadRequest(f"Invokation {few_shot.invokation_id} not found")
 
     with LoggingRecorder(invokation):
         logging.info("Starting finetuning...")
 
         logging.info("Loading training code.")
         import torch
+
         from app.helpers.finetuning.training import score_sequences, train_per_protein
 
         if not fold.yaml_config:
@@ -272,10 +346,10 @@ def finetune_esm_model(evolve_id: int):
         fsm.setup()
 
         # 1. Get the activity file.
-        evolve_directory = Path("evolve") / evolve.name
-        activity_file_path = evolve_directory / "activity.xlsx"
+        few_shot_directory = Path("few_shots") / few_shot.name
+        activity_file_path = few_shot_directory / "activity.xlsx"
         logging.info(f"Getting the activity file {activity_file_path}")
-        activity_file = fsm.storage_manager.get_binary(evolve.fold_id, str(activity_file_path))
+        activity_file = fsm.storage_manager.get_binary(few_shot.fold_id, str(activity_file_path))
         raw_activity_df = pd.read_excel(BytesIO(activity_file))
 
         # 3. Process the activity and embedding data.
@@ -292,7 +366,7 @@ def finetune_esm_model(evolve_id: int):
 
         elif all([v in raw_activity_df.columns for v in ["seq_id", "activity"]]):
             loss = "entropy"
-            activity_df, _ = process_and_validate_evolve_input_files(wt_aa_seq, raw_activity_df)
+            activity_df, _, _ = process_and_validate_evolve_input_files(wt_aa_seq, raw_activity_df)
             # Convert activity_df, which has seq_id and activity, into train and valid dfs with an 80/20 split and columns sequence and label.
             activity_df["sequence"] = activity_df["seq_id"].apply(
                 lambda seq_id: seq_id_to_seq(wt_aa_seq, seq_id)
@@ -319,7 +393,7 @@ def finetune_esm_model(evolve_id: int):
 
         epochs = 10
         learning_rate = 3e-4
-        possible_params = evolve.name.split("_")
+        possible_params = few_shot.name.split("_")
         for possible_param in possible_params:
             parts = possible_param.split("=")
             if len(parts) == 2:
@@ -331,7 +405,7 @@ def finetune_esm_model(evolve_id: int):
 
         # Save model outputs
         padded_fold_id = "%06d" % fold.id
-        model_dir = f"evolve/{evolve.name}/model"
+        model_dir = f"few_shots/{few_shot.name}/model"
 
         # Declare these outside the with block
         tokenizer = None
@@ -345,7 +419,7 @@ def finetune_esm_model(evolve_id: int):
 
             # Example: enable ranking loss
             tokenizer, model, history = train_per_protein(
-                checkpoint=evolve.finetuning_model_checkpoint,
+                checkpoint=few_shot.finetuning_model_checkpoint,
                 train_df=train_df,
                 valid_df=valid_df,
                 device=torch.device("cuda" if gpu_available else "cpu"),
@@ -379,7 +453,7 @@ def finetune_esm_model(evolve_id: int):
         # Score sequences and save results
         logging.info(f"Scoring {len(dms_seq_ids)} sequences")
         scores_df = score_sequences(model, tokenizer, wt_aa_seq, dms_seq_ids)
-        scores_fpath = f"evolve/{evolve.name}/scores.csv"
+        scores_fpath = f"few_shots/{few_shot.name}/scores.csv"
         logging.info(f"Saving scores to {scores_fpath}")
         scores_csv = scores_df.to_csv(index=False)
         fsm.storage_manager.write_file(fold.id, scores_fpath, scores_csv)

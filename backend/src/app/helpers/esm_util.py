@@ -4,6 +4,7 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 import pandas as pd
+
 from app.helpers.jobs_util import get_torch_cuda_is_available_and_add_logs
 from app.helpers.sequence_util import (
     get_seq_ids_for_deep_mutational_scan,
@@ -15,7 +16,7 @@ def get_naturalness(
     wt_aa_seq: str,
     logit_model: str,
     get_depth_two_logits: Optional[bool] = False,
-    pdb_file_path: Optional[str] = None,
+    cif_file_path: Optional[str] = None,
 ) -> Tuple[str, pd.DataFrame]:
     """
     Compute naturalness scores for a given wild-type amino acid sequence.
@@ -24,7 +25,7 @@ def get_naturalness(
         wt_aa_seq: Wild-type amino acid sequence
         logit_model: ESM model name to use for logit computation
         get_depth_two_logits: If True, compute logits for all second-order mutants
-        pdb_file_path: Optional path to PDB file for structure-aware models
+        cif_file_path: Optional path to CIF file for structure-aware models
 
     Returns:
         Tuple containing:
@@ -34,6 +35,7 @@ def get_naturalness(
     # Import ESM client
     logging.info(f"Creating ESM client for {logit_model}")
     import torch
+
     from app.helpers.esm_client import FoldyESMClient
 
     # Log cache directories
@@ -69,7 +71,7 @@ def get_naturalness(
         melted_df_list: List[pd.DataFrame] = []
         for ii, base_seq_id in enumerate(base_seq_ids):
             base_seq = seq_id_to_seq(wt_aa_seq, base_seq_id)
-            melted_df = client.get_logits(base_seq, pdb_file_path)
+            melted_df = client.get_logits(base_seq, cif_file_path)
             melted_df["base_seq_id"] = base_seq_id
             melted_df_list.append(melted_df)
 
@@ -78,7 +80,7 @@ def get_naturalness(
         melted_df = pd.concat(melted_df_list)
         return "", melted_df
     else:
-        melted_df = client.get_logits(wt_aa_seq, pdb_file_path)
+        melted_df = client.get_logits(wt_aa_seq, cif_file_path)
 
         # Process the melted dataframe to add WT marginal scores
         logging.info("Processing logits and preparing to save")

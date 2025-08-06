@@ -10,12 +10,9 @@ from typing import (
     Optional,
     Tuple,
     Union,
+    cast,
 )
 
-from app.authorization import user_jwt_grants_edit_access, verify_has_edit_access
-from app.extensions import db, rq
-from app.helpers.fold_storage_manager import FoldStorageManager
-from app.models import Dock, Fold, Invokation
 from flask import (
     Response,
     current_app,
@@ -25,38 +22,15 @@ from flask import (
     stream_with_context,
 )
 from flask_jwt_extended import jwt_required
-from flask_jwt_extended.utils import get_jwt, get_jwt_identity
-from flask_restx import Namespace, Resource, fields, reqparse
+from flask_restx import Namespace, Resource, fields
 from sqlalchemy.sql.elements import and_
 from werkzeug.exceptions import BadRequest
 
+from app.extensions import db
+from app.helpers.fold_storage_manager import FoldStorageManager
+from app.models import Dock, Fold, Invokation
+
 ns = Namespace("file_views", decorators=[jwt_required(fresh=True)])
-
-fold_pdb_fields = ns.model(
-    "FoldPdb",
-    {
-        "pdb_string": fields.String(readonly=True),
-    },
-)
-
-
-# @compress.compressed()
-@ns.route("/fold_pdb/<int:fold_id>/<int:model_number>")
-class FoldResource(Resource):
-    @ns.marshal_with(fold_pdb_fields)
-    def get(self, fold_id: int, model_number: int) -> Dict[str, str]:
-        """Get PDB string for a specific fold and model number.
-
-        Args:
-            fold_id: ID of the fold
-            model_number: Model number to retrieve
-
-        Returns:
-            Dict containing PDB string
-        """
-        manager = FoldStorageManager()
-        manager.setup()
-        return {"pdb_string": manager.get_fold_pdb(fold_id, model_number)}
 
 
 fold_file_zip_fields = ns.model(
@@ -71,7 +45,7 @@ fold_file_zip_fields = ns.model(
 
 # @compress.compressed()
 @ns.route("/fold_file_zip")
-class FoldPdbZipResource(Resource):
+class FoldFileZipResource(Resource):
     @ns.expect(fold_file_zip_fields)
     def post(self):
         """Get zip file containing multiple fold files.
@@ -94,33 +68,7 @@ class FoldPdbZipResource(Resource):
                 output_dirname,
             ),
             mimetype="application/octet-stream",
-            download_name="fold_pdbs.zip",
-            as_attachment=True,
-        )
-
-
-@ns.route("/fold_pkl/<int:fold_id>/<int:model_number>")
-class FoldPklResource(Resource):
-    def post(self, fold_id: int, model_number: int):
-        """Get pickle file for a specific fold and model number.
-
-        Args:
-            fold_id: ID of the fold
-            model_number: Model number to retrieve
-
-        Returns:
-            Pickle file of the model
-        """
-        manager = FoldStorageManager()
-        manager.setup()
-        pkl_byte_str = manager.get_fold_pkl(fold_id, model_number)
-        # TODO: Stream!
-        # https://flask.palletsprojects.com/en/1.1.x/patterns/streaming/
-        # https://www.reddit.com/r/Python/comments/dha9kw/flask_send_large_file/
-        return send_file(
-            io.BytesIO(pkl_byte_str),
-            mimetype="application/octet-stream",
-            download_name="model.pkl",
+            download_name="fold_files.zip",
             as_attachment=True,
         )
 
@@ -182,23 +130,6 @@ class FoldFileResource(Resource):
         return manager.storage_manager.list_files(fold_id)
 
 
-# @ns.route("/file/download/<int:fold_id>/<path:subpath>")
-# class FileDownloadResource(Resource):
-#     def post(self, fold_id, subpath):
-#         # TODO: test this.
-#         print(f"Fetching {subpath}...")
-#         manager = FoldStorageManager()
-#         manager.setup()
-#         sdf_str = manager.storage_manager.get_binary(fold_id, subpath)
-#         fname = subpath.split("/")[-1]
-#         return send_file(
-#             io.BytesIO(sdf_str),
-#             mimetype="application/octet-stream",
-#             download_name=fname,
-#             as_attachment=True,
-#         )
-
-
 @ns.route("/file/download/<int:fold_id>/<path:subpath>")
 class FileDownloadResource(Resource):
     def get(self, fold_id: int, subpath: str) -> Union[Response, Tuple[Dict[str, str], int]]:
@@ -237,7 +168,7 @@ class FileDownloadResource(Resource):
                         chunk = f.read(1024 * 1024)  # 1MB chunks
                         if not chunk:
                             break
-                        yield chunk
+                        yield cast(bytes, chunk)  # blob opened in 'rb' mode guarantees bytes
             except Exception as e:
                 print(f"Error during file streaming: {str(e)}")
                 return

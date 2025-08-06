@@ -7,14 +7,18 @@ low-N protein engineering campaigns where little training data
 is available.
 """
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Type, cast
 
 import numpy as np
 import pandas as pd
-from folde.util import get_consensus_scores, internal_sample_n_indices
 from numpy.typing import NDArray
 from pandas import DataFrame, Series
+from sklearn.neighbors import KNeighborsRegressor
+
+from app.helpers.sequence_util import is_homolog_seq_id
+from folde.util import get_consensus_scores, internal_sample_n_indices
 
 # Registry of available zero-shot models
 _ZERO_SHOT_MODELS = {}
@@ -45,6 +49,14 @@ class ZeroShotModel(ABC):
         """
         self.temperature = temperature
         self.epsilon = epsilon
+
+    def pretrain(
+        self,
+        naturalness_series: pd.Series,
+        embedding_series: pd.Series,
+    ) -> "ZeroShotModel":
+        """Optional method to pretrain the model on naturalness and embedding data."""
+        return self
 
     @abstractmethod
     def predict(
@@ -167,6 +179,39 @@ class NaturalnessZeroShotModel(ZeroShotModel):
             **kwargs: Additional parameters
         """
         super().__init__(**kwargs)
+        self.is_pretrained = False
+        self.single_mutant_naturalness_series: Optional[pd.Series] = None
+
+    def pretrain(
+        self,
+        naturalness_series: pd.Series,
+        embedding_series: pd.Series,
+    ) -> "NaturalnessZeroShotModel":
+        assert naturalness_series.index.equals(embedding_series.index)
+        assert embedding_series.index.is_unique, "embedding_series contains duplicate indices"
+
+        if self.is_pretrained:
+            raise ValueError("Model is already pretrained.")
+
+        assert not naturalness_series.isna().any(), "naturalness_series contains NANs"
+
+        logging.info(
+            f"Pretraining model with naturalness data with {len(naturalness_series)} naturalness measurements."
+        )
+
+        X = np.array([np.array(emb) for emb in embedding_series.values])
+        y = naturalness_series.values
+
+        # Fit KNN regressor
+        knn = KNeighborsRegressor(n_neighbors=5)
+        knn.fit(X, y)
+        self.is_pretrained = True
+        self.knn = knn
+
+        # Also store the naturalness series for prediction later.
+        self.single_mutant_naturalness_series = naturalness_series
+
+        return self
 
     def predict(
         self, naturalness_series: pd.Series, embedding_series: Optional[pd.Series] = None
@@ -174,13 +219,73 @@ class NaturalnessZeroShotModel(ZeroShotModel):
         """Predict using naturalness scores.
 
         Args:
-            naturalness_df: DataFrame containing 'wt_marginal' column
-            embedding_df: Not used by this model, but included for API consistency
+            naturalness_series: Series containing naturalness scores, some of which may be NAN.
+            embedding_series: Optional Series containing protein embeddings
 
         Returns:
             Array of prediction scores based on naturalness
         """
-        return [naturalness_series]
+
+        def get_naturalness(seq_id, direct_naturalness) -> float:
+            """Try computing naturalness for mutants even if none was provided by extrapolating for multimutants."""
+            if direct_naturalness is not None and not pd.isna(direct_naturalness):
+                return direct_naturalness
+
+            if is_homolog_seq_id(seq_id):
+                return np.nan
+
+            # Break it down into single mutants.
+            seq_id_parts = seq_id.split("_")
+
+            # For multimutants, we compute naturalness as the product of the naturalness of the single mutants.
+            assert (
+                self.single_mutant_naturalness_series is not None
+            ), "Model is not pretrained, so cannot fill in NANs from the pretrain data which is sometimes how we get single mutant naturalness..."
+            computed_naturalness = self.single_mutant_naturalness_series.loc[seq_id_parts].prod()
+            if pd.isna(computed_naturalness):
+                raise ValueError(
+                    f"Computed naturalness is NAN for {seq_id} with parts {seq_id_parts}"
+                )
+            return computed_naturalness
+
+        computed_naturalness_series = naturalness_series.reset_index(name="wt_marginal").apply(
+            lambda r: get_naturalness(r.seq_id, r.wt_marginal), axis=1
+        )
+        computed_naturalness_series.index = naturalness_series.index
+
+        # Do KNN imputation to fill in NANs from homologs.
+        if computed_naturalness_series.isna().any():
+            if not self.is_pretrained:
+                raise ValueError("Model is not pretrained, so cannot fill in NANs from homologs.")
+
+            logging.info(
+                f"Filling in NANs from homologs for {computed_naturalness_series.isna().sum()}/{len(computed_naturalness_series)} naturalness values."
+            )
+            assert embedding_series is not None
+            embedding_array = np.array([np.array(emb) for emb in embedding_series.values])
+            naturalness_array = computed_naturalness_series.values
+
+            # Find indices for known and missing
+            missing_mask = computed_naturalness_series.isna().to_numpy()
+            X_missing = embedding_array[missing_mask]
+
+            imputed_values = self.knn.predict(X_missing)
+
+            # Fill in the missing values
+            imputed_naturalness = naturalness_array.copy()
+            imputed_naturalness[missing_mask] = imputed_values
+
+            # Convert back to Series
+            computed_naturalness_series = pd.Series(
+                imputed_naturalness, index=naturalness_series.index
+            )
+
+        if computed_naturalness_series.isna().any():
+            raise ValueError(
+                f"Computed naturalness series still has NANs: {computed_naturalness_series.isna().sum()}/{len(computed_naturalness_series)}"
+            )
+
+        return [computed_naturalness_series]
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information about the model.

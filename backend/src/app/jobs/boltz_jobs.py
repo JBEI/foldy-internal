@@ -1,64 +1,25 @@
-import glob
 import io
-import json
 import logging
-import os
+import string
 import subprocess
-import tempfile
-import time
-import traceback
-from datetime import UTC, datetime, timedelta
-from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import joblib
-import numpy as np
-import pandas as pd
+from Bio.PDB.MMCIFParser import (
+    MMCIFParser,  # type: ignore[reportPrivateImportUsage] # Bio.PDB module structure quirk
+)
+from Bio.PDB.PDBIO import (
+    PDBIO,  # type: ignore[reportPrivateImportUsage] # Bio.PDB module structure quirk
+)
+from werkzeug.exceptions import BadRequest
+
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.jobs_util import (
     LoggingRecorder,
-    _live_update_tail,
-    _psql_tail,
     get_torch_cuda_is_available_and_add_logs,
 )
-from app.helpers.sequence_util import (
-    get_loci_set,
-)
-from app.models import Evolution, Fold, Invokation
-from Bio.PDB import PDBIO, MMCIFParser
-from sklearn.ensemble import RandomForestRegressor
-from werkzeug.exceptions import BadRequest
-
-
-def cif_to_pdb(cif_file: str, structure_id: str):
-    """
-    Convert mmCIF file to PDB format using Biopython.
-
-    Parameters
-    ----------
-    cif_file : str
-        Path to the input mmCIF file.
-
-    Returns:
-        PDB file contents as a string.
-    """
-    # Create a parser for mmCIF
-    parser = MMCIFParser()
-
-    # Read the structure from the mmCIF file
-    structure = parser.get_structure(structure_id, cif_file)
-
-    # Initialize PDBIO for writing PDB files
-    pdb_io = PDBIO()
-    pdb_io.set_structure(structure)
-
-    # Write out to PDB
-    pdb_file_contents = io.StringIO()
-    pdb_io.save(pdb_file_contents)
-    pdb_file_contents.seek(0)
-    return pdb_file_contents.read()
+from app.models import Fold, Invokation
 
 
 def try_check_smiles_string_validity(smiles_string):
@@ -132,7 +93,7 @@ def run_boltz(fold_id, invokation_id):
             gpu_available = get_torch_cuda_is_available_and_add_logs(logging.info)
             accelerator = "gpu" if gpu_available else "cpu"
             boltz_command = [
-                "/opt/conda/envs/worker/bin/boltz",
+                "/opt/conda/envs/boltzenv/bin/boltz",
                 "predict",
                 str(yaml_file_path),
                 "--out_dir",
@@ -146,6 +107,7 @@ def run_boltz(fold_id, invokation_id):
                 "/hf-cache/",
                 "--num_workers",
                 "0",  # Should this be 1 or 0? 1 seems to work ok, but zero doesnt spin up any workers (a behavior which seems to cause a "pin memory" issue for foldy-in-a-box).
+                "--use_potentials",
                 "--write_full_pae",
                 "--write_full_pde",
             ]
@@ -174,10 +136,18 @@ def run_boltz(fold_id, invokation_id):
             # Use glob to find all files matching the pattern
             cif_files = list(Path(temp_dir).glob("boltz_results*/predictions/*/*_model_0.cif"))
             logging.info(f"Found {len(cif_files)} cif files: {cif_files}")
-            if len(cif_files) > 0:
-                cif_file = cif_files[0]
-                logging.info(f"Copying {cif_file} to ranked_0.pdb")
+            if len(cif_files) == 0:
+                logging.error(f"No CIF files found in {temp_dir}")
+                raise BadRequest(f"No CIF files found in {temp_dir}")
 
-                pdb_file_contents = cif_to_pdb(str(cif_file), "structure")
-                fsm.storage_manager.write_file(fold_id, "ranked_0.pdb", pdb_file_contents)
+            cif_file = cif_files[0]
+            logging.info(f"Copying {cif_file} to ranked_0.cif")
+
+            try:
+                fsm.storage_manager.write_file(fold_id, "ranked_0.cif", cif_file.read_text())
+            except Exception as e:
+                logging.error(f"Error writing CIF to cif: {e}")
+                raise e
+
+            logging.info("We no longer convert CIF to PDB. In this case, CIF format is superior!!!")
             logging.info(f"Finished!")

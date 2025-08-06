@@ -6,19 +6,33 @@ protein properties from embeddings. Models are thin wrappers around
 scikit-learn implementations with additional protein-specific functionality.
 """
 
+import logging
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
 
-import logging
 import numpy as np
 import pandas as pd
-from app.helpers.preference_ranking import create_preference_model
-from folde.util import get_consensus_scores, internal_sample_n_indices
+import torch
 from numpy.typing import NDArray
 from pandas import DataFrame, Series
 from sklearn.ensemble import RandomForestRegressor as SklearnRandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import KFold
 from sklearn.neural_network import MLPRegressor as SklearnMLPRegressor
+
+from app.helpers.preference_ranking import (
+    BradleyTerryMLP,
+    PreferenceTrainer,
+    create_preference_model,
+)
+from app.helpers.sequence_util import sort_seq_id_list
+from folde.util import (
+    cluster_sort_seq_ids,
+    constant_liar_sample,
+    get_consensus_scores,
+    internal_sample_n_indices,
+)
 
 # Registry of available models
 _FEW_SHOT_MODELS = {}
@@ -28,11 +42,31 @@ class FewShotModel(ABC):
     """Abstract base class for few-shot protein property prediction models."""
 
     def __init__(
-        self, decision_mode: str = "median", temperature: float = 0.0, epsilon: float = 0.0
+        self,
+        wt_aa_seq: str,
+        lie_noise_stddev_multiplier: float | None = None,
+        lie_noise_stddev_multiplier_schedule: list[float] | None = None,
+        decision_mode: str = "median",
+        ucb_beta: float | None = None,
+        temperature: float = 0.0,
+        epsilon: float = 0.0,
     ):
+        self.wt_aa_seq = wt_aa_seq
+        self.lie_noise_stddev_multiplier = lie_noise_stddev_multiplier
+        self.lie_noise_stddev_multiplier_schedule = lie_noise_stddev_multiplier_schedule
         self.decision_mode = decision_mode
+        self.ucb_beta = ucb_beta
         self.temperature = temperature
         self.epsilon = epsilon
+        self.selection_debug_info: dict[str, Any] = {}
+
+    def pretrain(
+        self,
+        naturalness_series: pd.Series,
+        embedding_series: pd.Series,
+    ) -> "FewShotModel":
+        """Optional method to pretrain the model on naturalness and embedding data."""
+        return self
 
     @abstractmethod
     def fit(
@@ -40,8 +74,9 @@ class FewShotModel(ABC):
         naturalness_series: pd.Series,
         embedding_series: pd.Series,
         measured_activity_series: pd.Series,
-        validation_activity_series: Optional[pd.Series] = None,
-        **kwargs,
+        test_naturalness_series: pd.Series | None = None,
+        test_embedding_series: pd.Series | None = None,
+        test_activity_series: Optional[pd.Series] = None,
     ) -> "FewShotModel":
         """Train the model on the given data."""
         pass
@@ -63,8 +98,8 @@ class FewShotModel(ABC):
 
         Args:
             n: Number of top variants to return
-            naturalness_df: DataFrame containing naturalness scores
-            embedding_df: DataFrame containing protein embeddings
+            naturalness_series: Series of naturalness scores indexed by seq_id
+            embedding_series: Series of embeddings indexed by seq_id
 
         Returns:
             Tuple of
@@ -79,24 +114,74 @@ class FewShotModel(ABC):
         # Convert list of embeddings to numpy array
         ensemble_of_predictions = self.predict(naturalness_series, embedding_series)
 
-        ensemble_scores = get_consensus_scores(ensemble_of_predictions, self.decision_mode)
+        self.selection_debug_info = {"sorts": {}}
 
-        chosen_indices = internal_sample_n_indices(
-            ensemble_scores.to_numpy(),
-            n,
-            temperature=self.temperature,
-            epsilon=self.epsilon,
-        )
+        if self.decision_mode == "constantliar" or self.decision_mode == "krigingbeliever":
+            if self.lie_noise_stddev_multiplier is not None:
+                lie_noise_stddev_multiplier = self.lie_noise_stddev_multiplier
+            elif self.lie_noise_stddev_multiplier_schedule is not None:
+                lie_noise_stddev_multiplier = self.lie_noise_stddev_multiplier_schedule[0]
+                self.lie_noise_stddev_multiplier_schedule = (
+                    self.lie_noise_stddev_multiplier_schedule[1:]
+                )
+                logging.info(
+                    f"Using lie_noise_stddev_multiplier {lie_noise_stddev_multiplier} for this round and {self.lie_noise_stddev_multiplier_schedule} remaining."
+                )
+            else:
+                raise ValueError(
+                    "Either lie_noise_stddev_multiplier or lie_noise_stddev_multiplier_schedule must be set."
+                )
+
+            ensemble_scores = get_consensus_scores(ensemble_of_predictions, "mean")
+            pred_df = {
+                f"model_{ii}": ensemble_of_predictions[ii]
+                for ii in range(len(ensemble_of_predictions))
+            }
+            pred_df["score"] = ensemble_scores
+            pred_df = pd.DataFrame(pred_df, index=ensemble_of_predictions[0].index).sort_values(
+                "score", ascending=False
+            )
+            cl_considerations = pred_df.drop(columns=["score"]).iloc[:5000]
+            chosen_seq_ids = constant_liar_sample(
+                cl_considerations.to_numpy(),
+                cl_considerations.index.to_numpy(),
+                n,
+                lie_noise_stddev_multiplier=lie_noise_stddev_multiplier,
+                choice_of_baseline="min" if self.decision_mode == "constantliar" else "mean",
+                ucb_beta=self.ucb_beta if self.ucb_beta is not None else 0.0,
+            )
+
+            self.selection_debug_info["sorts"]["selection_order"] = chosen_seq_ids
+            try:
+                self.selection_debug_info["sorts"]["cluster_order"] = cluster_sort_seq_ids(
+                    pred_df.loc[chosen_seq_ids]
+                )
+            except Exception as e:
+                logging.error(f"Error clustering seq_ids: {e}")
+
+            self.selection_debug_info["sorts"]["seq_id_order"] = sort_seq_id_list(
+                self.wt_aa_seq, chosen_seq_ids
+            )
+        else:
+            ensemble_scores = get_consensus_scores(ensemble_of_predictions, self.decision_mode)
+            chosen_indices = internal_sample_n_indices(
+                ensemble_scores.to_numpy(),
+                n,
+                temperature=self.temperature,
+                epsilon=self.epsilon,
+            )
+            chosen_seq_ids = naturalness_series.index[chosen_indices].tolist()
+            self.selection_debug_info["sorts"]["selection_order"] = chosen_seq_ids
 
         return (
-            naturalness_series.index[chosen_indices].tolist(),
+            chosen_seq_ids,
             ensemble_of_predictions,
         )
 
     @abstractmethod
     def get_debug_info(self) -> Dict[str, Any]:
         """Get model-specific debug information."""
-        pass
+        return self.selection_debug_info
 
 
 def register_few_shot_model(model_class: Type[FewShotModel]) -> Type[FewShotModel]:
@@ -119,11 +204,7 @@ class RandomFewShotModel(FewShotModel):
     """Just guess random activity."""
 
     def __init__(self, random_state: int, **kwargs):
-        super().__init__(
-            decision_mode=kwargs.pop("decision_mode", "median"),
-            temperature=kwargs.pop("temperature", 0.0),
-            epsilon=kwargs.pop("epsilon", 0.0),
-        )
+        super().__init__(**kwargs)
         self.random_state = random_state
 
     def fit(
@@ -131,8 +212,9 @@ class RandomFewShotModel(FewShotModel):
         naturalness_series: pd.Series,
         embedding_series: pd.Series,
         measured_activity_series: pd.Series,
-        validation_activity_series: Optional[pd.Series] = None,
-        **kwargs,
+        test_naturalness_series: pd.Series | None = None,
+        test_embedding_series: pd.Series | None = None,
+        test_activity_series: Optional[pd.Series] = None,
     ) -> "RandomFewShotModel":
         return self
 
@@ -163,17 +245,14 @@ class MLPFewShotModel(FewShotModel):
     def __init__(self, ensemble_size: int = 1, **kwargs):
         """Initialize the MLP regressor with any parameters supported by sklearn's MLPRegressor."""
         super().__init__(
+            wt_aa_seq=kwargs.pop("wt_aa_seq"),
+            lie_noise_stddev_multiplier=kwargs.pop("lie_noise_stddev_multiplier", 4.0),
             decision_mode=kwargs.pop("decision_mode", "median"),
             temperature=kwargs.pop("temperature", 0.0),
             epsilon=kwargs.pop("epsilon", 0.0),
         )
         self.ensemble_size = ensemble_size
-        base_random_state = kwargs.pop("random_state", 0)
-        self.models: List[SklearnMLPRegressor] = [
-            SklearnMLPRegressor(**kwargs, random_state=base_random_state + ii)
-            for ii in range(ensemble_size)
-        ]
-        self.metrics_: Dict[str, float] = {}
+        self.base_random_state = kwargs.pop("random_state", 0)
         self.is_fitted: bool = False
 
     def fit(
@@ -181,7 +260,9 @@ class MLPFewShotModel(FewShotModel):
         naturalness_series: pd.Series,
         embedding_series: pd.Series,
         measured_activity_series: pd.Series,
-        validation_activity_series: Optional[pd.Series] = None,
+        test_naturalness_series: pd.Series | None = None,
+        test_embedding_series: pd.Series | None = None,
+        test_activity_series: Optional[pd.Series] = None,
         **kwargs,
     ) -> "MLPFewShotModel":
         """Train the MLP regressor.
@@ -190,13 +271,20 @@ class MLPFewShotModel(FewShotModel):
             naturalness_series: Series of ALL mutants' naturalness scores indexed by seq_id
             embedding_series: Series of ALL mutants' embeddings indexed by seq_id
             measured_activity_series: Series of measured activity measurements indexed by seq_id
-            validation_activity_series: Optional series of validation activity measurements indexed by seq_id
+            test_activity_series: Optional series of test activity measurements indexed by seq_id
             **kwargs: Additional parameters passed to sklearn's fit method
 
         Returns:
             Self for method chaining
         """
         assert naturalness_series.index.equals(embedding_series.index)
+
+        # Reset state! We might have called "fit" already and should blank that out.
+        self.models: List[SklearnMLPRegressor] = [
+            SklearnMLPRegressor(**kwargs, random_state=self.base_random_state + ii)
+            for ii in range(self.ensemble_size)
+        ]
+        self.metrics_: Dict[str, float] = {}
 
         measured_embedding_series = embedding_series.loc[measured_activity_series.index]
         X = np.array([np.array(emb) for emb in measured_embedding_series.values])
@@ -217,7 +305,7 @@ class MLPFewShotModel(FewShotModel):
         }
 
         # Calculate validation metrics if provided
-        if validation_activity_series is not None:
+        if test_activity_series is not None:
             assert False, "TODO: IMPLEMENT"
             # X_val, y_val = validation_data
             # y_val_pred = get_ensemble_prediction(self.models, X_val, "median")
@@ -295,19 +383,15 @@ class RandomForestFewShotModel(FewShotModel):
     def __init__(self, ensemble_size: int = 1, **kwargs):
         """Initialize the Random Forest regressor with any parameters supported by sklearn's RandomForestRegressor."""
         super().__init__(
+            wt_aa_seq=kwargs.pop("wt_aa_seq"),
+            lie_noise_stddev_multiplier=kwargs.pop("lie_noise_stddev_multiplier", 4.0),
             decision_mode=kwargs.pop("decision_mode", "median"),
             temperature=kwargs.pop("temperature", 0.0),
             epsilon=kwargs.pop("epsilon", 0.0),
         )
 
         self.ensemble_size = ensemble_size
-
-        base_random_state = kwargs.pop("random_state", 0)
-        self.models: List[SklearnRandomForestRegressor] = [
-            SklearnRandomForestRegressor(**kwargs, random_state=base_random_state + ii)
-            for ii in range(ensemble_size)
-        ]
-        self.metrics_: Dict[str, float] = {}
+        self.base_random_state = kwargs.pop("random_state", 0)
         self.is_fitted: bool = False
 
     def fit(
@@ -315,7 +399,9 @@ class RandomForestFewShotModel(FewShotModel):
         naturalness_series: pd.Series,
         embedding_series: pd.Series,
         measured_activity_series: pd.Series,
-        validation_activity_series: Optional[pd.Series] = None,
+        test_naturalness_series: pd.Series | None = None,
+        test_embedding_series: pd.Series | None = None,
+        test_activity_series: pd.Series | None = None,
         **kwargs,
     ) -> "RandomForestFewShotModel":
         """Train the Random Forest regressor.
@@ -324,13 +410,20 @@ class RandomForestFewShotModel(FewShotModel):
             naturalness_series: Series of ALL mutants' naturalness scores indexed by seq_id
             embedding_series: Series of ALL mutants' embeddings indexed by seq_id
             measured_activity_series: Series of measured activity measurements indexed by seq_id
-            validation_activity_series: Optional series of validation activity measurements indexed by seq_id
+            test_activity_series: Optional series of test activity measurements indexed by seq_id
             **kwargs: Additional parameters passed to sklearn's fit method
 
         Returns:
             Self for method chaining
         """
         assert naturalness_series.index.equals(embedding_series.index)
+
+        # Reset state! We might have called "fit" already and should blank that out.
+        self.models: List[SklearnRandomForestRegressor] = [
+            SklearnRandomForestRegressor(**kwargs, random_state=self.base_random_state + ii)
+            for ii in range(self.ensemble_size)
+        ]
+        self.metrics_: Dict[str, float] = {}
 
         measured_embedding_series = embedding_series.loc[measured_activity_series.index]
         X = np.array([np.array(emb) for emb in measured_embedding_series.values])
@@ -353,17 +446,9 @@ class RandomForestFewShotModel(FewShotModel):
         }
 
         # Calculate validation metrics if provided
-        if validation_activity_series is not None:
-            assert False, "TODO: IMPLEMENT"
-            # X_val, y_val = validation_data
-            # y_val_pred = get_ensemble_prediction(self.models, X_val, "median")
-            # self.metrics_.update(
-            #     {
-            #         "val_mse": mean_squared_error(y_val, y_val_pred),
-            #         "val_r2": r2_score(y_val, y_val_pred),
-            #         "val_mae": mean_absolute_error(y_val, y_val_pred),
-            #     }
-            # )
+        if test_activity_series is not None:
+            # TODO(jbr): Maybe utilize the test series?
+            pass
 
         # Add OOB score if available
         if hasattr(self.models, "oob_score_"):
@@ -385,9 +470,8 @@ class RandomForestFewShotModel(FewShotModel):
         if not self.is_fitted:
             raise ValueError("Model has not been trained yet. Call fit() first.")
 
-        debug_info: Dict[str, Any] = {
-            "metrics": self.metrics_,
-        }
+        debug_info: Dict[str, Any] = super().get_debug_info()
+        debug_info["metrics"] = self.metrics_
 
         # Get properties from the first model in the ensemble
         if len(self.models) > 0:
@@ -395,16 +479,15 @@ class RandomForestFewShotModel(FewShotModel):
 
             # Get feature importances if available
             if hasattr(first_model, "feature_importances_"):
-                feature_importances = {"mean": first_model.feature_importances_.tolist()}
-
-                # Add standard deviation if we have estimators
-                if hasattr(first_model, "estimators_") and len(first_model.estimators_) > 0:
-                    feature_importances["std"] = np.std(
-                        [tree.feature_importances_ for tree in first_model.estimators_],
-                        axis=0,
-                    ).tolist()
-
-                debug_info["feature_importances"] = feature_importances
+                # 7/13/25: Had to can the feature importances, it was way too big for model evals.
+                # feature_importances = {"mean": first_model.feature_importances_.tolist()}
+                # # Add standard deviation if we have estimators
+                # if hasattr(first_model, "estimators_") and len(first_model.estimators_) > 0:
+                #     feature_importances["std"] = np.std(
+                #         [tree.feature_importances_ for tree in first_model.estimators_],
+                #         axis=0,
+                #     ).tolist()
+                # debug_info["feature_importances"] = feature_importances
 
                 # Basic tree info (limit to first 5 trees to avoid excessive info)
                 if hasattr(first_model, "estimators_"):
@@ -433,46 +516,172 @@ class TorchMLPFewShotModel(FewShotModel):
 
     def __init__(
         self,
+        wt_aa_seq: str,
+        random_state: int,
+        hidden_dims: list[int] = [100, 50],
+        dropout: float = 0.1,
+        device: str | None = None,
         ensemble_size: int = 1,
+        enable_ensemble_devariancing: bool = False,
+        learning_rate: float = 1e-4,
+        weight_decay: float = 1e-5,
         pretrain: bool = False,
         pretrain_epochs: int = 10,
+        pretrain_patience: int = 20,
+        pretrain_val_frequency: int = 5,
+        shrink_and_perturb_params: tuple[float, float] | None = None,
         train_epochs: int = 50,
-        train_patience: int = 10,
+        train_patience: int | None = None,
+        val_frequency: int = 10,
         use_mse_loss: bool = False,
+        do_holdout_validation: bool = False,
+        do_validation_with_pair_fraction: float | None = None,
+        importance_sampling_reweighting_strat: str | None = None,
+        importance_sampling_temperature: float | None = None,
+        use_exponential_learning_rate_decay: bool = False,
+        use_plateau_learning_rate_decay: bool = False,
+        embedding_dim: int | None = None,  # DEPRECATED
         **kwargs,
     ):
         """Initialize the Random Forest regressor with any parameters supported by sklearn's RandomForestRegressor."""
-        super().__init__(
-            decision_mode=kwargs.pop("decision_mode", "median"),
-            temperature=kwargs.pop("temperature", 0.0),
-            epsilon=kwargs.pop("epsilon", 0.0),
-        )
+        super().__init__(wt_aa_seq, **kwargs)
 
+        self.base_random_state = random_state
+
+        self.hidden_dims = hidden_dims
+        self.dropout = dropout
+        self.device = device
         self.ensemble_size = ensemble_size
-        self.pretrain = pretrain
+        self.enable_ensemble_devariancing = enable_ensemble_devariancing
+        self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
+        self.should_pretrain = pretrain
         self.pretrain_epochs = pretrain_epochs
+        self.pretrain_patience = pretrain_patience
+        self.pretrain_val_frequency = pretrain_val_frequency
+        self.shrink_and_perturb_params = shrink_and_perturb_params
         self.train_epochs = train_epochs
         self.train_patience = train_patience
+        self.val_frequency = val_frequency
         self.use_mse_loss = use_mse_loss
+        self.do_holdout_validation = do_holdout_validation
+        self.do_validation_with_pair_fraction = do_validation_with_pair_fraction
+        self.importance_sampling_reweighting_strat = importance_sampling_reweighting_strat
+        self.importance_sampling_temperature = importance_sampling_temperature
+        self.use_exponential_learning_rate_decay = use_exponential_learning_rate_decay
+        self.use_plateau_learning_rate_decay = use_plateau_learning_rate_decay
 
-        base_random_state = kwargs.pop("random_state")
-        self.model_and_trainer_list = [
-            create_preference_model(**kwargs, random_state=base_random_state + ii)
-            for ii in range(ensemble_size)
-        ]
+        self.pretrained_model_state_dicts = []
+
+        self.finetuned_model_and_trainer_list = []
+
+        if embedding_dim is not None:
+            logging.warning("embedding_dim is deprecated and ignored.")
 
         self.is_pretrained = False
-        self.pretrain_metrics = None
+        self.pretrain_metrics: list[dict[str, Any]] = []
         self.is_fitted = False
-        self.fitting_metrics = None
+        self.finetune_metrics: list[dict[str, Any]] = []
+
+    def _create_model_ensemble(
+        self, embedding_dim: int
+    ) -> list[tuple[BradleyTerryMLP, PreferenceTrainer]]:
+        return [
+            create_preference_model(
+                embedding_dim=embedding_dim,
+                hidden_dims=self.hidden_dims,
+                dropout=self.dropout,
+                device=self.device,
+                random_state=self.base_random_state + ii,
+            )
+            for ii in range(self.ensemble_size)
+        ]
+
+    def pretrain(
+        self,
+        naturalness_series: pd.Series,
+        embedding_series: pd.Series,
+    ) -> "TorchMLPFewShotModel":
+        assert naturalness_series.index.equals(embedding_series.index)
+        assert embedding_series.index.is_unique, "embedding_series contains duplicate indices"
+
+        if not self.should_pretrain:
+            return self
+
+        if self.is_pretrained:
+            raise ValueError("Model is already pretrained.")
+
+        has_naturalness_data = ~naturalness_series.isna()  # index.map(lambda sid: "_" not in sid)
+
+        logging.info(
+            f"Pretraining model with naturalness data with {sum(has_naturalness_data)} naturalness measurements."
+        )
+
+        naturalness_series_with_data = naturalness_series[has_naturalness_data]
+        embedding_series_with_data = embedding_series[has_naturalness_data]
+        embedding_dim = embedding_series_with_data.iloc[0].shape[0]
+        logging.info(f"Pretraining model with embedding dimension {embedding_dim}.")
+
+        # Create pretrained version of each model.
+        for ii, (model, trainer) in enumerate(self._create_model_ensemble(embedding_dim)):
+            rng = np.random.RandomState(self.base_random_state + ii)
+            validation_seqids = rng.choice(
+                embedding_series_with_data.index,
+                size=int(embedding_series_with_data.shape[0] * 0.2),
+                replace=False,
+            )
+            train_seqids = np.setdiff1d(embedding_series_with_data.index, validation_seqids)
+
+            X_train = np.array(
+                [np.array(emb) for emb in embedding_series_with_data[train_seqids].values]
+            )
+            X_val = np.array(
+                [np.array(emb) for emb in embedding_series_with_data[validation_seqids].values]
+            )
+            y_train = naturalness_series_with_data[train_seqids].to_numpy()
+            y_val = naturalness_series_with_data[validation_seqids].to_numpy()
+
+            self.pretrain_metrics.append(
+                trainer.train(
+                    train_embeddings=X_train,
+                    train_activity_labels=y_train,
+                    val_embeddings=X_val,
+                    val_activity_labels=y_val,
+                    batch_size=256,  # Increased batch size 32->256, speeding up training quite a bit.
+                    epochs=self.pretrain_epochs,
+                    patience=self.pretrain_patience,
+                    use_mse_loss=self.use_mse_loss,
+                    val_frequency=self.pretrain_val_frequency,
+                    learning_rate=1e-4 * 8,  # Increased LR to compensate for larger batches.
+                    weight_decay=1e-5,
+                    importance_sampling_reweighting_strat=None,
+                    importance_sampling_temperature=None,
+                    use_exponential_learning_rate_decay=False,
+                    use_plateau_learning_rate_decay=False,
+                )
+            )
+            self.pretrained_model_state_dicts.append(model.state_dict())
+
+        self.is_pretrained = True
+
+        train_loss_start = np.mean([m["train_loss"][0] for m in self.pretrain_metrics])
+        train_loss_end = np.mean([m["train_loss"][-1] for m in self.pretrain_metrics])
+        val_loss_start = np.mean([m["val_loss"][0] for m in self.pretrain_metrics])
+        val_loss_end = np.mean([m["val_loss"][-1] for m in self.pretrain_metrics])
+        logging.info(
+            f"Pretrain loss: train {train_loss_start:.4f} -> {train_loss_end:.4f}, val {val_loss_start:.4f} -> {val_loss_end:.4f} after {len(self.pretrain_metrics[0]['train_loss']) * self.val_frequency} epochs"
+        )
+
+        return self
 
     def fit(
         self,
         naturalness_series: pd.Series,
         embedding_series: pd.Series,
         measured_activity_series: pd.Series,
-        validation_activity_series: Optional[pd.Series] = None,
-        **kwargs,
+        test_naturalness_series: pd.Series | None = None,
+        test_embedding_series: pd.Series | None = None,
+        test_activity_series: pd.Series | None = None,
     ) -> "TorchMLPFewShotModel":
         """Train the TorchMLPFewShotModel.
 
@@ -480,84 +689,114 @@ class TorchMLPFewShotModel(FewShotModel):
             naturalness_series: Series of ALL mutants' naturalness scores indexed by seq_id
             embedding_series: Series of ALL mutants' embeddings indexed by seq_id
             measured_activity_series: Series of measured activity measurements indexed by seq_id
-            validation_activity_series: Optional series of validation activity measurements indexed by seq_id
+            test_activity_series: Optional series of test activity measurements indexed by seq_id
         """
         assert naturalness_series.index.equals(embedding_series.index)
         assert embedding_series.index.is_unique, "embedding_series contains duplicate indices"
-        
-        if self.pretrain and not self.is_pretrained:
-            is_single_mutant = naturalness_series.index.map(lambda sid: '_' not in sid)
-            logging.info(f"Pretraining model with naturalness data with {sum(is_single_mutant)} single mutants.")
-            X = np.array([np.array(emb) for emb in embedding_series[is_single_mutant].values])
-            y = naturalness_series[is_single_mutant].to_numpy()
-            validation_indices = np.random.choice(
-                range(X.shape[0]), size=int(X.shape[0] * 0.2), replace=False
-            )
-            self.pretrain_metrics = []
-            for model, trainer in self.model_and_trainer_list:
-                self.pretrain_metrics.append(
-                    trainer.train(
-                        embeddings=X,
-                        activity_labels=y,
-                        val_ratio_or_indices=validation_indices,  # No validation data.
-                        batch_size=16,
-                        epochs=self.pretrain_epochs,
-                        patience=20,
-                        verbose=True,
-                        use_mse_loss=self.use_mse_loss,
-                        val_frequency=5,
-                    )
+
+        if test_activity_series is not None:
+            assert test_embedding_series is not None
+            assert test_naturalness_series is not None
+            assert test_embedding_series.index.equals(test_naturalness_series.index)
+            assert test_embedding_series.index.equals(test_activity_series.index)
+
+        # Reset state! We might have called "fit" already and should blank that out.
+        embedding_dim = embedding_series.iloc[0].shape[0]
+        self.finetuned_model_and_trainer_list = self._create_model_ensemble(embedding_dim)
+        self.finetune_metrics = []
+
+        if self.should_pretrain:
+            if not self.is_pretrained:
+                raise ValueError("Model is not pretrained. Call pretrain() first.")
+            if not len(self.pretrained_model_state_dicts) == self.ensemble_size:
+                raise ValueError(
+                    f"Number of pretrained models does not match ensemble size {len(self.pretrained_model_state_dicts)} != {self.ensemble_size}."
                 )
-                if (
-                    "val_loss" in self.pretrain_metrics[-1]
-                    and "train_loss" in self.pretrain_metrics[-1]
-                ):
-                    train_loss_list = self.pretrain_metrics[-1]["train_loss"]
-                    val_loss_list = [
-                        v for v in self.pretrain_metrics[-1]["val_loss"] if not np.isnan(v)
-                    ]
-                    logging.info(
-                        f"Pretrain improvement: train loss ({train_loss_list[0]:.4f} -> {train_loss_list[-1]:.4f}) val loss ({val_loss_list[0]:.4f} -> {val_loss_list[-1]:.4f})"
-                    )
-            self.is_pretrained = True
+            for idx, (model, trainer) in enumerate(self.finetuned_model_and_trainer_list):
+                model.load_state_dict(self.pretrained_model_state_dicts[idx])
 
-        # assert False, "Double check this logic for validation data."
-        X = None
-        y = None
-        validation_indices = []
-        if validation_activity_series is not None:
-            train_and_val_embeddings = embedding_series.loc[
-                pd.concat([measured_activity_series, validation_activity_series]).index
-            ]
-            validation_indices = list(
-                range(measured_activity_series.shape[0], train_and_val_embeddings.shape[0])
+                if self.shrink_and_perturb_params:
+                    beta, sigma = self.shrink_and_perturb_params
+                    for p in model.parameters():
+                        p.data.mul_(beta)  # shrink
+                        p.data.add_(torch.randn_like(p) * sigma)  # perturb
+
+        kf_splits = None
+        if self.do_holdout_validation:
+            kf = KFold(
+                n_splits=self.ensemble_size, shuffle=True, random_state=self.base_random_state
             )
-            X = np.array([np.array(emb) for emb in train_and_val_embeddings.values])
-            y = pd.concat([measured_activity_series, validation_activity_series]).to_numpy()
-        else:
-            train_embeddings = embedding_series.loc[measured_activity_series.index]
-            X = np.array([np.array(emb) for emb in train_embeddings.values])
-            y = measured_activity_series.to_numpy()
+            kf_splits = list(kf.split(measured_activity_series.index))
 
-        VALIDATION_FREQUENCY = 10
-        self.fitting_metrics = []
-        for model, trainer in self.model_and_trainer_list:
-            self.fitting_metrics.append(
+        for model_idx, (model, trainer) in enumerate(self.finetuned_model_and_trainer_list):
+            X_train, X_val, X_test, y_train, y_val, y_test = None, None, None, None, None, None
+
+            if self.do_holdout_validation:
+                assert (
+                    self.do_validation_with_pair_fraction is None
+                ), f"Cannot do both holdout validation and specify a pair fraction to hold out."
+                assert kf_splits is not None, "kf_splits is not set"
+                # Do the train / test split.
+                train_indices, val_indices = kf_splits[model_idx]
+                train_seqids = measured_activity_series.index[train_indices]
+                val_seqids = measured_activity_series.index[val_indices]
+
+                X_train = np.array([np.array(emb) for emb in embedding_series[train_seqids].values])
+                y_train = measured_activity_series[train_seqids].to_numpy()
+                X_val = np.array([np.array(emb) for emb in embedding_series[val_seqids].values])
+                y_val = measured_activity_series[val_seqids].to_numpy()
+            else:
+                X_train = np.array(
+                    [
+                        np.array(emb)
+                        for emb in embedding_series[measured_activity_series.index].values
+                    ]
+                )
+                y_train = measured_activity_series.to_numpy()
+
+            if (
+                test_activity_series is not None
+                and test_embedding_series is not None
+                and test_naturalness_series is not None
+            ):
+                X_test = np.array(
+                    [
+                        np.array(emb)
+                        for emb in test_embedding_series[test_activity_series.index].values
+                    ]
+                )
+                y_test = test_activity_series.to_numpy()
+
+            self.finetune_metrics.append(
                 trainer.train(
-                    embeddings=X,
-                    activity_labels=y,
-                    val_ratio_or_indices=validation_indices,  # No validation data.
-                    batch_size=min(16, y.shape[0]),
+                    train_embeddings=X_train,
+                    train_activity_labels=y_train,
+                    val_embeddings=X_val,
+                    val_activity_labels=y_val,
+                    test_embeddings=X_test,
+                    test_activity_labels=y_test,
+                    batch_size=max(16, y_train.shape[0]),
                     epochs=self.train_epochs,
                     patience=self.train_patience,
-                    verbose=True,
                     use_mse_loss=self.use_mse_loss,
-                    val_frequency=VALIDATION_FREQUENCY,
+                    learning_rate=self.learning_rate,
+                    weight_decay=self.weight_decay,
+                    val_frequency=self.val_frequency,
+                    do_validation_with_pair_fraction=self.do_validation_with_pair_fraction,
+                    importance_sampling_reweighting_strat=self.importance_sampling_reweighting_strat,
+                    importance_sampling_temperature=self.importance_sampling_temperature,
+                    use_exponential_learning_rate_decay=self.use_exponential_learning_rate_decay,
+                    use_plateau_learning_rate_decay=self.use_plateau_learning_rate_decay,
                 )
             )
-            if "val_loss" in self.fitting_metrics[-1] and "train_loss" in self.fitting_metrics[-1]:
-                train_loss_list = self.fitting_metrics[-1]["train_loss"]
-                val_loss_list = [v for v in self.fitting_metrics[-1]["val_loss"] if not np.isnan(v)]
+            if (
+                "val_loss" in self.finetune_metrics[-1]
+                and "train_loss" in self.finetune_metrics[-1]
+            ):
+                train_loss_list = self.finetune_metrics[-1]["train_loss"]
+                val_loss_list = [
+                    v for v in self.finetune_metrics[-1]["val_loss"] if not np.isnan(v)
+                ]
                 if len(train_loss_list) > 0 and len(val_loss_list) > 0:
                     logging.info(
                         f"Finetune improvement: train loss ({train_loss_list[0]:.4f} -> {train_loss_list[-1]:.4f}) val loss ({val_loss_list[0]:.4f} -> {val_loss_list[-1]:.4f})"
@@ -574,19 +813,25 @@ class TorchMLPFewShotModel(FewShotModel):
         if not self.is_fitted:
             raise ValueError("Model has not been trained yet. Call fit() first.")
         X = np.array([np.array(emb) for emb in embedding_series.values])
-        return [
-            pd.Series(
-                t.predict_scores(X),
-                index=embedding_series.index,
-            )
-            for _, t in self.model_and_trainer_list
-        ]
+        pred_series_list = []
+        for _, t in self.finetuned_model_and_trainer_list:
+            score_array = t.predict_scores(X)
+            score_array = score_array - score_array.mean(axis=0)  #  / score_array.std(axis=0)
+            if self.enable_ensemble_devariancing:
+                score_array = score_array / score_array.std(axis=0)
+            pred_series_list.append(pd.Series(score_array, index=embedding_series.index))
+        return pred_series_list
 
     def get_debug_info(self) -> Dict[str, Any]:
         """Get debug information for the Random Forest."""
         if not self.is_fitted:
             raise ValueError("Model has not been trained yet. Call fit() first.")
-        return {"pretrain_metrics": self.pretrain_metrics, "finetune_metrics": self.fitting_metrics}
+        debug_info = super().get_debug_info()
+        debug_info["pretrain_metrics"] = self.pretrain_metrics
+        debug_info["pretrain_val_frequency"] = self.pretrain_val_frequency
+        debug_info["finetune_metrics"] = self.finetune_metrics
+        debug_info["finetune_val_frequency"] = self.val_frequency
+        return debug_info
 
 
 def is_valid_few_shot_model_name(model_name: str) -> bool:

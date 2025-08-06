@@ -22,13 +22,9 @@ export interface Fold extends FoldInput {
     state: string | null;
     jobs: Invokation[] | null;
     docks: Dock[] | null;
-    logits: Logit[] | null;
+    naturalness_runs: Naturalness[] | null;
     embeddings: Embedding[] | null;
-    evolutions: Evolution[] | null;
-}
-
-export interface FoldPdb {
-    pdb_string: string;
+    few_shots: FewShot[] | null;
 }
 
 export interface FoldPae {
@@ -37,6 +33,16 @@ export interface FoldPae {
 
 export interface FoldContactProb {
     contact_prob: number[][];
+}
+
+
+export interface AffinityPrediction {
+    affinity_pred_value: number;             // Predicted binding affinity from the ensemble model
+    affinity_probability_binary: number;      // Predicted binding likelihood from the ensemble model
+    affinity_pred_value1: number;            // Predicted binding affinity from the first model
+    affinity_probability_binary1: number;     // Predicted binding likelihood from first model
+    affinity_pred_value2: number;            // Predicted binding affinity from the second model
+    affinity_probability_binary2: number;     // Predicted binding likelihood from second model
 }
 
 
@@ -52,40 +58,6 @@ export const getJobStatus = (fold: Fold, job_type: string): string | null => {
     return null;
 };
 
-
-export const describeFoldState = (fold: Fold) => {
-    const featuresState = getJobStatus(fold, "features");
-    const modelsState = getJobStatus(fold, "models");
-    const decompressState = getJobStatus(fold, "decompress_pkls");
-
-    // Special case: if anything hasn't been queued, just say unstarted.
-    if (
-        featuresState === null ||
-        modelsState === null ||
-        decompressState === null
-    ) {
-        return "unstarted";
-    }
-
-    // Another special case: before the beginning just say "queued".
-    if (featuresState === "queued") {
-        return "queued";
-    }
-
-    // Another special case: after the end just say "finished".
-    if (decompressState === "finished") {
-        return "finished";
-    }
-
-    // Normal case: print the state of the most recent stage.
-    if (featuresState !== "finished") {
-        return `features ${featuresState}`;
-    }
-    if (modelsState !== "finished") {
-        return `models ${modelsState}`;
-    }
-    return `decompress_pkls ${decompressState}`;
-};
 
 export const foldIsFinished = (fold: Fold): boolean => {
     return getJobStatus(fold, "models") === "finished";
@@ -107,14 +79,17 @@ export interface Dock extends DockInput {
     pose_confidences: string | null;
 }
 
-export interface Logit {
+export interface Naturalness {
     id: number;
     name: string;
     fold_id: number;
     logit_model: string;
     use_structure: boolean | null;
     get_depth_two_logits: boolean | null;
+    output_fpath: string | null;
+    output_fpath_computed: string;
     invokation_id: number;
+    date_created: string | null;
 }
 
 export interface Embedding {
@@ -124,20 +99,59 @@ export interface Embedding {
     embedding_model: string;
     extra_seq_ids: string | null;
     dms_starting_seq_ids: string | null;
+    homolog_fasta: string | null;
     extra_layers: string | null;
+    domain_boundaries: string | null;
+    output_fpath: string | null;
+    output_fpath_computed: string;
     invokation_id: number | null;
+    date_created: string | null;
 }
 
-export interface Evolution {
+export interface FewShot {
+    id: number | undefined;
+    name: string;
+    num_mutants: number;
+    fold_id: number;
+    invokation_id: number | undefined;
+    mode: string;
+    embedding_files: string | undefined;
+    naturalness_files: string | undefined;
+    finetuning_model_checkpoint: string | undefined;
+    few_shot_params: string | undefined;
+    input_activity_fpath: string | null;
+    output_fpath: string | null;
+    output_fpath_computed: string;
+    date_created: string | null;
+}
+
+export interface Campaign {
     id: number;
     name: string;
+    description?: string;
     fold_id: number;
-    mode: "finetuning" | "randomforest";
-    embedding_files: string | null;
-    naturalness_files: string | null;
-    finetuning_model_checkpoint: string | null;
-    few_shot_params: string | null;
-    invokation_id: number | null;
+    created_at: string;
+    rounds?: CampaignRound[];
+    fold_name?: string;
+    naturalness_model?: string;
+    embedding_model?: string;
+    domain_boundaries?: string;
+}
+
+export interface CampaignRound {
+    id: number;
+    campaign_id: number;
+    round_number: number;
+    date_started: string;
+    mode?: string | null;
+    naturalness_run_id?: number | null;
+    naturalness_run?: Naturalness | null;
+    slate_seq_ids?: string | null;
+    result_activity_fpath?: string | null;
+    promoted_templates?: string[] | null;
+    input_templates?: string | null;
+    few_shot_run_id?: number | null;
+    few_shot_run?: FewShot | null;
 }
 
 export interface Invokation {
@@ -157,6 +171,17 @@ export interface Annotations {
         start: number;
         end: number;
     }>;
+}
+
+export interface RenderableAnnotation {
+    type: string;
+    start: number;
+    end: number;
+    color: string;
+}
+
+export interface RenderableAnnotations {
+    [chainName: string]: Array<RenderableAnnotation>;
 }
 
 export interface FileInfo {

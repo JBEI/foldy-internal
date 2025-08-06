@@ -1,20 +1,13 @@
 import fileDownload from "js-file-download";
 import React, { useMemo, useState } from "react";
-import {
-    FaChevronLeft,
-    FaChevronRight,
-    FaClock,
-    FaDownload,
-    FaEye,
-    FaFrownOpen,
-    FaRedo,
-    FaTrash,
-} from "react-icons/fa";
-import UIkit from "uikit";
+import { Button } from 'antd';
+import { LeftOutlined, RightOutlined, ClockCircleOutlined, DownloadOutlined, EyeOutlined, FrownOutlined, RedoOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { getDockSdf, postDock } from "../../api/dockApi";
-import { NewDockPrompt } from "../../util/newDockPrompt";
 import { Dock, Invokation, DockInput } from "../../types/types";
 import { notify } from "../../services/NotificationService";
+import { TabContainer, DescriptionSection, TableSection } from "../../util/tabComponents";
+import { AntTable, createActionButtons, defaultExpandableContent } from "../../util/AntTable";
+import { DockModal } from "../shared/DockModal";
 
 interface DockTabProps {
     foldId: number;
@@ -31,17 +24,9 @@ interface DockTabProps {
     deleteLigandPose: (ligandId: number, ligandName: string) => void;
 }
 
-type SortConfig = {
-    key: keyof Dock | "fit" | null;
-    direction: "ascending" | "descending";
-};
 
 const DockTab = React.memo((props: DockTabProps) => {
-    const [sortConfig, setSortConfig] = useState<SortConfig>({
-        key: "ligand_name",
-        direction: "ascending",
-    });
-    const [showDockForm, setShowDockForm] = useState(false);
+    const [showDockModal, setShowDockModal] = useState(false);
 
     const getDockState = (dock: Dock, jobs: Invokation[] | null) => {
         if (!jobs) return "queued";
@@ -117,158 +102,172 @@ const DockTab = React.memo((props: DockTabProps) => {
     const sortedDocks = useMemo(() => {
         if (!props.docks) return null;
         return [...props.docks].sort(
-            compareValues(sortConfig.key || "ligand_name", sortConfig.direction)
+            compareValues("ligand_name", "ascending")
         );
-    }, [props.docks, sortConfig]);
+    }, [props.docks]);
 
-    const requestSort = (key: keyof Dock | "fit") => {
-        const direction =
-            sortConfig.key === key && sortConfig.direction === "ascending"
-                ? "descending"
-                : "ascending";
-        setSortConfig({ key, direction });
-    };
-
-    const getSortSymbol = (key: keyof Dock | "fit") => {
-        return sortConfig.key === key
-            ? sortConfig.direction === "ascending"
-                ? " ↑"
-                : " ↓"
-            : "";
-    };
 
     return (
-        <div style={{ padding: "20px", backgroundColor: "#f8f9fa", borderRadius: "8px", boxShadow: "0 2px 6px rgba(0, 0, 0, 0.1)" }}>
+        <TabContainer>
             {/* Description Section */}
-            <section style={{ marginBottom: "20px", padding: "15px", backgroundColor: "#ffffff", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)" }}>
-                <h3>Small Molecule Docking</h3>
+            <DescriptionSection title="Small Molecule Docking">
                 <p>
                     Use <a href="https://onlinelibrary.wiley.com/doi/pdf/10.1002/jcc.21334">Autodock Vina</a> or DiffDock to predict ligand poses. Sort and manage docking results or dock new ligands below.
                 </p>
-            </section>
+            </DescriptionSection>
 
             {/* Docking Results Table */}
-            <section className="table-container" style={{ marginBottom: "30px", backgroundColor: "#ffffff", padding: "15px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)" }}>
-                <h3>Docking Results</h3>
-                <table className="uk-table uk-table-striped">
-                    <thead>
-                        <tr>
-                            <th onClick={() => requestSort("ligand_name")}>
-                                Name{getSortSymbol("ligand_name")}
-                            </th>
-                            <th onClick={() => requestSort("fit")}>
-                                Fit{getSortSymbol("fit")}
-                            </th>
-                            <th>Rank</th>
-                            <th onClick={() => requestSort("tool")}>
-                                Tool{getSortSymbol("tool")}
-                            </th>
-                            <th>Bounding Box</th>
-                            <th onClick={() => requestSort("ligand_smiles")}>
-                                SMILES{getSortSymbol("ligand_smiles")}
-                            </th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {sortedDocks?.map((dock) => (
-                            <tr key={dock.id}>
-                                <td>{dock.ligand_name}</td>
-                                <td>{getFit(dock)}</td>
-                                <td>{props.ranks[dock.ligand_name]}</td>
-                                <td>{dock.tool}</td>
-                                <td>
-                                    {dock.bounding_box_residue && dock.bounding_box_radius_angstrom
-                                        ? `${dock.bounding_box_residue} (${dock.bounding_box_radius_angstrom} Å)`
-                                        : "N/A"}
-                                </td>
-                                <td>
-                                    <span
-                                        style={{
-                                            whiteSpace: "nowrap",
-                                            overflow: "hidden",
-                                            textOverflow: "ellipsis",
-                                            display: "block",
-                                            maxWidth: "200px",
-                                        }}
-                                        title={dock.ligand_smiles} // Tooltip with full SMILES
-                                    >
-                                        {dock.ligand_smiles}
-                                    </span>
-                                </td>
-                                <td>
-                                    {getDockState(dock, props.jobs) === "queued" ||
-                                        getDockState(dock, props.jobs) === "running" ? (
-                                        <FaClock
-                                            uk-tooltip={`Docking is currently ${getDockState(dock, props.jobs)}`}
-                                        />
-                                    ) : getDockState(dock, props.jobs) === "failed" ? (
-                                        <FaFrownOpen
-                                            uk-tooltip="Docking failed. Consider rerunning this docking job."
-                                        />
-                                    ) : (
-                                        <FaEye
-                                            uk-tooltip="View this ligand's pose in the visualization pane."
-                                            onClick={() => props.displayLigandPose(dock.ligand_name)}
-                                        />
-                                    )}
-                                    {props.displayedLigandNames.includes(dock.ligand_name) && (
-                                        <span>
-                                            <FaChevronLeft
-                                                uk-tooltip="View the previous pose prediction for this ligand."
-                                                onClick={() => props.shiftFrame(dock.ligand_name, -1)}
-                                            />
-                                            <FaChevronRight
-                                                uk-tooltip="View the next pose prediction for this ligand."
-                                                onClick={() => props.shiftFrame(dock.ligand_name, 1)}
-                                            />
-                                        </span>
-                                    )}
-                                    <FaTrash
-                                        uk-tooltip="Delete this docking result."
-                                        onClick={() => props.deleteLigandPose(dock.id, dock.ligand_name)}
-                                    />
-                                    <FaRedo
-                                        uk-tooltip="Rerun this docking job."
-                                        onClick={() => rerunDock(dock)}
-                                    />
-                                    <FaDownload
-                                        uk-tooltip="Download the SDF file for this ligand pose."
-                                        onClick={() => downloadLigandPose(dock.ligand_name)}
-                                    />
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </section>
-
-            {/* Collapsible Dock New Ligands Section */}
-            <div
-                onClick={() => setShowDockForm(!showDockForm)}
-                style={{
-                    cursor: "pointer",
-                    fontWeight: "bold",
-                    padding: "10px",
-                    backgroundColor: "#f8f9fa",
-                    borderRadius: "8px",
-                    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-                    marginBottom: "10px",
-                }}
+            <TableSection
+                title="Docking Runs"
+                extra={
+                    <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={() => setShowDockModal(true)}
+                    >
+                        New
+                    </Button>
+                }
             >
-                Dock New Ligands {showDockForm ? "▲" : "▼"}
-            </div>
-            {showDockForm && (
-                <section style={{ backgroundColor: "#ffffff", padding: "15px", borderRadius: "8px", boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)" }}>
-                    <NewDockPrompt
-                        foldIds={[props.foldId]}
-                        existingLigands={{
-                            [props.foldId]: (props.docks || []).map((dock) => dock.ligand_name),
-                        }}
-                    />
-                </section>
-            )}
-        </div>
+                <AntTable<Dock>
+                    dataSource={sortedDocks || []}
+                    rowKey="id"
+                    expandableContent={defaultExpandableContent}
+                    columns={[
+                        {
+                            key: 'ligand_name',
+                            title: 'Name',
+                            dataIndex: 'ligand_name',
+                            sortable: true,
+                            sorter: (a, b) => a.ligand_name.localeCompare(b.ligand_name),
+                        },
+                        {
+                            key: 'fit',
+                            title: 'Fit',
+                            sortable: true,
+                            sorter: (a, b) => {
+                                const aFit = getFit(a) || 0;
+                                const bFit = getFit(b) || 0;
+                                return aFit - bFit;
+                            },
+                            render: (_, dock) => getFit(dock),
+                        },
+                        {
+                            key: 'rank',
+                            title: 'Rank',
+                            render: (_, dock) => props.ranks[dock.ligand_name],
+                        },
+                        {
+                            key: 'tool',
+                            title: 'Tool',
+                            dataIndex: 'tool',
+                            sortable: true,
+                            sorter: (a, b) => (a.tool || '').localeCompare(b.tool || ''),
+                        },
+                        {
+                            key: 'bounding_box',
+                            title: 'Bounding Box',
+                            render: (_, dock) => (
+                                dock.bounding_box_residue && dock.bounding_box_radius_angstrom
+                                    ? `${dock.bounding_box_residue} (${dock.bounding_box_radius_angstrom} Å)`
+                                    : "N/A"
+                            ),
+                        },
+                        {
+                            key: 'ligand_smiles',
+                            title: 'SMILES',
+                            dataIndex: 'ligand_smiles',
+                            ellipsis: true,
+                            width: 200,
+                            sortable: true,
+                            sorter: (a, b) => a.ligand_smiles.localeCompare(b.ligand_smiles),
+                            render: (smiles) => (
+                                <span title={smiles}>{smiles}</span>
+                            ),
+                        },
+                        {
+                            key: 'actions',
+                            title: 'Actions',
+                            width: 250,
+                            render: (_, dock) => {
+                                const dockState = getDockState(dock, props.jobs);
+                                const buttons = [];
+
+                                // Status button
+                                if (dockState === "queued" || dockState === "running") {
+                                    buttons.push({
+                                        icon: <ClockCircleOutlined />,
+                                        onClick: () => {},
+                                        tooltip: `Docking is currently ${dockState}`,
+                                        disabled: true,
+                                    });
+                                } else if (dockState === "failed") {
+                                    buttons.push({
+                                        icon: <FrownOutlined />,
+                                        onClick: () => {},
+                                        tooltip: 'Docking failed. Consider rerunning this docking job.',
+                                        disabled: true,
+                                    });
+                                } else {
+                                    buttons.push({
+                                        icon: <EyeOutlined />,
+                                        onClick: () => props.displayLigandPose(dock.ligand_name),
+                                        tooltip: 'View this ligand\'s pose in the visualization pane.',
+                                    });
+                                }
+
+                                // Navigation buttons (if ligand is displayed)
+                                if (props.displayedLigandNames.includes(dock.ligand_name)) {
+                                    buttons.push({
+                                        icon: <LeftOutlined />,
+                                        onClick: () => props.shiftFrame(dock.ligand_name, -1),
+                                        tooltip: 'View the previous pose prediction for this ligand.',
+                                    });
+                                    buttons.push({
+                                        icon: <RightOutlined />,
+                                        onClick: () => props.shiftFrame(dock.ligand_name, 1),
+                                        tooltip: 'View the next pose prediction for this ligand.',
+                                    });
+                                }
+
+                                // Action buttons
+                                buttons.push({
+                                    icon: <DeleteOutlined />,
+                                    onClick: () => props.deleteLigandPose(dock.id, dock.ligand_name),
+                                    tooltip: 'Delete this docking result.',
+                                    danger: true,
+                                });
+
+                                buttons.push({
+                                    icon: <RedoOutlined />,
+                                    onClick: () => rerunDock(dock),
+                                    tooltip: 'Rerun this docking job.',
+                                });
+
+                                buttons.push({
+                                    icon: <DownloadOutlined />,
+                                    onClick: () => downloadLigandPose(dock.ligand_name),
+                                    tooltip: 'Download the SDF file for this ligand pose.',
+                                });
+
+                                return createActionButtons(buttons);
+                            },
+                        },
+                    ]}
+                />
+            </TableSection>
+
+            {/* Dock Modal */}
+            <DockModal
+                open={showDockModal}
+                onClose={() => setShowDockModal(false)}
+                foldIds={[props.foldId]}
+                existingLigands={{
+                    [props.foldId]: (props.docks || []).map((dock) => dock.ligand_name),
+                }}
+                title="Dock New Ligands"
+            />
+        </TabContainer>
     );
 });
 

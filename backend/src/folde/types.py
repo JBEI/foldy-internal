@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 class FolDEModelConfig(BaseModel):
     name: str
+    data_split_mode: Optional[str] = None  # Can be "1-VS-REST" or "2-VS-REST" etc.
     naturalness_model_id: str
     embedding_model_id: str
     embedding_column: Optional[str] = None
@@ -22,6 +23,7 @@ class MutantMetrics(BaseModel):
     round_found: int
     activity: float
     predicted_activity: float
+    predicted_activity_stddev: float | None = None
     percentile: float
     relevant_mutants: List[str]
 
@@ -62,3 +64,9 @@ class CampaignResult(BaseModel):
 class ModelEvaluation(BaseModel):
     name: str
     campaign_results: List[CampaignResult]
+
+
+class ModelDiff(BaseModel):
+    name: str
+    # key is the path to the parameter, value is the new value
+    diffs: dict[str, Any]

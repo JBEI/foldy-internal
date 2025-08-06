@@ -1,7 +1,8 @@
 import axiosInstance from '../services/axiosInstance';
-import { Annotations, Fold, FoldContactProb, FoldInput, FoldPae, FoldPdb, Invokation } from '../types/types';
+import { Annotations, Fold, FoldContactProb, FoldInput, FoldPae, FoldCif, Invokation, AffinityPrediction } from '../types/types';
 import { authenticationService } from "../services/authentication.service";
 import { BoltzYamlHelper } from '../util/boltzYamlHelper';
+import { getFile } from './fileApi';
 
 // Add this helper function
 function enhanceFoldWithYamlHelper(fold: Fold): Fold {
@@ -16,20 +17,35 @@ function enhanceFoldWithYamlHelper(fold: Fold): Fold {
     return fold;
 }
 
-export const getFolds = async (
+interface PaginatedFoldsResponse {
+    data: Fold[];
+    pagination: {
+        page: number | null;
+        per_page: number | null;
+        total: number | null;
+        pages: number | null;
+        has_prev: boolean | null;
+        has_next: boolean | null;
+    };
+}
+
+export const getFoldsWithPagination = async (
     filter: string | null,
     tagString: string | null,
     page: number | null,
     per_page: number | null
-): Promise<Fold[]> => {
+): Promise<PaginatedFoldsResponse> => {
     const params: Record<string, string | number> = {};
     if (filter) params.filter = filter;
     if (tagString) params.tag = tagString;
     if (page !== null) params.page = page;
     if (per_page !== null) params.per_page = per_page;
 
-    const response = await axiosInstance.get<Fold[]>('/api/fold', { params });
-    return response.data.map(enhanceFoldWithYamlHelper);
+    const response = await axiosInstance.get<PaginatedFoldsResponse>('/api/paginated_fold', { params });
+    return {
+        data: response.data.data.map(enhanceFoldWithYamlHelper),
+        pagination: response.data.pagination
+    };
 };
 
 export const getFold = async (foldId: number): Promise<Fold> => {
@@ -39,13 +55,14 @@ export const getFold = async (foldId: number): Promise<Fold> => {
 
 export const postFolds = async (
     folds: FoldInput[],
-    options: { startJob: boolean; emailOnCompletion: boolean; skipDuplicates: boolean }
+    options: { startJob: boolean; emailOnCompletion: boolean; skipDuplicates: boolean, isDryRun: boolean }
 ): Promise<any> => {
     const body = {
         folds_data: folds,
         start_fold_job: options.startJob,
         email_on_completion: options.emailOnCompletion,
         skip_duplicate_entries: options.skipDuplicates,
+        is_dry_run: options.isDryRun,
     };
     const response = await axiosInstance.post('/api/fold', body);
     return response.data;
@@ -64,47 +81,6 @@ export const updateFold = async (
  */
 export const getInvokation = async (invokationId: number): Promise<Invokation> => {
     const response = await axiosInstance.get(`/api/invokation/${invokationId}`);
-    return response.data;
-};
-
-/**
- * Gets a fold PDB model
- */
-export const getFoldPdb = async (
-    foldId: number,
-    modelNumber: number
-): Promise<FoldPdb> => {
-    const response = await axiosInstance.get(`/api/fold_pdb/${foldId}/${modelNumber}`);
-    return response.data;
-};
-
-/**
- * Gets fold PKL data
- */
-export const getFoldPkl = async (
-    foldId: number,
-    modelNumber: number
-): Promise<Blob> => {
-    const response = await axiosInstance.post(
-        `/api/fold_pkl/${foldId}/${modelNumber}`,
-        null,
-        { responseType: 'blob' }
-    );
-    return response.data;
-};
-
-/**
- * Downloads multiple PDB files as a zip
- */
-export const getFoldPdbZip = async (
-    foldIds: number[],
-    dirname: string
-): Promise<Blob> => {
-    const response = await axiosInstance.post(
-        '/api/fold_pdb_zip',
-        { fold_ids: foldIds, dirname },
-        { responseType: 'blob' }
-    );
     return response.data;
 };
 
@@ -150,6 +126,20 @@ export const getFoldContactProb = async (
     return response.data;
 };
 
+export const getFoldAffinityPrediction = async (foldId: number): Promise<AffinityPrediction> => {
+    const predictedAffinityPath = `boltz/boltz_results_input/predictions/input/affinity_input.json`;
+    const fileBlob = await getFile(foldId, predictedAffinityPath);
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const fileString = e.target?.result as string;
+            resolve(JSON.parse(fileString));
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(fileBlob);
+    });
+};
+
 /**
  * Gets PFAM annotations for a fold
  */
@@ -178,34 +168,8 @@ export const getJobStatus = (fold: Fold, jobType: string): string | null => {
  */
 export const describeFoldState = (fold: Fold): string => {
     const boltzState = getJobStatus(fold, "boltz");
-    const featuresState = getJobStatus(fold, "features");
-    const modelsState = getJobStatus(fold, "models");
-    const decompressState = getJobStatus(fold, "decompress_pkls");
 
-    if (boltzState) {
-        return boltzState;
-    }
-
-    if (
-        featuresState === null ||
-        modelsState === null ||
-        decompressState === null
-    ) {
-        return "unstarted";
-    }
-    if (featuresState === "queued") {
-        return "queued";
-    }
-    if (decompressState === "finished") {
-        return "finished";
-    }
-    if (featuresState !== "finished") {
-        return `features ${featuresState}`;
-    }
-    if (modelsState !== "finished") {
-        return `models ${modelsState}`;
-    }
-    return `decompress_pkls ${decompressState}`;
+    return boltzState ?? "unstarted";
 };
 
 /**
@@ -213,4 +177,24 @@ export const describeFoldState = (fold: Fold): string => {
  */
 export const foldIsFinished = (fold: Fold): boolean => {
     return getJobStatus(fold, "models") === "finished";
+};
+
+// Types for tags API
+export interface TagInfo {
+    tag: string;
+    fold_count: number;
+    contributors: string[];
+    recent_folds: string[];
+}
+
+interface TagsResponse {
+    tags: TagInfo[];
+}
+
+/**
+ * Get all tags with their fold counts and contributors
+ */
+export const getAllTags = async (): Promise<TagInfo[]> => {
+    const response = await axiosInstance.get<TagsResponse>('/api/tags');
+    return response.data.tags;
 };

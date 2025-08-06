@@ -81,14 +81,14 @@ export const getResidueHeatmap = (
         return (
             <div className="uk-alert-danger">
                 Somehow, the sequence length ({totalSequenceLength}) doesn't match the
-                residue matrix size ({residueMatrix.length}).
+                residue matrix size ({residueMatrix.length}) for sequence {sequence}.
             </div>
         );
     }
 
     const blockVals: number[][] = new Array(chainNames.length);
     for (var i = 0; i < chainNames.length; i++) {
-        blockVals[i] = new Array(chainNames.length).fill(null);
+        blockVals[i] = new Array(chainNames.length).fill(minOrMax === "max" ? -Infinity : Infinity);
     }
     // const blockVals = Array.from(
     //   Array(chainNames.length).fill(null),
@@ -103,23 +103,21 @@ export const getResidueHeatmap = (
                 return;
             }
 
+            const priorValue = blockVals[rowChainIdx][colChainIdx];
             if (minOrMax === "min") {
-                const priorValue =
-                    blockVals[rowChainIdx][colChainIdx] === undefined
-                        ? Infinity
-                        : blockVals[rowChainIdx][colChainIdx];
                 blockVals[rowChainIdx][colChainIdx] = Math.min(priorValue, val);
             } else if (minOrMax === "max") {
-                const priorValue =
-                    blockVals[rowChainIdx][colChainIdx] === undefined
-                        ? -Infinity
-                        : blockVals[rowChainIdx][colChainIdx];
                 blockVals[rowChainIdx][colChainIdx] = Math.max(priorValue, val);
             } else {
                 console.log(`Invalid minOrMax ${minOrMax}`);
             }
         });
     });
+    console.log("blockVals", blockVals);
+    console.log("residueMatrix", residueMatrix);
+    console.log("residueChainIdx", residueChainIdx);
+    console.log("residueNames", residueNames);
+    console.log("residueIsFringe", residueIsFringe);
 
     const boundaryAxis1 = Array<string | null>();
     const boundaryAxis2 = Array<string | null>();
@@ -144,8 +142,8 @@ export const getResidueHeatmap = (
             blockAnnotations.push({
                 xref: "x1",
                 yref: "y1",
-                x: rowIdx,
-                y: colIdx,
+                x: colIdx,
+                y: rowIdx,
                 text: val.toFixed(2),
                 font: {
                     family: "Arial",
@@ -247,119 +245,3 @@ export interface SequenceAnnotation {
     bgcolor: string;
     tooltip: string;
 }
-
-export class VariousColorSchemes {
-    nglColorscheme: string;
-    sVCoverage: SequenceAnnotation[][];
-    sVLegend: object[][];
-    constructor(
-        nglColorscheme: string,
-        sVCoverage: SequenceAnnotation[][],
-        sVLegend: object[][]
-    ) {
-        this.nglColorscheme = nglColorscheme;
-        this.sVCoverage = sVCoverage;
-        this.sVLegend = sVLegend;
-    }
-}
-
-export const getColorsForAnnotations = (
-    sequence: string,
-    annotations: Annotations
-): VariousColorSchemes => {
-    const chainIDs: string[] = [];
-    const domains: {
-        start: number;
-        end: number;
-        chainID: string;
-        type: string;
-    }[] = [];
-    sequence.split(";").forEach((rawChain, idx) => {
-        var chain;
-        if (sequence.includes(";")) {
-            chain = rawChain.split(":")[0];
-        } else {
-            const chainNamesInAnnotation = Object.keys(annotations);
-            if (chainNamesInAnnotation.length !== 1) {
-                console.log(
-                    `The annotation file should have one chain name, found ${chainNamesInAnnotation}!`
-                );
-                chain = "INVALID CHAIN NAME";
-            } else {
-                chain = chainNamesInAnnotation[0];
-            }
-        }
-        const chainID = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[idx];
-        chainIDs.push(chainID);
-        if (!annotations[chain]) {
-            console.log(`chain does not have annotations ${chain}`);
-            return;
-        }
-        annotations[chain].forEach((domain) => {
-            domains.push({
-                start: domain.start,
-                end: domain.end,
-                chainID: chainID,
-                type: domain.type,
-            });
-        });
-    });
-
-    const colors = RdYlBu.get(domains.length < 11 ? domains.length : 11) || [];
-
-    const nglViewerColors: string[][] = [];
-    const sequenceViewerCoverage: SequenceAnnotation[][] = [];
-    const sequenceViewerLegend: object[][] = [];
-
-    const whiten = (c: d3.RGBColor, alpha: number): d3.RGBColor => {
-        return d3.rgb(
-            (1.0 - alpha) * c.r + alpha * 255.0,
-            (1.0 - alpha) * c.g + alpha * 255.0,
-            (1.0 - alpha) * c.b + alpha * 255.0
-        );
-    };
-
-    domains.forEach((domain, idx) => {
-        const color = whiten(d3.rgb(colors[idx % colors.length]), 0.3).toString();
-        nglViewerColors.push([
-            color,
-            `${domain.start}-${domain.end}:${domain.chainID}`,
-        ]);
-    });
-    chainIDs.forEach((chainID, chainIdx) => {
-        const chainCoverage: SequenceAnnotation[] = [];
-        const chainLegend: object[] = [];
-        domains.forEach((domain, domainIdx) => {
-            if (domain.chainID !== chainID) {
-                return;
-            }
-            const color = colors[domainIdx % colors.length];
-            const bgColor = whiten(d3.rgb(color), 0.5); //.copy({opacity: 0.5});
-            chainCoverage.push({
-                start: domain.start,
-                end: domain.end,
-                bgcolor: bgColor.toString(),
-                tooltip: domain.type,
-            });
-            chainLegend.push({
-                name: domain.type,
-                color: bgColor.toString(),
-            });
-        });
-        sequenceViewerCoverage.push(chainCoverage);
-        sequenceViewerLegend.push(chainLegend);
-    });
-
-    // console.log(NGL);
-    // const nglColorscheme = NGL.ColormakerRegistry.addSelectionScheme(
-    //     nglViewerColors,
-    //     "pfam_colors"
-    // );
-
-    return new VariousColorSchemes(
-        // nglColorscheme,
-        '',
-        sequenceViewerCoverage,
-        sequenceViewerLegend
-    );
-};

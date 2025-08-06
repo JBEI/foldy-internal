@@ -9,13 +9,13 @@ from io import StringIO
 
 import docker
 import pandas as pd
+from flask import current_app
+
 from app import email_to
 from app.database import db
-from app.extensions import rq
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.jobs_util import _live_update_tail, _psql_tail, _tail
 from app.models import Dock, Fold, Invokation
-from flask import current_app
 
 
 def start_generic_script(invokation_id, process_args):
@@ -87,11 +87,6 @@ def start_generic_script(invokation_id, process_args):
         raise RuntimeError(
             f"Called Popen invalidly, got error {err} and stdout:\n{_tail(''.join(stdout))}"
         )
-    except subprocess.CalledProcessError as err:
-        stdout += [f"\n\n\nInterrupted by CalledProcessError: {str(err)}"]
-        raise RuntimeError(
-            f"Got CalledProcessError, got error {err} and stdout:\n{_tail(''.join(stdout))}"
-        )
     finally:
         print(f"Invokation ending with final state {final_state}", flush=True)
         # This will get executed regardless of the exceptions raised in try
@@ -104,75 +99,6 @@ def start_generic_script(invokation_id, process_args):
         assert (
             final_state == "finished"
         ), f'Job finished in state {final_state} with logs:\n\n{_tail("".join(stdout))}'
-
-
-def run_features(
-    fold_id,
-    invokation_id,
-):
-    """Run alphafold feature generation and upload to cloud
-
-    Throws exception if fold fails, returns stdout and sterr if successful.
-
-    TODO: accept more parameters."""
-    fold = Fold.get_by_id(fold_id)
-    if not fold:
-        raise KeyError(f"Fold ID {fold_id} not found!")
-
-    models_to_relax = "NONE" if fold.disable_relaxation else "BEST"
-
-    process_args = [
-        current_app.config["RUN_AF2_PATH"],
-        str(fold_id),
-        "features",
-        fold.af2_model_preset,
-        models_to_relax,
-        current_app.config["FOLDY_STORAGE_TYPE"],
-    ]
-    if current_app.config["FOLDY_STORAGE_TYPE"] == "Cloud":
-        process_args.append(current_app.config["FOLDY_GSTORAGE_DIR"])
-
-    start_generic_script(invokation_id, process_args)
-
-
-def run_models(
-    fold_id,
-    invokation_id,
-):
-    """Run alphafold models pipeline and upload results to google cloud."""
-    fold = Fold.get_by_id(fold_id)
-    if not fold:
-        raise KeyError(f"Fold ID {fold_id} not found!")
-
-    models_to_relax = "NONE" if fold.disable_relaxation else "BEST"
-
-    process_args = [
-        current_app.config["RUN_AF2_PATH"],
-        str(fold_id),
-        "models",
-        fold.af2_model_preset,
-        models_to_relax,
-        current_app.config["FOLDY_STORAGE_TYPE"],
-    ]
-    if current_app.config["FOLDY_STORAGE_TYPE"] == "Cloud":
-        process_args.append(current_app.config["FOLDY_GSTORAGE_DIR"])
-
-    start_generic_script(invokation_id, process_args)
-
-
-def decompress_pkls(
-    fold_id,
-    invokation_id,
-):
-    process_args = [
-        current_app.config["DECOMPRESS_PKLS_PATH"],
-        str(fold_id),
-        current_app.config["FOLDY_STORAGE_TYPE"],
-    ]
-    if current_app.config["FOLDY_STORAGE_TYPE"] == "Cloud":
-        process_args.append(current_app.config["FOLDY_GSTORAGE_DIR"])
-
-    start_generic_script(invokation_id, process_args)
 
 
 def run_annotate(
