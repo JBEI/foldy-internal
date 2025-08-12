@@ -272,6 +272,29 @@ def get_top_percentile_recall_score(target: np.ndarray, pred: np.ndarray, pct: f
     return np.intersect1d(top_tgt, top_prd).size / k
 
 
+def get_top_percentile_recall_score_slate(
+    target: np.ndarray, pred: np.ndarray, pct: float, slate_size: int
+) -> float:
+    target = np.asarray(target).ravel()  # <-- makes it 1-D
+    pred = np.asarray(pred).ravel()
+    assert target.size == pred.size, "arrays must be same length"
+
+    n = target.size
+    num_top_pct_mutants = max(1, int(np.ceil(n * pct / 100)))
+    assert (
+        num_top_pct_mutants <= n
+    ), f"k must be less than or equal to n, got k={num_top_pct_mutants} and n={n}. target shape {target.shape}, pred shape {pred.shape} pct {pct}"
+    assert (
+        num_top_pct_mutants >= slate_size
+    ), f"num_top_pct_mutants must be greater than or equal to slate_size, got k={num_top_pct_mutants} and slate_size={slate_size}. target shape {target.shape}, pred shape {pred.shape} pct {pct}"
+
+    top_tgt = np.argpartition(target, n - num_top_pct_mutants)[n - num_top_pct_mutants :]
+    top_prd = np.argpartition(pred, n - slate_size)[n - slate_size :]
+
+    # recall = |intersection| / slate_size
+    return float(np.intersect1d(top_tgt, top_prd).size) / float(slate_size)
+
+
 def convert_compaign_result_collection_to_df(
     model_evaluation: ModelEvaluation,
 ) -> Tuple[DataFrame, DataFrame]:

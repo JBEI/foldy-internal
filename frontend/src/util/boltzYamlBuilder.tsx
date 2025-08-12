@@ -79,9 +79,20 @@ export function EditableHeader({ value, onChange, style }: EditableHeaderProps) 
         }
     };
 
+    const isEmpty = !value || value.trim().length === 0;
+
     if (isEditing) {
         return (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderStyle: 'dashed', borderWidth: '1px', borderColor: '#d9d9d9', borderRadius: '4px', padding: '4px 8px' }}>
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                borderStyle: 'dashed',
+                borderWidth: isEmpty ? '2px' : '1px',
+                borderColor: isEmpty ? '#ff7a00' : '#d9d9d9',
+                borderRadius: '4px',
+                padding: '4px 8px'
+            }}>
                 <Input
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
@@ -91,6 +102,8 @@ export function EditableHeader({ value, onChange, style }: EditableHeaderProps) 
                     style={{
                         fontSize: '24px',
                         padding: '4px 8px',
+                        borderColor: isEmpty ? '#ff7a00' : undefined,
+                        borderWidth: isEmpty ? '2px' : undefined,
                         ...style
                     }}
                 />
@@ -104,7 +117,16 @@ export function EditableHeader({ value, onChange, style }: EditableHeaderProps) 
     }
 
     return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderStyle: 'dashed', borderWidth: '1px', borderColor: '#d9d9d9', borderRadius: '4px', padding: '4px 8px' }}>
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            borderStyle: 'dashed',
+            borderWidth: isEmpty ? '2px' : '1px',
+            borderColor: isEmpty ? '#ff7a00' : '#d9d9d9',
+            borderRadius: '4px',
+            padding: '4px 8px'
+        }}>
             <h3
                 style={{
                     margin: 0,
@@ -371,7 +393,15 @@ const schemaValidator = (model: Record<string, any>) => {
     return null;
 }
 
-function additionalChecks(model: BoltzFormModel, errors: { details: [{ name: string, message: string }] }) {
+function additionalChecks(model: BoltzFormModel, errors: { details: [{ name: string, message: string }] }, foldName?: string) {
+    // Check fold name if provided
+    if (foldName !== undefined && (!foldName || foldName.trim().length === 0)) {
+        errors.details.push({
+            name: "foldName",
+            message: "Fold name is required"
+        });
+    }
+
     if (!model.sequences || !Array.isArray(model.sequences) || model.sequences.length === 0) {
         errors.details.push({
             name: "sequences",
@@ -605,7 +635,9 @@ function toBoltzYaml(model: BoltzFormModel): string {
 
     // Add constraints if present
     if (model.constraints?.length) {
-        boltzObj.constraints = model.constraints.map(constraint => {
+        boltzObj.constraints = model.constraints
+            .filter(constraint => constraint && constraint.constraint_type) // Filter out undefined/null constraints
+            .map(constraint => {
             if (constraint.constraint_type === "bond") {
                 return {
                     bond: {
@@ -662,6 +694,8 @@ const SequenceField = connectField((props: any) => {
         onChange(canonicalized);
     };
 
+    const isEmpty = !value || value.trim().length === 0;
+
     return (
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
             <TextArea
@@ -669,7 +703,12 @@ const SequenceField = connectField((props: any) => {
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="Enter sequence"
                 rows={4}
-                style={{ fontFamily: 'monospace', flex: 1 }}
+                style={{
+                    fontFamily: 'monospace',
+                    flex: 1,
+                    borderColor: isEmpty ? '#ff7a00' : undefined,
+                    borderWidth: isEmpty ? '2px' : undefined
+                }}
             />
             <Button
                 onClick={canonicalize}
@@ -762,7 +801,11 @@ const BoltzYamlBuilder = forwardRef<BoltzYamlBuilderRef, BoltzYamlBuilderProps>(
      * Parse initial YAML -> JS object -> simpler form model
      */
     let initialModel: BoltzFormModel = {
-        sequences: [],
+        sequences: [{
+            entity_type: "protein",
+            id: "A",
+            sequence: ""
+        }],
         constraints: [] // Initialize empty constraints array
     };
 
@@ -820,7 +863,7 @@ const BoltzYamlBuilder = forwardRef<BoltzYamlBuilderRef, BoltzYamlBuilderProps>(
         if (!error?.details) {
             error = { details: [] }
         }
-        additionalChecks(model, error);
+        additionalChecks(model, error, foldName);
         console.log(`ERROR DETAILS TODO: ${error.details}`);
 
         // If we added new errors, return them so Uniforms displays them
@@ -889,7 +932,7 @@ const BoltzYamlBuilder = forwardRef<BoltzYamlBuilderRef, BoltzYamlBuilderProps>(
                                 borderRadius: "8px",
                                 marginBottom: "1rem"
                             }}>
-                                <h3>Affinity Prediction</h3>
+                                <h3>Affinity Prediction (optional)</h3>
                                 <AutoField name="affinity_binder" />
                             </div>
 
@@ -900,7 +943,7 @@ const BoltzYamlBuilder = forwardRef<BoltzYamlBuilderRef, BoltzYamlBuilderProps>(
                                 borderRadius: "8px",
                                 marginBottom: "1rem"
                             }}>
-                                <h3>Constraints</h3>
+                                <h3>Constraints (optional)</h3>
                                 <ListField name="constraints">
                                     <ListItemField name="$">
                                         <AutoField name="constraint_type" />

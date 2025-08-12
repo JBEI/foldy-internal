@@ -9,7 +9,7 @@ from werkzeug.exceptions import BadRequest
 
 from app.extensions import db
 from app.helpers.fold_storage_manager import FoldStorageManager
-from app.jobs.evolve_jobs import run_evolvepro
+from app.jobs.evolve_jobs import run_few_shot_prediction
 from app.models import Evolution, Fold, Invokation, User
 
 

@@ -31,7 +31,7 @@ ERROR_MESSAGE_IF_EVERYTHING_GOES_WELL = "No module named 'torch'"
 
 
 def test_run_boltz_get_decently_far(app, client, tmp_path, test_fold, test_invokation):
-    """Basic test for run_evolvepro function."""
+    """Basic test for run_few_shot_prediction function."""
     with app.app_context():
         with pytest.raises(AssertionError, match=ERROR_MESSAGE_IF_EVERYTHING_GOES_WELL):
             run_boltz(test_fold.id, test_invokation.id)

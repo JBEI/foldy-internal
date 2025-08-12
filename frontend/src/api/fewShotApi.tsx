@@ -110,8 +110,8 @@ export const getFewShotDebugInfo = async (
             try {
                 const debugBlob = await getFile(foldId, debugPath);
                 const debugText = await debugBlob.text();
-                // Replace NaN with null for proper JSON parsing
-                const cleanedString = debugText.replace(/NaN/g, 'null');
+                // Replace NaN and Infinity with null for proper JSON parsing
+                const cleanedString = debugText.replace(/NaN/g, 'null').replace(/Infinity/g, 'null');
                 const jsonData = JSON.parse(cleanedString);
                 result.debugData = jsonData;
                 result.sortOptions = jsonData.sorts || null;

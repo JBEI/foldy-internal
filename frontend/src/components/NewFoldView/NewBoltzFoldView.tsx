@@ -144,9 +144,11 @@ const NewBoltzFoldView: React.FC<NewBoltzFoldViewProps> = ({ userType }) => {
     const [tags, setTags] = useState<string[]>([]);
     const [newFoldTemplateList, setNewFoldTemplateList] = useState<NewFoldState[]>([{
         foldName: "",
-        yamlString: `
-version: 1
+        yamlString: `version: 1
 sequences:
+  - protein:
+      id: [A]
+      sequence: ""
 `}]);
     const [newFoldStateList, setNewFoldStateList] = useState<(NewFoldState | null)[]>([null]);
     const builderRefs = useRef<Array<React.RefObject<BoltzYamlBuilderRef>>>([]);

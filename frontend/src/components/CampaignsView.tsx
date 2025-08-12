@@ -80,12 +80,9 @@ const CampaignsView: React.FC = () => {
     }, []);
 
     const fetchFoldOptions = async (searchTerm: string): Promise<FoldOption[]> => {
-        if (!searchTerm.trim()) {
-            return [];
-        }
-
         try {
-            const result = await getFoldsWithPagination(searchTerm, null, 1, 20);
+            // If search term is empty, fetch recent folds by passing empty string or null
+            const result = await getFoldsWithPagination(searchTerm.trim() || "", null, 1, 20);
             return result.data.map(fold => ({
                 label: fold.name,
                 value: fold.id || 0,
@@ -124,6 +121,11 @@ const CampaignsView: React.FC = () => {
             };
             return debounce(loadOptions, 300);
         }, []);
+
+        // Load recent folds on mount
+        useEffect(() => {
+            debounceFetcher("");
+        }, [debounceFetcher]);
 
         return (
             <Select
@@ -237,6 +239,8 @@ const CampaignsView: React.FC = () => {
             dataIndex: 'created_at',
             key: 'created_at',
             render: (date: string) => new Date(date).toLocaleDateString(),
+            sorter: (a: Campaign, b: Campaign) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+            defaultSortOrder: 'descend' as const,
         },
         {
             title: 'Actions',
@@ -267,7 +271,7 @@ const CampaignsView: React.FC = () => {
             <Card>
                 <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                        <Title level={2} style={{ margin: 0 }}>Campaigns (In Construction)</Title>
+                        <Title level={2} style={{ margin: 0 }}>Campaigns</Title>
                         <Text type="secondary">Manage your directed evolution campaigns</Text>
                     </div>
                     <Button
@@ -353,10 +357,10 @@ const CampaignsView: React.FC = () => {
                     <Form.Item
                         name="naturalness_model"
                         label="Naturalness Protein Language Model"
-                        initialValue="esm2_t33_650M_UR50D"
+                        initialValue="esm2_t30_150M_UR50D"
                     >
                         <ESMModelPicker
-                            value={createForm.getFieldValue('naturalness_model') || "esm2_t33_650M_UR50D"}
+                            value={createForm.getFieldValue('naturalness_model') || "esm2_t30_150M_UR50D"}
                             onChange={(value) => createForm.setFieldValue('naturalness_model', value)}
                             label=""
                         />
@@ -365,10 +369,10 @@ const CampaignsView: React.FC = () => {
                     <Form.Item
                         name="embedding_model"
                         label="Embedding Model"
-                        initialValue="esm2_t33_650M_UR50D"
+                        initialValue="esm2_t30_150M_UR50D"
                     >
                         <ESMModelPicker
-                            value={createForm.getFieldValue('embedding_model') || "esm2_t33_650M_UR50D"}
+                            value={createForm.getFieldValue('embedding_model') || "esm2_t30_150M_UR50D"}
                             onChange={(value) => createForm.setFieldValue('embedding_model', value)}
                             label=""
                         />

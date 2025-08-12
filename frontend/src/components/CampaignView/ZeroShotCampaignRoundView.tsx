@@ -258,6 +258,19 @@ const ZeroShotCampaignRoundView: React.FC<ZeroShotCampaignRoundViewProps> = ({
                                     Refresh Status
                                 </Button>
                                 <Button
+                                    onClick={() => {
+                                        // Get the invokation matching the naturalness run
+                                        const jobId = incompleteRun.invokation_id;
+                                        if (jobId) {
+                                            // Navigate to the logs tab with the specific job ID
+                                            window.open(`/fold/${campaign.fold_id}/logs#logs_${jobId}`, '_blank');
+                                        }
+                                    }}
+                                    disabled={!incompleteRun.id}
+                                >
+                                    View Logs
+                                </Button>
+                                <Button
                                     type="primary"
                                     icon={<PlusOutlined />}
                                     onClick={handleStartNaturalnessRun}

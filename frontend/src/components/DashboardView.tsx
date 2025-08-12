@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import {
     authenticationService,
     DecodedJwt,
+    redirectToLogin,
 } from "../services/authentication.service";
 import { makeFoldTable } from "../util/foldTable";
 import qs from "query-string";
@@ -11,9 +12,10 @@ import { getFoldsWithPagination } from "../api/foldApi";
 import { Fold } from "src/types/types";
 import { notify } from "../services/NotificationService";
 import { Input, Button, Space, Divider, Card, Spin, Pagination, Typography } from 'antd';
-import { AppstoreOutlined, PlusOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, PlusOutlined, LoginOutlined } from '@ant-design/icons';
+import { StandaloneFoldyMascot } from '../util/foldyMascot';
 
-const { Text } = Typography;
+const { Text, Title } = Typography;
 
 const PAGE_SIZE = 25;
 
@@ -55,6 +57,8 @@ function getQueryStringValue(
 
 function AuthenticatedDashboardView(props: {
     decodedToken: DecodedJwt;
+    viewAllRef?: React.RefObject<HTMLElement>;
+    newFoldRef?: React.RefObject<HTMLElement>;
 }) {
     const userEmail: string = props.decodedToken.user_claims.email;
 
@@ -168,6 +172,7 @@ function AuthenticatedDashboardView(props: {
 
                     {/* Action Buttons */}
                     <Button
+                        ref={props.viewAllRef}
                         type="default"
                         size="large"
                         icon={<AppstoreOutlined />}
@@ -178,6 +183,7 @@ function AuthenticatedDashboardView(props: {
 
                     <Link to={"/newFold"}>
                         <Button
+                            ref={props.newFoldRef}
                             type="primary"
                             size="large"
                             icon={<PlusOutlined />}
@@ -239,15 +245,102 @@ function AuthenticatedDashboardView(props: {
     ) : null;
 }
 
+function UnauthenticatedLandingPage() {
+    return (
+        <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '48px 24px',
+            overflowY: 'auto',
+            textAlign: 'center'
+        }}>
+            <div style={{
+                maxWidth: '600px',
+                width: '100%',
+                minHeight: 'fit-content'
+            }}>
+                <StandaloneFoldyMascot />
+
+                <Title level={1} style={{
+                    fontSize: '48px',
+                    marginBottom: '16px',
+                    background: 'linear-gradient(135deg, #1890ff, #722ed1)',
+                    backgroundClip: 'text',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    fontWeight: 'bold',
+                    marginTop: '0px'
+                }}>
+                    Welcome to {import.meta.env.VITE_INSTITUTION || 'Local'} Foldy!
+                </Title>
+
+                <Text style={{
+                    fontSize: '20px',
+                    color: '#666',
+                    display: 'block',
+                    marginBottom: '48px',
+                    lineHeight: '1.6',
+                    fontWeight: '500'
+                }}>
+                    Predict protein structures with Boltz-2 and run engineering campaigns with FolDE.
+                </Text>
+
+                <Card style={{
+                    background: '#f6ffed',
+                    border: '2px solid #52c41a',
+                    marginBottom: '32px'
+                }}>
+                    <Text strong style={{ color: '#389e0d', fontSize: '16px' }}>
+                        🎓 Get Started
+                    </Text>
+                    <br />
+                    <Text style={{ color: '#389e0d' }}>
+                        Log in with your {import.meta.env.VITE_INSTITUTION || 'Local'} account for full edit access,
+                        <br />
+                        or any other account to view public structures.
+                    </Text>
+                </Card>
+
+                <Button
+                    type="primary"
+                    size="large"
+                    icon={<LoginOutlined />}
+                    onClick={(e) => {
+                        e.preventDefault();
+                        redirectToLogin();
+                    }}
+                    style={{
+                        height: '56px',
+                        fontSize: '18px',
+                        fontWeight: 'bold',
+                        paddingLeft: '32px',
+                        paddingRight: '32px',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(24, 144, 255, 0.3)'
+                    }}
+                >
+                    Login to Get Started
+                </Button>
+            </div>
+        </div>
+    );
+}
+
 function DashboardView(props: {
     decodedToken: DecodedJwt | null;
+    viewAllRef?: React.RefObject<HTMLElement>;
+    newFoldRef?: React.RefObject<HTMLElement>;
 }) {
     if (!props.decodedToken) {
-        return null;
+        return <UnauthenticatedLandingPage />;
     }
     return (
         <AuthenticatedDashboardView
             decodedToken={props.decodedToken}
+            viewAllRef={props.viewAllRef}
+            newFoldRef={props.newFoldRef}
         />
     );
 }

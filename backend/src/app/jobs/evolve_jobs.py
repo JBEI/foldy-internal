@@ -98,7 +98,7 @@ def get_naturalness_df_from_file(
     return raw_naturalness_df
 
 
-def run_evolvepro(few_shot_id: int):
+def run_few_shot_prediction(few_shot_id: int):
     """Run the evolvepro workflow."""
     few_shot = FewShot.get_by_id(few_shot_id)
     if not few_shot:

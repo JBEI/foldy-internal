@@ -62,7 +62,9 @@ campaign_round_fields = ns.inherit(
         ),  # Override to make readonly
         "naturalness_run": fields.Nested(naturalness_fields, required=False, allow_null=True),
         # "few_shot_run_id": NullableInteger(required=False),  # Override to use NullableInteger
-        "few_shot_run": fields.Nested(few_shot_fields, required=False, allow_null=True),
+        "few_shot_run": fields.Nested(
+            few_shot_fields, required=False, allow_null=True, skip_none=True
+        ),
     },
 )
 
@@ -134,6 +136,33 @@ class CampaignsResource(Resource):
         query = query.order_by(Campaign.created_at.desc())
 
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+        # Debug: Check each campaign for problematic data
+        for campaign in pagination.items:
+            for round_obj in campaign.rounds:
+                try:
+                    # Check promoted_templates JSON field
+                    if (
+                        hasattr(round_obj, "promoted_templates")
+                        and round_obj.promoted_templates is not None
+                    ):
+                        if isinstance(round_obj.promoted_templates, str):
+                            logging.error(
+                                f"CampaignRound {round_obj.id} has promoted_templates as string: {round_obj.promoted_templates}"
+                            )
+                        elif not isinstance(round_obj.promoted_templates, list):
+                            logging.error(
+                                f"CampaignRound {round_obj.id} has promoted_templates as {type(round_obj.promoted_templates)}: {round_obj.promoted_templates}"
+                            )
+
+                    # Check input_templates field
+                    if hasattr(round_obj, "input_templates"):
+                        logging.info(
+                            f"CampaignRound {round_obj.id} input_templates type: {type(round_obj.input_templates)}, value: {round_obj.input_templates}"
+                        )
+
+                except Exception as e:
+                    logging.error(f"Error checking CampaignRound {round_obj.id}: {e}")
 
         return {
             "campaigns": pagination.items,

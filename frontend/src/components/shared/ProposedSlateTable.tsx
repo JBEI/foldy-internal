@@ -86,27 +86,24 @@ const ProposedSlateTable: React.FC<ProposedSlateTableProps> = ({
     const seqIdListToLociList = (seqIdList: string[]): number[] => {
         const lociToHighlightList: number[] = [];
         seqIdList.forEach(seqId => {
-            // Handle single mutations like "A123B"
-            const singleMutationMatch = seqId.match(/[A-Z](\d+)[A-Z]/);
-            if (singleMutationMatch) {
-                const locus = parseInt(singleMutationMatch[1]);
-                if (!isNaN(locus)) {
-                    lociToHighlightList.push(locus);
+            // Handle all mutations (single or multi) by splitting on underscore
+            const alleleIds = seqId.split('_');
+            alleleIds.forEach(alleleId => {
+                try {
+                    // Use full match regex to extract locus from each allele (e.g., "K2715A" -> 2715)
+                    const match = alleleId.match(/^[A-Z](\d+)[A-Z]$/);
+                    if (match) {
+                        const locus = parseInt(match[1]);
+                        if (!isNaN(locus)) {
+                            lociToHighlightList.push(locus);
+                        }
+                    } else {
+                        console.warn(`Invalid allele format: ${alleleId} in seqId: ${seqId}`);
+                    }
+                } catch (error) {
+                    console.error(`Error parsing allele ${alleleId} in seqId ${seqId}:`, error);
                 }
-                return;
-            }
-
-            // Handle multi-mutations like "A123B_C456D"
-            const loci = seqId.split('_').map((alleleId) => {
-                const locusStr = alleleId.slice(1, -1);
-                const locusInt = parseInt(locusStr);
-                if (isNaN(locusInt)) {
-                    console.log(`Invalid locus ${locusStr} for seqId ${seqId}`);
-                    return null;
-                }
-                return locusInt;
-            }).filter(locus => locus !== null);
-            lociToHighlightList.push(...loci);
+            });
         });
 
         return Array.from(new Set(lociToHighlightList));

@@ -246,8 +246,8 @@ const NaturalnessResults: React.FC<NaturalnessResultsProps> = ({
                 return key in scoreHeatmapData ? scoreHeatmapData[key] : null;
             })
         );
-        // const zmin = showWTMarginalLikelihood ? 0 : 0;
-        const zmin = showWTMarginalLikelihood ? Math.min(...zValues.flat(2).filter(val => val !== null) as number[]) : 0;
+        const zmin = showWTMarginalLikelihood ? 0 : 0;
+        // const zmin = showWTMarginalLikelihood ? Math.min(...zValues.flat(2).filter(val => val !== null) as number[]) : 0;
         const zmax = showWTMarginalLikelihood ? Math.max(...zValues.flat(2).filter(val => val !== null) as number[]) : 1;
 
         // Create customdata to match the z-values structure (RESIDUES x loci)

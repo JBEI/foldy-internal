@@ -53,7 +53,7 @@ const FewShotTab: React.FC<FewShotTabProps> = ({ foldId, yamlConfig, jobs, files
 
     const [displayedFewShotId, setDisplayedFewShotId] = useState<number | null>(null);
     const [slateBuildCsvData, setFewShotCsvData] = useState<string | null>(null);
-    const [slateBuildDebugData, setFewShotDebugData] = useState<any>(null);
+    const [fewShotDebugData, setFewShotDebugData] = useState<any>(null);
     const [sortOptions, setSortOptions] = useState<{ [key: string]: string[] }>({});
 
     // Sort evolutions (FewShot) by date_created (newest first)
@@ -285,7 +285,7 @@ const FewShotTab: React.FC<FewShotTabProps> = ({ foldId, yamlConfig, jobs, files
 
                         {/* Render plotly charts with the debug data */}
                         <h3>Warm Start & Training Loss</h3>
-                        <FewShotDebugPlots debugData={slateBuildDebugData} />
+                        <FewShotDebugPlots debugData={fewShotDebugData} />
                     </TableSection>
                     : null
             }

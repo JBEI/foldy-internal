@@ -42,7 +42,7 @@ RUN conda install -n base -c conda-forge mamba --override-channels && \
         tqdm \
         seaborn \
         vina \
-        biopython && \
+        biopython>=1.79 && \
     mamba clean -afy && \
     conda clean -afy
 RUN wget https://ccsb.scripps.edu/adfr/download/1038/ADFRsuite_x86_64Linux_1.0.tar.gz

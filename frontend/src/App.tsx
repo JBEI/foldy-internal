@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useState } from "react";
+import React, { lazy, Suspense, useEffect, useState, useRef } from "react";
 import { useJwt } from "react-jwt";
 import {
     BrowserRouter,
@@ -13,8 +13,8 @@ import "./App.scss";
 
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import UIkit from "uikit";
-import { Layout, Menu, Button as AntButton, Drawer, Spin } from "antd";
-import { MenuOutlined, HomeOutlined, InfoCircleOutlined, SettingOutlined, DatabaseOutlined, TagOutlined, ExperimentOutlined } from "@ant-design/icons";
+import { Layout, Menu, Button as AntButton, Drawer, Spin, Tour, Modal, Typography as AntTypography, ConfigProvider, App as AntApp } from "antd";
+import { MenuOutlined, HomeOutlined, InfoCircleOutlined, SettingOutlined, DatabaseOutlined, TagOutlined, ExperimentOutlined, QuestionCircleOutlined, RocketOutlined } from "@ant-design/icons";
 import About from "./components/AboutView/About";
 import DashboardView from "./components/DashboardView";
 import NewBoltzFoldView from "./components/NewFoldView/NewBoltzFoldView";
@@ -122,50 +122,70 @@ function RoutedApp({ token, setToken }: {
     const [enableDisco, setEnableDisco] = useState(false);
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [isMobile, setIsMobile] = useState(window.innerWidth < 960);
+    const [tourOpen, setTourOpen] = useState(false);
+    const [newUserModalOpen, setNewUserModalOpen] = useState(false);
     const navigate = useNavigate();
     const location = useLocation();
+
+    // Tour refs
+    const dashboardNavRef = useRef(null);
+    const viewAllRef = useRef(null);
+    const newFoldRef = useRef(null);
+    const campaignsNavRef = useRef(null);
+
+    // Tour steps
+    const tourSteps = [
+        {
+            title: 'Welcome to the Dashboard!',
+            description: 'This is where you can view predicted protein structures, or folds.',
+            target: () => dashboardNavRef.current,
+        },
+        {
+            title: 'View All Folds',
+            description: 'You can use the search bar to search for folds by name or user, or click View All to see all predicted structures.',
+            target: () => viewAllRef.current,
+        },
+        {
+            title: 'Create New Folds',
+            description: 'Click this button to predict the structure of a protein or complex with Boltz-2. Most tools are linked to your created folds.',
+            target: () => newFoldRef.current,
+        },
+        {
+            title: 'Protein Engineering Campaigns',
+            description: 'You can run protein engineering campaigns here. First fold your protein, then head over to Campaigns to start an engineering campaign!',
+            target: () => campaignsNavRef.current,
+        },
+    ];
+
+    // Start walkthrough handler
+    const startWalkthrough = () => {
+        // Navigate to dashboard first
+        if (location.pathname !== '/') {
+            navigate('/');
+        }
+        // Small delay to ensure navigation completes
+        setTimeout(() => {
+            setTourOpen(true);
+        }, 100);
+    };
 
     var fullDecodedToken: DecodedJwt | null = null;
     if (isFullDecodedJwt(decodedToken)) {
         fullDecodedToken = decodedToken;
-
-        const isNewUser = searchParams.get("new_user");
-        if (isNewUser) {
-            const newSearchParams = new URLSearchParams(searchParams);
-            newSearchParams.delete("new_user");
-            setSearchParams(newSearchParams);
-
-            UIkit.modal
-                .alert(
-                    `<div style="text-align: left;">
-                        <h3>🎉 Welcome to ${import.meta.env.VITE_INSTITUTION} Foldy!</h3>
-                        <p><strong>Your access level:</strong> ${getDescriptionOfUserType(
-                        fullDecodedToken.user_claims.type || ""
-                    )}</p>
-
-                        <h4>🧬 What is Foldy?</h4>
-                        <p>Foldy is a democratized protein folding platform that uses cutting-edge AI models (like Boltz-2x) to predict protein structures with exceptional accuracy for complex scenarios including multimers, small molecule docking, and nucleic acid interactions.</p>
-
-                        <h4>🚀 Get Started:</h4>
-                        <ul>
-                            <li>Browse existing structures from the <strong>Dashboard</strong></li>
-                            <li>Create predictions by clicking <strong>"NEW"</strong> (editors only)</li>
-                            <li>Explore the comprehensive analysis tools in each fold</li>
-                        </ul>
-
-                        <div style="background-color: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 12px; margin: 16px 0;">
-                            <h4 style="color: #389e0d; margin-top: 0;">📚 Citations & Attribution</h4>
-                            <p style="margin-bottom: 8px;">If you publish research using this platform, please consider citing the relevant papers to support the developers. This includes both the Foldy platform and underlying methods like Boltz-2x.</p>
-                        </div>
-
-                        <p>Visit the <a href="/about">About page</a> for detailed information, FAQs, and complete citation requirements.</p>
-                    </div>`
-                )
-                .then(() => {
-                    navigate("/about");
-                });
-        }
     }
+
+    // Handle new user modal in useEffect to avoid infinite renders
+    useEffect(() => {
+        if (fullDecodedToken) {
+            const isNewUser = searchParams.get("new_user");
+            if (isNewUser) {
+                const newSearchParams = new URLSearchParams(searchParams);
+                newSearchParams.delete("new_user");
+                setSearchParams(newSearchParams);
+                setNewUserModalOpen(true);
+            }
+        }
+    }, [fullDecodedToken, searchParams, setSearchParams]);
 
     useKeyboardIntercept('f', () => {
         setCartwheelingMascotList([...cartwheelingMascotList, <FoldyMascot text={""} moveTextAbove={false} isCartwheeling={true} key={cartwheelingMascotList.length} isKanKaning={false} />]);
@@ -265,7 +285,7 @@ function RoutedApp({ token, setToken }: {
     const desktop_navbar = (
         <Layout.Header
             style={{
-                background: "linear-gradient(to left, #28a5f5, #1e87f0)",
+                background: "linear-gradient(to left, #1e87f0, #1565c0)",
                 padding: '0 24px',
                 display: 'flex',
                 alignItems: 'center',
@@ -285,8 +305,12 @@ function RoutedApp({ token, setToken }: {
                     {foldyTitle}
                 </a>
                 <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
-                    <NavLink href="/">Dashboard</NavLink>
-                    <NavLink href="/campaigns">Campaigns</NavLink>
+                    <span ref={dashboardNavRef}>
+                        <NavLink href="/">Dashboard</NavLink>
+                    </span>
+                    <span ref={campaignsNavRef}>
+                        <NavLink href="/campaigns">Campaigns</NavLink>
+                    </span>
                     <NavLink href="/tags">Tags</NavLink>
                     {fullDecodedToken?.user_claims.type === "admin" && (
                         <>
@@ -300,6 +324,20 @@ function RoutedApp({ token, setToken }: {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                {fullDecodedToken && !isExpired && (
+                    <AntButton
+                        type="text"
+                        icon={<QuestionCircleOutlined />}
+                        onClick={startWalkthrough}
+                        style={{
+                            color: '#fff',
+                            border: 'none',
+                            fontSize: '14px'
+                        }}
+                    >
+                        Walkthrough
+                    </AntButton>
+                )}
                 <div style={{ color: '#fff' }}>
                     <LoginButton
                         decodedToken={fullDecodedToken}
@@ -308,7 +346,9 @@ function RoutedApp({ token, setToken }: {
                     />
                 </div>
                 {fullDecodedToken && !isExpired ? null : (
-                    <FoldyMascot text={foldyWelcomeText} moveTextAbove={false} isCartwheeling={false} isKanKaning={false} />
+                    location.pathname === '/' ? null : (
+                        <FoldyMascot text={foldyWelcomeText} moveTextAbove={false} isCartwheeling={false} isKanKaning={false} />
+                    )
                 )}
             </div>
         </Layout.Header>
@@ -317,7 +357,7 @@ function RoutedApp({ token, setToken }: {
     const mobile_navbar = (
         <Layout.Header
             style={{
-                background: "linear-gradient(to left, #28a5f5, #1e87f0)",
+                background: "linear-gradient(to left, #1e87f0, #1565c0)",
                 zIndex: 100,
                 position: "fixed",
                 top: 0,
@@ -354,7 +394,9 @@ function RoutedApp({ token, setToken }: {
             />
 
             {fullDecodedToken && !isExpired ? null : (
-                <FoldyMascot text={foldyWelcomeText} moveTextAbove={true} isCartwheeling={false} isKanKaning={false} />
+                location.pathname === '/' ? null : (
+                    <FoldyMascot text={foldyWelcomeText} moveTextAbove={true} isCartwheeling={false} isKanKaning={false} />
+                )
             )}
         </Layout.Header>
     );
@@ -389,7 +431,20 @@ function RoutedApp({ token, setToken }: {
                     style={{ border: 'none' }}
                 />
 
-                <div style={{ marginTop: '24px', padding: '0 24px' }}>
+                <div style={{ marginTop: '24px', padding: '0 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {fullDecodedToken && !isExpired && (
+                        <AntButton
+                            type="default"
+                            icon={<QuestionCircleOutlined />}
+                            onClick={() => {
+                                setMobileDrawerOpen(false);
+                                startWalkthrough();
+                            }}
+                            style={{ width: '100%' }}
+                        >
+                            Walkthrough
+                        </AntButton>
+                    )}
                     <LoginButton
                         setToken={setToken}
                         decodedToken={fullDecodedToken}
@@ -486,6 +541,8 @@ function RoutedApp({ token, setToken }: {
                         element={
                             <DashboardView
                                 decodedToken={fullDecodedToken}
+                                viewAllRef={viewAllRef}
+                                newFoldRef={newFoldRef}
                             />
                         }
                     />
@@ -493,6 +550,79 @@ function RoutedApp({ token, setToken }: {
             </div>
             {cartwheelingMascotList.length > 0 ? cartwheelingMascotList : null}
             <FoldingAtTheDisco enabled={enableDisco} />
+
+            {/* Tour component */}
+            <Tour
+                open={tourOpen}
+                onClose={() => setTourOpen(false)}
+                steps={tourSteps}
+                type="primary"
+            />
+
+            {/* New User Welcome Modal */}
+            <Modal
+                title={
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <RocketOutlined style={{ color: '#1890ff' }} />
+                        <span>🎉 Welcome to {import.meta.env.VITE_INSTITUTION} Foldy!</span>
+                    </div>
+                }
+                open={newUserModalOpen}
+                onOk={() => {
+                    setNewUserModalOpen(false);
+                    startWalkthrough();
+                }}
+                onCancel={() => {
+                    setNewUserModalOpen(false);
+                }}
+                okText="🚀 Start Interactive Walkthrough"
+                cancelText="Skip and Explore"
+                width={600}
+                centered
+            >
+                <div style={{ padding: '8px 0' }}>
+                    <AntTypography.Paragraph>
+                        <strong>Your access level:</strong> {fullDecodedToken ? getDescriptionOfUserType(
+                            fullDecodedToken.user_claims.type || ""
+                        ) : ''}
+                    </AntTypography.Paragraph>
+
+                    <AntTypography.Title level={4} style={{ marginTop: '24px' }}>🧬 What is Foldy?</AntTypography.Title>
+                    <AntTypography.Paragraph>
+                        Foldy is a democratized protein folding platform that uses cutting-edge AI models (like Boltz-2x)
+                        to predict protein structures with exceptional accuracy for complex scenarios including multimers,
+                        small molecule docking, and nucleic acid interactions.
+                    </AntTypography.Paragraph>
+
+                    <AntTypography.Title level={4} style={{ marginTop: '24px' }}>🚀 Get Started:</AntTypography.Title>
+                    <ul style={{ paddingLeft: '20px' }}>
+                        <li>Browse existing structures from the <strong>Dashboard</strong></li>
+                        <li>Create predictions by clicking <strong>"New Fold"</strong> (editors only)</li>
+                        <li>Explore the comprehensive analysis tools in each fold</li>
+                        <li>Run protein engineering <strong>Campaigns</strong> for optimization</li>
+                    </ul>
+
+                    <div style={{
+                        backgroundColor: '#f6ffed',
+                        border: '1px solid #b7eb8f',
+                        borderRadius: '4px',
+                        padding: '12px',
+                        margin: '16px 0'
+                    }}>
+                        <AntTypography.Title level={5} style={{ color: '#389e0d', marginTop: 0 }}>
+                            📚 Citations & Attribution
+                        </AntTypography.Title>
+                        <AntTypography.Paragraph style={{ marginBottom: '8px', color: '#389e0d' }}>
+                            If you publish research using this platform, please consider citing the relevant papers
+                            to support the developers. This includes both the Foldy platform and underlying methods like Boltz-2x.
+                        </AntTypography.Paragraph>
+                    </div>
+
+                    <AntTypography.Paragraph style={{ marginBottom: 0 }}>
+                        Visit the <a href="/about">About page</a> for detailed information, FAQs, and complete citation requirements.
+                    </AntTypography.Paragraph>
+                </div>
+            </Modal>
         </div>
     );
 }
@@ -563,17 +693,26 @@ function App() {
         console.error("VITE_GOOGLE_CLIENT_ID is unset.");
     }
     return (
-        <GoogleOAuthProvider
-            clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ""}
+        <ConfigProvider
+            theme={{
+                token: {
+                    colorPrimary: '#1e87f0',
+                    colorInfo: '#1e87f0',
+                },
+            }}
         >
-            <BrowserRouter>
-                {initDone ? (
-                    <RoutedApp token={token} setToken={setToken} />
-                ) : (
-                    <InitApp onInitDone={handleInitDone} />
-                )}
-            </BrowserRouter>
-        </GoogleOAuthProvider>
+            <GoogleOAuthProvider
+                clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ""}
+            >
+                <BrowserRouter>
+                    {initDone ? (
+                        <RoutedApp token={token} setToken={setToken} />
+                    ) : (
+                        <InitApp onInitDone={handleInitDone} />
+                    )}
+                </BrowserRouter>
+            </GoogleOAuthProvider>
+        </ConfigProvider>
     );
 }
 

@@ -10,7 +10,7 @@ from werkzeug.exceptions import BadRequest
 from app.extensions import db
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.sequence_util import VALID_AMINO_ACIDS
-from app.jobs.evolve_jobs import run_evolvepro
+from app.jobs.evolve_jobs import run_few_shot_prediction
 from app.models import Evolution, Fold, Invokation, User
 
 
@@ -97,41 +97,43 @@ def mock_foldy_storage(app, tmp_path, test_fold, test_fold_evolution):
     yield storage_dir
 
 
-def test_run_evolvepro_fails_nofile(app, client, mock_storage_manager, test_fold_evolution):
-    """Basic test for run_evolvepro function."""
+def test_run_few_shot_prediction_fails_nofile(
+    app, client, mock_storage_manager, test_fold_evolution
+):
+    """Basic test for run_few_shot_prediction function."""
     with app.app_context():
         with pytest.raises(AssertionError, match="xlsx not found"):
-            run_evolvepro(evolve_id=test_fold_evolution.id)
+            run_few_shot_prediction(evolve_id=test_fold_evolution.id)
 
 
 def test_old_modes_not_supported(
     app, client, tmp_path, mock_storage_manager, test_fold_evolution, mock_foldy_storage
 ):
-    """Basic test for run_evolvepro function."""
+    """Basic test for run_few_shot_prediction function."""
     with app.app_context():
         with pytest.raises(AssertionError, match="no longer supported"):
             test_fold_evolution.update({"mode": "randomforest"})
 
-            run_evolvepro(evolve_id=test_fold_evolution.id)
+            run_few_shot_prediction(evolve_id=test_fold_evolution.id)
 
 
 def test_requires_few_shot_params(
     app, client, tmp_path, mock_storage_manager, test_fold_evolution, mock_foldy_storage
 ):
-    """Basic test for run_evolvepro function."""
+    """Basic test for run_few_shot_prediction function."""
     with app.app_context():
         with pytest.raises(AssertionError, match="no longer supported"):
             test_fold_evolution.update({"few_shot_params": None})
 
-            run_evolvepro(evolve_id=test_fold_evolution.id)
+            run_few_shot_prediction(evolve_id=test_fold_evolution.id)
 
 
-def test_run_evolvepro_succeeds(
+def test_run_few_shot_prediction_succeeds(
     app, client, tmp_path, mock_storage_manager, test_fold_evolution, mock_foldy_storage
 ):
-    """Basic test for run_evolvepro function."""
+    """Basic test for run_few_shot_prediction function."""
     with app.app_context():
-        run_evolvepro(evolve_id=test_fold_evolution.id)
+        run_few_shot_prediction(evolve_id=test_fold_evolution.id)
 
         fold_dir = mock_foldy_storage / ("%06d" % test_fold_evolution.fold_id)
         evolve_dir = fold_dir / "evolve" / test_fold_evolution.name

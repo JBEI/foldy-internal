@@ -210,41 +210,10 @@ const CampaignRoundComponent: React.FC<CampaignRoundComponentProps> = ({
 
     // Determine workflow step based on round and mode
     const renderWorkflowContent = () => {
-        // First round or no mode set - show onboarding
+        // First round with no mode set - automatically set to zero-shot
         if (!currentRound.mode && currentRound.round_number === 1) {
-            return (
-                <Card>
-                    <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                        <ExperimentOutlined style={{ fontSize: '48px', color: '#1890ff', marginBottom: '16px' }} />
-                        <Title level={3}>Welcome to Round {currentRound.round_number}</Title>
-                        <Text type="secondary">
-                            Let's set up your prediction workflow. First, we need to know about your experimental data.
-                        </Text>
-                    </div>
-
-                    <div style={{ marginBottom: '24px' }}>
-                        <Text strong>Do you have any measurements of mutant activity yet?</Text>
-                        <br />
-                        <Text type="secondary">This will help us choose the best prediction approach for your campaign.</Text>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: '16px' }}>
-                        <Button
-                            type="primary"
-                            size="large"
-                            onClick={() => handleMeasurementChoice(true)}
-                        >
-                            Yes (I want to make few-shot predictions)
-                        </Button>
-                        <Button
-                            size="large"
-                            onClick={() => handleMeasurementChoice(false)}
-                        >
-                            No (I want to make zero-shot predictions)
-                        </Button>
-                    </div>
-                </Card>
-            );
+            handleMeasurementChoice(false); // false = zero-shot
+            return null;
         }
 
         // Round > 1 with no mode - default to few-shot
@@ -307,7 +276,7 @@ const CampaignRoundComponent: React.FC<CampaignRoundComponentProps> = ({
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        {isLastRound && currentRound.round_number > 1 && (
+                        {isLastRound && (
                             <Button
                                 danger
                                 size="large"

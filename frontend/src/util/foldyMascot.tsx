@@ -159,6 +159,24 @@ interface FoldingAtTheDisco {
     enabled: boolean;
 }
 
+export function StandaloneFoldyMascot() {
+    return (
+        <div>
+            <style>{spinningStyles}</style>
+            <img
+                style={{
+                    width: "200px",
+                    display: "inline-block",
+                    marginBottom: "24px",
+                }}
+                className={"gentlerocking"}
+                src={`/pksito.gif`}
+                alt="Foldy Mascot"
+            />
+        </div>
+    );
+}
+
 export function FoldingAtTheDisco(props: FoldingAtTheDisco) {
     if (!props.enabled) {
         return null;

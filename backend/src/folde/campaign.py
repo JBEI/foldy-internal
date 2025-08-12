@@ -9,15 +9,14 @@ import json
 import logging
 import random
 import re
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, Field
 from scipy.stats import spearmanr
-from sklearn.metrics import average_precision_score, mean_squared_error, recall_score, roc_auc_score
+from sklearn.metrics import mean_squared_error, roc_auc_score
 
 from app.helpers.sequence_util import get_loci_set, is_homolog_seq_id
 from folde.data import get_proteingym_dataset
@@ -31,36 +30,15 @@ from folde.types import (
     SimulationResult,
     SingleConfigCampaignResult,
 )
-from folde.util import get_consensus_scores, get_top_percentile_recall_score, top_k_mask
+from folde.util import (
+    get_consensus_scores,
+    get_top_percentile_recall_score,
+    get_top_percentile_recall_score_slate,
+    top_k_mask,
+)
 from folde.zero_shot_models import get_zero_shot_model
 
 logger = logging.getLogger(__name__)
-
-
-def _evaluate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
-    """Compute evaluation metrics for predictions.
-
-    Args:
-        y_true: Ground truth values
-        y_pred: Predicted values
-
-    Returns:
-        Dictionary containing evaluation metrics
-    """
-    metrics = {}
-
-    # Regression metrics
-    metrics["mse"] = mean_squared_error(y_true, y_pred)
-    metrics["rmse"] = np.sqrt(metrics["mse"])
-    if len(np.unique(y_pred)) > 1:
-        metrics["pearson"] = np.corrcoef(y_true, y_pred)[0, 1]
-        metrics["spearman"] = pd.Series(y_true).corr(pd.Series(y_pred), method="spearman")
-    else:
-        logging.warning(f"The predicted activities were degenerate: {y_pred}")
-        metrics["pearson"] = None
-        metrics["spearman"] = None
-
-    return metrics
 
 
 class CampaignWorldState:
@@ -308,7 +286,7 @@ def _run_single_simulation(
             consensus_held_out_predictions.values,
         )[0]
 
-        def get_held_out_stats_for_percentile(percentile):
+        def get_held_out_stats_for_percentile(percentile, slate_size):
             """Returns some stats on the held out predictions for a percentile, zero to 100 (eg 1.0 for top 1 percent)."""
             assert held_out_activity_series.index.equals(consensus_held_out_predictions.index)
 
@@ -327,16 +305,25 @@ def _run_single_simulation(
                 percentile,
             )
 
+            held_out_stat_recall_slate = get_top_percentile_recall_score_slate(
+                held_out_activity_series[nonnull_activity_mask].to_numpy(),
+                consensus_held_out_predictions[nonnull_activity_mask].to_numpy(),
+                percentile,
+                slate_size,
+            )
+
             held_out_stat_auc = roc_auc_score(
                 top_k_mask(held_out_activity_series[nonnull_activity_mask], percentile),
                 consensus_held_out_predictions[nonnull_activity_mask],
             )
-            return held_out_stat_recall, held_out_stat_auc
+            return held_out_stat_recall, held_out_stat_recall_slate, held_out_stat_auc
 
-        held_out_1pct_recall, held_out_1pct_auc = get_held_out_stats_for_percentile(1)
-        held_out_10pct_recall, held_out_10pct_auc = get_held_out_stats_for_percentile(10)
-
-        # old_held_out_1pct_recall, old_held_out_1pct_auc = old_get_held_out_stats_for_percentile(1)
+        held_out_1pct_recall, held_out_1pct_recall_slate, held_out_1pct_auc = (
+            get_held_out_stats_for_percentile(1, round_size)
+        )
+        held_out_10pct_recall, held_out_10pct_recall_slate, held_out_10pct_auc = (
+            get_held_out_stats_for_percentile(10, round_size)
+        )
 
         round_metrics = RoundMetrics(
             round_num=round_num,
@@ -344,11 +331,11 @@ def _run_single_simulation(
             misc={
                 "held_out_activity_spearman": float(held_out_activity_spearman),  # type: ignore
                 "held_out_1pct_recall": float(held_out_1pct_recall),  # type: ignore
+                "held_out_1pct_recall_slate": float(held_out_1pct_recall_slate),  # type: ignore
                 "held_out_1pct_auc": float(held_out_1pct_auc),  # type: ignore
                 "held_out_10pct_recall": float(held_out_10pct_recall),  # type: ignore
+                "held_out_10pct_recall_slate": float(held_out_10pct_recall_slate),  # type: ignore
                 "held_out_10pct_auc": float(held_out_10pct_auc),  # type: ignore
-                "old_held_out_1pct_recall": 0.0,  # float(old_held_out_1pct_recall),  # type: ignore
-                "old_held_out_1pct_auc": 0.0,  # float(old_held_out_1pct_auc),  # type: ignore
             },
         )
 

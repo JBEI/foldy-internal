@@ -261,7 +261,7 @@ class FewShotResource(Resource):
             )
         else:
             enqueued_job = get_queue("cpu").enqueue(
-                evolve_jobs.run_evolvepro,
+                evolve_jobs.run_few_shot_prediction,
                 few_shot_record.id,
                 job_timeout="6h",
                 on_success=Callback(send_success_email, timeout="10s"),

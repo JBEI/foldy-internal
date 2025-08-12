@@ -18,12 +18,21 @@ const createPlotData = (debugData: any) => {
     const pretrainData: any[] = [];
     const finetuneData: any[] = [];
 
+    // Get frequency data for epoch conversion
+    const pretrainValFreq = debugData.pretrain_val_frequency || 1;
+    const finetuneValFreq = debugData.finetune_val_frequency || 1;
+
     // Inside the pretrain metrics loop:
     debugData.pretrain_metrics.forEach((model: any, index: number) => {
         if (model.train_loss && model.train_loss.length > 0) {
+            // Convert iterations to epochs: epoch = iteration * val_frequency
+            const trainEpochs = Array.from({ length: model.train_loss.length }, (_, i) => (i + 1) * pretrainValFreq);
+            // Filter out NaN values
+            const cleanTrainLoss = model.train_loss.map((val: number) => (isNaN(val) || val === null) ? null : val);
+
             pretrainData.push({
-                x: Array.from({ length: model.train_loss.length }, (_, i) => i + 1),
-                y: model.train_loss,
+                x: trainEpochs,
+                y: cleanTrainLoss,
                 name: `Model ${index + 1} Train`,
                 type: 'scatter',
                 mode: 'lines',
@@ -36,9 +45,14 @@ const createPlotData = (debugData: any) => {
         }
 
         if (model.val_loss && model.val_loss.length > 0) {
+            // Convert iterations to epochs: epoch = iteration * val_frequency
+            const valEpochs = Array.from({ length: model.val_loss.length }, (_, i) => (i + 1) * pretrainValFreq);
+            // Filter out NaN values and find minimum for highlighting
+            const cleanValLoss = model.val_loss.map((val: number) => (isNaN(val) || val === null) ? null : val);
+
             pretrainData.push({
-                x: Array.from({ length: model.val_loss.length }, (_, i) => i + 1),
-                y: model.val_loss,
+                x: valEpochs,
+                y: cleanValLoss,
                 name: `Model ${index + 1} Val`,
                 type: 'scatter',
                 mode: 'lines',
@@ -49,18 +63,42 @@ const createPlotData = (debugData: any) => {
                     opacity: 0.5,
                 }
             });
+
+            // Add scatter point for minimum validation loss
+            const validLosses = model.val_loss.filter((val: number) => !isNaN(val) && val !== null);
+            if (validLosses.length > 0) {
+                const minVal = Math.min(...validLosses);
+                const minIdx = model.val_loss.findIndex((val: number) => val === minVal);
+                if (minIdx !== -1) {
+                    pretrainData.push({
+                        x: [(minIdx + 1) * pretrainValFreq],
+                        y: [minVal],
+                        name: `Model ${index + 1} Min Val`,
+                        type: 'scatter',
+                        mode: 'markers',
+                        marker: {
+                            color: '#fa541c',
+                            size: 8,
+                            symbol: 'star'
+                        },
+                        showlegend: false
+                    });
+                }
+            }
         }
     });
 
     // Inside the finetune metrics loop:
     debugData.finetune_metrics.forEach((model: any, index: number) => {
-        if (model.train_loss && model.train_loss.some((val: number) => val !== 0 && val !== null)) {
-            // Filter out zeros which appear to be placeholders
-            const nonZeroTrainLoss = model.train_loss.map((val: number) => val === 0 ? null : val);
+        if (model.train_loss && model.train_loss.some((val: number) => val !== 0 && val !== null && !isNaN(val))) {
+            // Convert iterations to epochs: epoch = iteration * val_frequency
+            const trainEpochs = Array.from({ length: model.train_loss.length }, (_, i) => (i + 1) * finetuneValFreq);
+            // Filter out zeros and NaN values which appear to be placeholders
+            const cleanTrainLoss = model.train_loss.map((val: number) => (val === 0 || isNaN(val) || val === null) ? null : val);
 
             finetuneData.push({
-                x: Array.from({ length: model.train_loss.length }, (_, i) => i + 1),
-                y: nonZeroTrainLoss,
+                x: trainEpochs,
+                y: cleanTrainLoss,
                 name: `Model ${index + 1} Train`,
                 type: 'scatter',
                 mode: 'lines',
@@ -73,13 +111,15 @@ const createPlotData = (debugData: any) => {
             });
         }
 
-        if (model.val_loss && model.val_loss.some((val: number) => val !== 0 && val !== null)) {
-            // Filter out zeros which appear to be placeholders
-            const nonZeroValLoss = model.val_loss.map((val: number) => val === 0 ? null : val);
+        if (model.val_loss && model.val_loss.some((val: number) => val !== 0 && val !== null && !isNaN(val))) {
+            // Convert iterations to epochs: epoch = iteration * val_frequency
+            const valEpochs = Array.from({ length: model.val_loss.length }, (_, i) => (i + 1) * finetuneValFreq);
+            // Filter out zeros and NaN values which appear to be placeholders
+            const cleanValLoss = model.val_loss.map((val: number) => (val === 0 || isNaN(val) || val === null) ? null : val);
 
             finetuneData.push({
-                x: Array.from({ length: model.val_loss.length }, (_, i) => i + 1),
-                y: nonZeroValLoss,
+                x: valEpochs,
+                y: cleanValLoss,
                 name: `Model ${index + 1} Val`,
                 type: 'scatter',
                 mode: 'lines',
@@ -90,6 +130,28 @@ const createPlotData = (debugData: any) => {
                     opacity: 0.5,
                 }
             });
+
+            // Add scatter point for minimum validation loss
+            const validLosses = model.val_loss.filter((val: number) => val !== 0 && !isNaN(val) && val !== null);
+            if (validLosses.length > 0) {
+                const minVal = Math.min(...validLosses);
+                const minIdx = model.val_loss.findIndex((val: number) => val === minVal);
+                if (minIdx !== -1) {
+                    finetuneData.push({
+                        x: [(minIdx + 1) * finetuneValFreq],
+                        y: [minVal],
+                        name: `Model ${index + 1} Min Val`,
+                        type: 'scatter',
+                        mode: 'markers',
+                        marker: {
+                            color: '#fa541c',
+                            size: 8,
+                            symbol: 'star'
+                        },
+                        showlegend: false
+                    });
+                }
+            }
         }
     });
 
@@ -159,7 +221,7 @@ const FewShotDebugPlots: React.FC<FewShotDebugPlotsProps> = React.memo(({ debugD
                 autosize: true,
                 margin: { l: 50, r: 20, t: 40, b: 80 },
                 xaxis: {
-                    title: { text: 'Iteration', font: { size: 12, color: '#595959' } },
+                    title: { text: 'Epoch', font: { size: 12, color: '#595959' } },
                     tickfont: { size: 10, color: '#8c8c8c' },
                     gridcolor: '#f0f0f0',
                     linecolor: '#d9d9d9'

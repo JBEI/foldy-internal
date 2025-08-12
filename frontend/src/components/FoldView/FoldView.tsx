@@ -157,71 +157,80 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
         this.switchToTab(1, jobId);
     }
 
-    refreshFoldDataFromBackend = (): Promise<void> => {
-        return getFold(this.props.foldId).then((new_fold_data) => {
-            console.log(`Got new fold with tags ${new_fold_data.tags}`);
-            this.setState({ foldData: new_fold_data });
-
-            if (this.state.foldData?.jobs) {
-                // Get current state of jobs as a map
-                const currentJobStates = new Map(
-                    this.state.jobs?.map(job => [job.id, job]) || []
-                );
-
-                // For each job in foldData, determine if we need to refresh it
-                const jobsToRefresh = this.state.foldData.jobs
-                    .filter(foldJob => {
-                        const currentJob = currentJobStates.get(foldJob.id);
-                        return foldJob.state === "running" ||
-                            currentJob?.state === "running" ||
-                            (currentJob && currentJob.state !== foldJob.state);
-                    })
-                    .map(job => job.id);
-
-                if (jobsToRefresh.length > MAX_JOBS_TO_REFRESH) {
-                    notify.warning(`Not streaming job logs because there are too many jobs (${jobsToRefresh.length} > ${MAX_JOBS_TO_REFRESH}))`);
-                    return Promise.resolve();
-                }
-
-                // Create final job list
-                const finalJobs = [...this.state.foldData.jobs].map(foldJob => {
-                    // Use existing job data if we have it and don't need to refresh
-                    if (!jobsToRefresh.includes(foldJob.id)) {
-                        return currentJobStates.get(foldJob.id) || foldJob;
-                    }
-                    return foldJob;
-                });
-
-                // Only fetch jobs that need refreshing
-                if (jobsToRefresh.length > 0) {
-                    return Promise.all(
-                        jobsToRefresh.map(jobId => getInvokation(jobId))
-                    ).then(
-                        (refreshedJobs) => {
-                            // Update the jobs that were refreshed
-                            refreshedJobs.forEach(refreshedJob => {
-                                const index = finalJobs.findIndex(j => j.id === refreshedJob.id);
-                                if (index !== -1) {
-                                    finalJobs[index] = refreshedJob;
-                                }
-                            });
-                            this.setState({ jobs: finalJobs });
-                        },
-                        (e) => {
-                            notify.error(e.toString());
-                        }
-                    );
-                } else {
-                    // If no jobs need refreshing, just update state
-                    this.setState({ jobs: finalJobs });
-                    return Promise.resolve();
-                }
-            }
-            return Promise.resolve();
-        }).catch((error) => {
+    refreshFoldDataFromBackend = async (isFirstFetch: boolean = false): Promise<Fold | null> => {
+        let newFoldData: Fold | null = null;
+        try {
+            newFoldData = await getFold(this.props.foldId);
+        } catch (error) {
             console.error('Error refreshing fold data:', error);
             // Don't throw to prevent breaking the refresh cycle
+            return null;
+        }
+
+        console.log(`Got new fold with tags ${newFoldData.tags}`);
+        this.setState({ foldData: newFoldData });
+
+        if (!newFoldData.jobs) {
+            return newFoldData;
+        }
+        // Get current state of jobs as a map
+        const currentJobStates = new Map(
+            this.state.jobs?.map(job => [job.id, job]) || []
+        );
+
+        // For each job in foldData, determine if we need to refresh it
+        const jobsToRefresh = newFoldData.jobs
+            .filter(foldJob => {
+                if (isFirstFetch) {
+                    return true;
+                }
+                if (!currentJobStates.has(foldJob.id)) {
+                    return true;
+                }
+                const currentJob = currentJobStates.get(foldJob.id);
+                return foldJob.state === "running" ||
+                    currentJob?.state === "running" ||
+                    (currentJob && currentJob.state !== foldJob.state);
+            })
+            .map(job => job.id);
+
+        if (!isFirstFetch) {
+            if (jobsToRefresh.length > MAX_JOBS_TO_REFRESH) {
+                notify.warning(`Not streaming job logs because there are too many jobs (${jobsToRefresh.length} > ${MAX_JOBS_TO_REFRESH}))`);
+                return newFoldData;
+            }
+        }
+
+        // Create final job list
+        const finalJobs = [...newFoldData.jobs].map(foldJob => {
+            // Use existing job data if we have it and don't need to refresh
+            if (!jobsToRefresh.includes(foldJob.id)) {
+                return currentJobStates.get(foldJob.id) || foldJob;
+            }
+            return foldJob;
         });
+
+        // Only fetch jobs that need refreshing
+        if (jobsToRefresh.length > 0) {
+            try {
+                const refreshedJobs = await Promise.all(
+                    jobsToRefresh.map(jobId => getInvokation(jobId))
+                );
+                // Update the jobs that were refreshed
+                refreshedJobs.forEach(refreshedJob => {
+                    const index = finalJobs.findIndex(j => j.id === refreshedJob.id);
+                    if (index !== -1) {
+                        finalJobs[index] = refreshedJob;
+                    }
+                });
+            } catch (error) {
+                console.error('Error refreshing jobs:', error);
+                notify.error(error instanceof Error ? error.message : 'Unknown error refreshing jobs.');
+            }
+        }
+
+        this.setState({ jobs: finalJobs });
+        return newFoldData;
     };
 
     scheduleNextRefresh = () => {
@@ -272,11 +281,6 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
     };
 
     componentDidMount() {
-        // Start the first refresh immediately, then schedule subsequent ones
-        this.refreshFoldDataFromBackend().finally(() => {
-            this.scheduleNextRefresh();
-        });
-
         // ReactSequenceViewer requires jQuery, and who are we to deny them?
         // @ts-ignore
         window.$ = window.jQuery = jquery;
@@ -329,29 +333,11 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
             this.setState({ files: files });
         });
 
-        getFold(this.props.foldId).then(
-            (new_fold_data) => {
-                this.setState({ foldData: new_fold_data });
-
-                if (this.state.foldData?.jobs) {
-                    Promise.all(
-                        this.state.foldData.jobs.map((inv) => getInvokation(inv.id))
-                    ).then(
-                        (fullInvs) => {
-                            this.setState({ jobs: fullInvs });
-                        },
-                        (e) => {
-                            notify.error(e.toString());
-                        }
-                    );
-                }
-
+        this.refreshFoldDataFromBackend(true).then(
+            (newFoldData) => {
                 getFoldPfam(this.props.foldId).then(
                     (pfam) => {
                         console.log("Pfam annotations downloaded:", pfam);
-                        if (!this.state.foldData) {
-                            return;
-                        }
                         const renderableAnnotations = this.generatePfamColors(pfam);
                         console.log("Generated renderable pfam annotations:", renderableAnnotations);
                         this.setState({
@@ -400,7 +386,9 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
             (e) => {
                 notify.error(e.toString());
             }
-        );
+        ).finally(() => {
+            this.scheduleNextRefresh();
+        })
     }
 
     componentWillUnmount() {

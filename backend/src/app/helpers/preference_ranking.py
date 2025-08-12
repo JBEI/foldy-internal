@@ -169,27 +169,6 @@ def batch_bradley_terry_loss(
     return loss
 
 
-# function for masks
-def old_get_random_pair_split(B: int, labels: np.ndarray, val_fraction: float = 0.2, device=None):
-    """
-    two (BxB) boolean masks that stay *constant through all training*:
-    - train_mask: ~80% of all i≠j pairs
-    - val_mask:   ~20% of all i≠j pairs
-    """
-    # first, sample a uniform random matrix
-    rand = torch.rand((B, B), device=device)
-
-    # make a val‐mask by thresholding, then zero out diagonals
-    val_mask = rand < val_fraction
-    val_mask = val_mask.triu(diagonal=1)  # make the mask upper triangular (excluding diagonal).
-
-    # train is everything else off‐diagonal
-    train_mask = ~val_mask
-    train_mask = train_mask.triu(diagonal=1)  # make the mask upper triangular (excluding diagonal).
-
-    return train_mask, val_mask
-
-
 def get_random_pair_split(
     B: int, labels: np.ndarray, rng_seed: int, val_fraction: float = 0.2, device=None
 ):
@@ -379,6 +358,21 @@ class PreferenceTrainer:
         best_val_loss = float("inf")
         best_val_loss_epoch = 0
         best_model_state = None
+
+        val_loss, test_recall_1pct = self.evaluate(
+            train_dataset,
+            val_dataset,
+            test_dataset,
+            val_mask,
+            importance_sampling_reweighting_strat,
+            importance_sampling_temperature,
+        )
+        metrics["train_loss"].append(np.inf)
+        metrics["val_loss"].append(val_loss if val_loss is not None else np.nan)
+        metrics["test_recall_1pct"].append(
+            test_recall_1pct if test_recall_1pct is not None else np.nan
+        )
+
         optimizer = torch.optim.Adam(
             self.model.parameters(), lr=learning_rate, weight_decay=weight_decay
         )
