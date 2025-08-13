@@ -13,7 +13,7 @@ from folde.util import apply_diff_list_to_config
 dms_ids = ["SPG1_STRSG_Olson_2014"]
 
 # Example configuration
-NAME = "250721-spg1-olson-2014-RERUN"
+NAME = "250812-spg1-olson-2014-RERUN2"
 
 random_config = FolDEModelConfig(
     name="Random",
