@@ -13,9 +13,10 @@ from typing import Any, Dict, List, Optional, Tuple, Type
 
 import numpy as np
 import pandas as pd
+from sklearn.neighbors import KNeighborsRegressor
+
 from app.helpers.sequence_util import is_homolog_seq_id
 from folde.util import constant_liar_sample, get_consensus_scores, internal_sample_n_indices
-from sklearn.neighbors import KNeighborsRegressor
 
 # Registry of available zero-shot models
 _ZERO_SHOT_MODELS = {}

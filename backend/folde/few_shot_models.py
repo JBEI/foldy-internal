@@ -14,6 +14,13 @@ from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
 import numpy as np
 import pandas as pd
 import torch
+from numpy.typing import NDArray
+from pandas import DataFrame, Series
+from sklearn.ensemble import RandomForestRegressor as SklearnRandomForestRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import KFold
+from sklearn.neural_network import MLPRegressor as SklearnMLPRegressor
+
 from app.helpers.preference_ranking import (
     BradleyTerryMLP,
     PreferenceTrainer,
@@ -26,12 +33,6 @@ from folde.util import (
     get_consensus_scores,
     internal_sample_n_indices,
 )
-from numpy.typing import NDArray
-from pandas import DataFrame, Series
-from sklearn.ensemble import RandomForestRegressor as SklearnRandomForestRegressor
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import KFold
-from sklearn.neural_network import MLPRegressor as SklearnMLPRegressor
 
 # Registry of available models
 _FEW_SHOT_MODELS = {}

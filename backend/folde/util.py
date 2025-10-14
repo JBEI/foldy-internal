@@ -6,7 +6,6 @@ from typing import Any, List, Tuple, Union, cast
 import numpy as np
 import pandas as pd
 import torch
-from folde.types import FolDEModelConfig, ModelDiff, ModelEvaluation
 from numpy.typing import NDArray
 from pandas import DataFrame
 from pandas.core.frame import DataFrame
@@ -14,6 +13,8 @@ from scipy.cluster.hierarchy import leaves_list, linkage
 from scipy.spatial.distance import squareform
 from scipy.special import softmax
 from sklearn.metrics import recall_score
+
+from folde.types import FolDEModelConfig, ModelDiff, ModelEvaluation
 
 DMS_SHORTNAMES = {
     #   'A0A140D2T1_ZIKV_Sourisseau_2019': "A0A140D2T1_ZIKV",
