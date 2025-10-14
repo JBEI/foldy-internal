@@ -1,0 +1,4 @@
+campaign_id,design_id,seq_id,teselagen_plasmid_id,base_seq_id,new_alleles
+TY_Pop2,TY_Pop2_R2_test2,D104G_G429R,TY_Pop2_R2_test2_0001,WT,D104G_G429R
+TY_Pop2,TY_Pop2_R2_test2,T9R_Y128M_G429R,TY_Pop2_R2_test2_0002,G429R,T9R_Y128M
+TY_Pop2,TY_Pop2_R2_test2,Q70K_G429R_T458R,TY_Pop2_R2_test2_0003,G429R,Q70K_T458R
