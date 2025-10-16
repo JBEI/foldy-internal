@@ -71,6 +71,16 @@ random_forest_config = FolDEModelConfig(
     },
 )
 
+only_naturalness_config = FolDEModelConfig(
+    name="OnlyNaturalness",
+    naturalness_model_id="600m",
+    embedding_model_id="300m",
+    zero_shot_model_name="NaturalnessZeroShotModel",
+    zero_shot_model_params={},
+    few_shot_model_name="NaturalnessFewShotModel",
+    few_shot_model_params={},
+)
+
 folde_config = FolDEModelConfig(
     name="FolDE",
     # Required parameters
@@ -107,6 +117,7 @@ config_list = (
             ModelDiff(name="300m-embeddings", diffs={"embedding_model_id": "300m"}),
         ],
     )
+    + [only_naturalness_config]
     + apply_diff_list_to_config(
         folde_config,
         [
@@ -160,8 +171,14 @@ config_list = (
                 diffs={
                     "few_shot_model_params.lie_noise_stddev_multiplier": 6.0,
                     "few_shot_model_params.lie_noise_stddev_multiplier_schedule": None,
-                },
+                }
             ),
+            ModelDiff(
+                name="warm-start-10epochs",
+                diffs={
+                    "few_shot_model_params.pretrain_epochs": 10,
+                }
+            )
         ],
     )
 )
