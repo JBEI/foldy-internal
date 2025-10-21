@@ -158,11 +158,9 @@ config_list = (
                 }
             ),
             ModelDiff(
-                name="warm-start-10epochs",
-                diffs={
-                    "few_shot_model_params.pretrain_epochs": 10,
-                }
-            )
+                name="no-constantliar-ucb",
+                diffs={"few_shot_model_params.decision_mode": "ucb"},
+            ),
         ],
     )
 )

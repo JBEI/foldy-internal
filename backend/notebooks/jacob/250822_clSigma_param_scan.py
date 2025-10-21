@@ -68,6 +68,14 @@ config_list = apply_diff_list_to_config(
         ModelDiff(name="clS025", diffs={"few_shot_model_params.lie_noise_stddev_multiplier": 0.25}),
         # ModelDiff(name="clS01", diffs={"few_shot_model_params.lie_noise_stddev_multiplier": 0.1}),
         ModelDiff(
+            name="clS12-schedule",
+            diffs={
+                "few_shot_model_params.lie_noise_stddev_multiplier": None,
+                "few_shot_model_params.lie_noise_stddev_multiplier_schedule": [12.0] * 2
+                + [100.0] * 8,
+            },
+        ),
+        ModelDiff(
             name="clS6-schedule",
             diffs={
                 "few_shot_model_params.lie_noise_stddev_multiplier": None,
