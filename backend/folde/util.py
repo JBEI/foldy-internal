@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
 import pandas as pd
-from sklearn.neighbors import KNeighborsRegressor
 import torch
 from numpy.typing import NDArray
 from pandas import DataFrame
@@ -14,6 +13,7 @@ from scipy.cluster.hierarchy import leaves_list, linkage
 from scipy.spatial.distance import squareform
 from scipy.special import softmax
 from sklearn.metrics import recall_score
+from sklearn.neighbors import KNeighborsRegressor
 
 from app.helpers.sequence_util import is_homolog_seq_id
 from folde.types import FolDEModelConfig, ModelDiff, ModelEvaluation
@@ -353,7 +353,9 @@ def convert_compaign_result_collection_to_df(
                             "cumulative_1pct_hits": (mutants_so_far.percentile >= 0.99).sum(),
                             "cumulative_10pct_hits": (mutants_so_far.percentile >= 0.90).sum(),
                             "new_1pct_hits": (mutants_this_round.percentile >= 0.99).sum(),
+                            "frac_1pct_hits": (mutants_this_round.percentile >= 0.99).mean(),
                             "new_10pct_hits": (mutants_this_round.percentile >= 0.90).sum(),
+                            "frac_10pct_hits": (mutants_this_round.percentile >= 0.90).mean(),
                             "has_found_top_1pct": (mutants_so_far.percentile >= 0.99).sum() > 0,
                             **round_metrics.model_dump(),
                             **round_metrics.misc,
@@ -589,7 +591,7 @@ class NaturalnessImputer(object):
         self.is_pretrained = False
         self.single_mutant_naturalness_df: Optional[pd.DataFrame] = None
         self.knns: Dict[str, KNeighborsRegressor] = {}
-    
+
     def pretrain(self, naturalness_df: pd.DataFrame, embedding_series: pd.Series):
         if self.is_pretrained:
             raise ValueError("Model is already pretrained.")

@@ -49,28 +49,47 @@ def reindex_circular_genbank(reference: SeqRecord, query: SeqRecord) -> str:
     if ref_seq == query_seq:
         return query_seq
 
-    doubled_query = query_seq + query_seq
+    rev_query_seq = str(Seq(query_seq).reverse_complement())
+    if ref_seq == rev_query_seq:
+        return rev_query_seq
+
     window_size = min(500, len(ref_seq))
     ref_window = ref_seq[:window_size]
 
-    best_offset = 0
-    best_distance = float("inf")
+    best_result = {
+        "distance": float("inf"),
+        "offset": 0,
+        "sequence": query_seq,
+    }
 
-    for offset in range(len(query_seq)):
-        query_window = doubled_query[offset : offset + window_size]
-        if len(query_window) != window_size:
-            continue
+    for orientation_seq in (query_seq, rev_query_seq):
+        doubled_query = orientation_seq + orientation_seq
+        best_offset = 0
+        best_distance = float("inf")
 
-        distance = Levenshtein.distance(ref_window, query_window)
+        for offset in range(len(query_seq)):
+            query_window = doubled_query[offset : offset + window_size]
+            if len(query_window) != window_size:
+                continue
 
-        if distance < best_distance:
-            best_distance = distance
-            best_offset = offset
+            distance = Levenshtein.distance(ref_window, query_window)
 
-        if distance < window_size * 0.01:
-            break
+            if distance < best_distance:
+                best_distance = distance
+                best_offset = offset
 
-    return doubled_query[best_offset : best_offset + len(query_seq)]
+            if distance < window_size * 0.01:
+                break
+
+        if best_distance < best_result["distance"]:
+            best_result["distance"] = best_distance
+            best_result["offset"] = best_offset
+            best_result["sequence"] = orientation_seq
+
+    doubled_best = best_result["sequence"] + best_result["sequence"]
+    start = best_result["offset"]
+    end = start + len(query_seq)
+    return doubled_best[start:end]
 
 
 def find_mutations(reference: SeqRecord, query_seq: str) -> List[Mutation]:
@@ -92,18 +111,7 @@ def find_mutations(reference: SeqRecord, query_seq: str) -> List[Mutation]:
 
     base_mutations = []
     for op, ref_pos, query_pos in ops:
-        if op == "replace":
-            base_mutations.append(
-                Mutation(
-                    position=ref_pos,
-                    mutation_type="substitution",
-                    reference_base=ref_seq[ref_pos],
-                    variant_base=query_seq[ref_pos],
-                    annotations=[],
-                    amino_acid_change=None,
-                )
-            )
-        elif op == "insert":
+        if op == "insert":
             base_mutations.append(
                 Mutation(
                     position=ref_pos,
@@ -114,7 +122,7 @@ def find_mutations(reference: SeqRecord, query_seq: str) -> List[Mutation]:
                     amino_acid_change=None,
                 )
             )
-        elif op == "delete":
+        elif op == "delete" or ref_pos >= len(query_seq):
             base_mutations.append(
                 Mutation(
                     position=ref_pos,
@@ -125,6 +133,19 @@ def find_mutations(reference: SeqRecord, query_seq: str) -> List[Mutation]:
                     amino_acid_change=None,
                 )
             )
+        elif op == "replace":
+            base_mutations.append(
+                Mutation(
+                    position=ref_pos,
+                    mutation_type="substitution",
+                    reference_base=ref_seq[ref_pos],
+                    variant_base=query_seq[ref_pos],
+                    annotations=[],
+                    amino_acid_change=None,
+                )
+            )
+        else:
+            raise ValueError(f"Unknown operation: {op}")
 
     # Get CDS features and their positions
     cds_features = [f for f in reference.features if f.type == "CDS"]
@@ -192,8 +213,12 @@ def _analyze_cds_codons(reference: SeqRecord, query_seq: str, feature) -> List[M
         if score == 0:
             break
 
-    # Extract query CDS from found position
-    query_cds_seq = search_seq[best_pos : best_pos + len(ref_cds_seq)]
+    # Check if the whole thing is deleted.
+    if best_pos is None:
+        query_cds_seq = "N" * len(ref_cds_seq)
+    else:
+        # Extract query CDS from found position
+        query_cds_seq = search_seq[best_pos : best_pos + len(ref_cds_seq)]
 
     # Get feature label
     label = _get_feature_label(feature)

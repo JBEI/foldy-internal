@@ -1,0 +1,244 @@
+LOCUS       pAP_OplR_DNL_R3_0024    6048 bp    DNA     circular SYN 18-OCT-2025
+DEFINITION  pAP_OplR_DNL_R3_0024.
+ACCESSION   pAP_OplR_DNL_R3_0024
+VERSION     pAP_OplR_DNL_R3_0024
+KEYWORDS    .
+SOURCE
+  ORGANISM  .
+            .
+COMMENT     Annotated with pLannotate v1.2.2
+FEATURES             Location/Qualifiers
+     CDS             4024..4698
+                     /note="pLannotate"
+                     /label="mRFP1"
+                     /database="fpbase"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="CDS"
+                     /description=""
+     CDS             773..1435
+                     /note="pLannotate"
+                     /label="pBBR1 Rep"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="CDS"
+                     /description="replication protein for the broad-host-range
+                     plasmid pBBR1 from Bordetella bronchiseptica"
+     CDS             complement(2870..3661)
+                     /note="pLannotate"
+                     /label="KKA2_KLEPN"
+                     /database="swissprot"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="CDS"
+                     /description="Protein evidence at protein level: Swiss-Prot
+                     protein existence level 1. Resistance to kanamycin,
+                     neomycin, paromomycin, ribostamycin, butirosin and
+                     gentamicin B. From Klebsiella pneumoniae."
+     rep_origin      1..772
+                     /note="pLannotate"
+                     /label="pBBR1 oriV"
+                     /database="snapgene"
+                     /identity="99.7"
+                     /match_length="100.3"
+                     /fragment="False"
+                     /other="rep_origin"
+                     /description="replication origin of the broad-host-range
+                     plasmid pBBR1 from Bordetella bronchiseptica; requires the
+                     pBBR1 Rep protein for replication"
+     terminator      complement(2742..2836)
+                     /note="pLannotate"
+                     /label="lambda t0 terminator"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="terminator"
+                     /description="transcription terminator from phage lambda"
+     terminator      complement(1605..1676)
+                     /note="pLannotate"
+                     /label="rrnB T1 terminator"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="terminator"
+                     /description="transcription terminator T1 from the E. coli
+                     rrnB gene"
+     terminator      4734..4805
+                     /note="pLannotate"
+                     /label="rrnB T1 terminator"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="terminator"
+                     /description="transcription terminator T1 from the E. coli
+                     rrnB gene"
+     terminator      complement(1562..1589)
+                     /note="pLannotate"
+                     /label="T7Te terminator"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="terminator"
+                     /description="phage T7 early transcription terminator"
+     terminator      4821..4848
+                     /note="pLannotate"
+                     /label="T7Te terminator"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="terminator"
+                     /description="phage T7 early transcription terminator"
+     promoter        complement(2697..2714)
+                     /note="pLannotate"
+                     /label="J23119(SpeI) promoter (fragment)"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="51.4"
+                     /fragment="True"
+                     /other="promoter"
+                     /description="bacterial promoter (Registry of Standard
+                     Biological Parts BBa J23119) modified to end with an SpeI
+                     site"
+     CDS             complement(3693..3797)
+                     /note="pLannotate"
+                     /label="TN5P_ECOLX (fragment)"
+                     /database="swissprot"
+                     /identity="94.3"
+                     /match_length="7.4"
+                     /fragment="True"
+                     /other="CDS"
+                     /description="Protein evidence at protein level: Swiss-Prot
+                     protein existence level 1. Mediates transposition of
+                     transposon Tn5 by a 'cut and paste' mechanism. First, the
+                     monomeric transposase binds the 19 bp inverted DNA repeats
+                     flanking the transposon. Then, dimerization of the
+                     DNA-bound transposase creates a synaptic DNA complex. After
+                     nicking of the first DNA strand, excision of the transposon
+                     proceeds through a series of intermediates. The transposase
+                     then mediates the insertion of the transposon at a new site
+                     by strand transfer. The activity of the wild-type
+                     transposase is very low, and is further inhibited by
+                     dimerization with the transposase inhibitor (inh). From
+                     Escherichia coli."
+     CDS             1496..1555
+                     /note="pLannotate"
+                     /label="TcR (fragment)"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="5.0"
+                     /fragment="True"
+                     /other="CDS"
+                     /description="tetracycline efflux protein; tet; confers
+                     resistance to tetracycline"
+ORIGIN
+        1 gcggccaccg gctggctcgc ttcgctcggc ccgtggacaa ccctgctgga caagctgatg
+       61 gacaggctgc gcctgcccac gagcttgacc acagggattg cccaccggct acccagcctt
+      121 cgaccacata cccaccggct ccaactgcgc ggcctgcggc cttgccccat caattttttt
+      181 aattttctct ggggaaaagc ctccggcctg cggcctgcgc gcttcgcttg ccggttggac
+      241 accaagtgga aggcgggtca aggctcgcgc agcgaccgcg cagcggcttg gccttgacgc
+      301 gcctggaacg acccaagcct atgcgagtgg gggcagtcga agggcgaagc ccgcccgcct
+      361 gccccccgag cctcacggcg gcgagtgcgg gggttccaag ggggcagcgc caccttgggc
+      421 aaggccgaag gccgcgcagt cgatcaacaa gccccggagg ggccactttt tgccggaggg
+      481 ggagccgcgc cgaaggcgtg ggggaacccc gcaggggtgc ccttctttgg gcaccaaaga
+      541 actagatata gggcgaaatg cgaaagactt aaaaatcaac aacttaaaaa aggggggtac
+      601 gcaacagctc attgcggcac cccccgcaat agctcattgc gtaggttaaa gaaaatctgt
+      661 aattgactgc cacttttacg caacgcataa ttgttgtcgc gctgccgaaa agttgcagct
+      721 gattgcgcat ggtgccgcaa ccgtgcggca cccctaccgc atggagataa gcatggccac
+      781 gcagtccaga gaaatcggca ttcaagccaa gaacaagccc ggtcactggg tgcaaacgga
+      841 acgcaaagcg catgaggcgt gggccgggct tattgcgagg aaacccacgg cggcaatgct
+      901 gctgcatcac ctcgtggcgc agatgggcca ccagaacgcc gtggtggtca gccagaagac
+      961 actttccaag ctcatcggac gttctttgcg gacggtccaa tacgcagtca aggacttggt
+     1021 ggccgagcgc tggatctccg tcgtgaagct caacggcccc ggcaccgtgt cggcctacgt
+     1081 ggtcaatgac cgcgtggcgt ggggccagcc ccgcgaccag ttgcgcctgt cggtgttcag
+     1141 tgccgccgtg gtggttgatc acgacgacca ggacgaatcg ctgttggggc atggcgacct
+     1201 gcgccgcatc ccgaccctgt atccgggcga gcagcaacta ccgaccggcc ccggcgagga
+     1261 gccgcccagc cagcccggca ttccgggcat ggaaccagac ctgccagcct tgaccgaaac
+     1321 ggaggaatgg gaacggcgcg ggcagcagcg cctgccgatg cccgatgagc cgtgttttct
+     1381 ggacgatggc gagccgttgg agccgccgac acgggtcacg ctgccgcgcc ggtagcactt
+     1441 gggttgcgca gcaacccgta agtgcgctgt tccagactat cggctgtagc cgcctcgccg
+     1501 ccctatacct tgtctgcctc cccgcgttgc gtcgcggtgc atggagccgg gccactataa
+     1561 acgcagaaag gcccacccga aggtgagcca gtgtgactct agtagagagc gttcaccgac
+     1621 aaacaacaga taaaacgaaa ggcccagtct ttcgactgag cctttcgttt tatttgatgc
+     1681 ctggagatcc ttactcgagt ttggatcctc agtgcgtacg cgtagcccgc acttcgctcg
+     1741 ccgtgcaccg cgctgctggc gaaacgcgcg ggtgaattgc gcctggtcgg caaaacccca
+     1801 gcgaaatgcc agttcgccga tggccaggtg gcaatgcggg tcgcgcagtt gccggtgcac
+     1861 ggcctccagg cgttgaaggc gtacccactc attaagggtg gtgggcgtga tcgcgaacag
+     1921 cttgtgcaga taacgcagcg acagcccaca ggcgccggcg atggtttgtg gcgacagctc
+     1981 ggggtcaccc aggttttgct gcacgtgctg ctcgacccgc gtcaggtgca gggtgctgag
+     2041 gttgctgcct tcgctgccca gcacgcgctc atcctgctgc aaggccagca gcagggtggc
+     2101 ggaggcctgt tccagcagta aatgccgggc tgccgggggg ctggtgtcga aatggcgggc
+     2161 acacaggtcg agttgctcga cgaagatgcg ccccaggccc tgacgggcgt cgaagcaatg
+     2221 ccgggtatag cgcttgtgcc ccagcaggtt ggctttgagc gcacgctcgg gcagcttgag
+     2281 cacccacaag tcgttctgcg tgccgtagtg gaagcggtag ggtgcatcgc cgcgctcgac
+     2341 gatgaaaccg cccgggctgc aactgatctg gtggccgtcc tgttcaaagt gcacctcgct
+     2401 gccatgcggc acggtcacca ggtagaacgc ttcatggtcc tggccgatgt gcgctttgct
+     2461 gcgtgagtaa cccagctggc tggaccgcag gcgcgacagg ctgagcggcg tgctcggcgt
+     2521 actccagcgc tgcaggtggc catcgaacgg ctgtccggca gcaaattcaa ggctcaatgg
+     2581 gaaataggtg tcactgatgg cttcggccca gcgtacctgg cgctctggct gtggccagcc
+     2641 gtgggtcgag agttctgtgg gcatatgtat atctccttct taaagctagc ataatcccta
+     2701 ggactgagct agctatcagc tcgacctgaa tggaagcttg gattctcacc aataaaaaac
+     2761 gcccggcggc aaccgagcgt tctgaacaaa tccagatgga gttctgaggt cattactgga
+     2821 tctatcaaca ggagtccaag cgagctctcg aaccccagag tcccgctcag aagaactcgt
+     2881 caagaaggcg atagaaggcg atgcgctgcg aatcgggagc ggcgataccg taaagcacga
+     2941 ggaagcggtc agcccattcg ccgccaagct cttcagcaat atcacgggta gccaacgcta
+     3001 tgtcctgata gcggtccgcc acacccagcc ggccacagtc gatgaatcca gaaaagcggc
+     3061 cattttccac catgatattc ggcaagcagg catcgccatg ggtcacgacg agatcctcgc
+     3121 cgtcgggcat gcgcgccttg agcctggcga acagttcggc tggcgcgagc ccctgatgct
+     3181 cttcgtccag atcatcctga tcgacaagac cggcttccat ccgagtacgt gctcgctcga
+     3241 tgcgatgttt cgcttggtgg tcgaatgggc aggtagccgg atcaagcgta tgcagccgcc
+     3301 gcattgcatc agccatgatg gatactttct cggcaggagc aaggtgagat gacaggagat
+     3361 cctgccccgg cacttcgccc aatagcagcc agtcccttcc cgcttcagtg acaacgtcga
+     3421 gcacagctgc gcaaggaacg cccgtcgtgg ccagccacga tagccgcgct gcctcgtcct
+     3481 gcagttcatt cagggcaccg gacaggtcgg tcttgacaaa aagaaccggg cgcccctgcg
+     3541 ctgacagccg gaacacggcg gcatcagagc agccgattgt ctgttgtgcc cagtcatagc
+     3601 cgaatagcct ctccacccaa gcggccggag aacctgcgtg caatccatct tgttcaatca
+     3661 tgcgaaacga tcctcatcct gtctcttgat cagatcatga tcccctgcgc catcagatcc
+     3721 ttggcggcaa gaaagccatc cagtttactt tgcagggctt cccaacctta ccagagggcg
+     3781 ccccagctgg caattccgac gtcttggggc cggccgggca atggctggtg cgacagatgt
+     3841 tggggcaata gttgtgtcgc ctgcccgaac ttgaagtgcg cccagacaca acaaccggta
+     3901 cacccagcga caagccttcc ccccaccccg ccccttagcc tgtcaccacg cgccgccccg
+     3961 ccgcggcacg cacctaaagc acaagaacaa acgttggtga ccttttaaga aggagatata
+     4021 catatggcga gtagcgaaga cgttatcaaa gagttcatgc gtttcaaagt tcgtatggaa
+     4081 ggttccgtta acggtcacga gttcgaaatc gaaggtgaag gtgaaggtcg tccgtacgaa
+     4141 ggtacccaga ccgctaaact gaaagttacc aaaggtggtc cgctgccgtt cgcttgggac
+     4201 atcctgtccc cgcagttcca gtacggttcc aaagcttacg ttaaacaccc ggctgacatc
+     4261 ccggactacc tgaaactgtc cttcccggaa ggtttcaaat gggaacgtgt tatgaacttc
+     4321 gaagacggtg gtgttgttac cgttacccag gactcctccc tgcaagacgg tgagttcatc
+     4381 tacaaagtta aactgcgtgg taccaacttc ccgtccgacg gtccggttat gcagaaaaaa
+     4441 accatgggtt gggaagcttc caccgaacgt atgtacccgg aagacggtgc tctgaaaggt
+     4501 gaaatcaaaa tgcgtctgaa actgaaagac ggtggtcact acgacgctga agttaaaacc
+     4561 acctacatgg ctaaaaaacc ggttcagctg ccgggtgctt acaaaaccga catcaaactg
+     4621 gacatcacct cccacaacga agactacacc atcgttgaac agtacgaacg tgctgaaggt
+     4681 cgtcactcca ccggtgctta aggatccaaa ctcgagtaag gatctccagg catcaaataa
+     4741 aacgaaaggc tcagtcgaaa gactgggcct ttcgttttat ctgttgtttg tcggtgaacg
+     4801 ctctctacta gagtcacact ggctcacctt cgggtgggcc tttctgcgtt tatacctagg
+     4861 gcgttcggct gcggctggcg ctgggcctgt ttctggcgct ggacttcccg ctgttccgtc
+     4921 agcagctttt cgcccacggc cttgatgatc gcggcggcct tggcctgcat atcccgattc
+     4981 aacggcccca gggcgtccag aacgggcttc aggcgctccc gaaggtctcg ggccgtctct
+     5041 tgggcttgat cggccttctt gcgcatctca cgcgctcctg cggcggcctg tagggcaggc
+     5101 tcatacccct gccgaaccgc ttttgtcagc cggtcggcca cggcttccgg cgtctcaacg
+     5161 cgctttgaga ttcccagctt ttcggccaat ccctgcggtg cataggcgcg tggctcgacc
+     5221 gcttgcgggc tgatggtgac gtggcccact ggtggccgct ccagggcctc gtagaacgcc
+     5281 tgaatgcgcg tgtgacgtgc cttgctgccc tcgatgcccc gttgcagccc tagatcggcc
+     5341 acagcggccg caaacgtggt ctggtcgcgg gtcatctgcg ctttgttgcc gatgaactcc
+     5401 ttggccgaca gcctgccgtc ctgcgtcagc ggcaccacga acgcggtcat gtgcgggctg
+     5461 gtttcgtcac ggtggatgct ggccgtcacg atgcgatccg ccccgtactt gtccgccagc
+     5521 cacttgtgcg ccttctcgaa gaacgccgcc tgctgttctt ggctggccga cttccaccat
+     5581 tccgggctgg ccgtcatgac gtactcgacc gccaacacag cgtccttgcg ccgcttctct
+     5641 ggcagcaact cgcgcagtcg gcccatcgtt tcatcggtgc tgctggccgc ccagtgctcg
+     5701 ttctctggcg tcctgctggc gtcagcgttg ggcgtctcgc gctcgcggta ggcgtgcttg
+     5761 agactggccg ccacgttgcc cattttcgcc agcttcttgc atcgcatgat cgcgtatgcc
+     5821 gccatgcctg cccctccctt ttggtgtcca accggctcga cgggggcagc gcaaggcggt
+     5881 gcctccggcg ggccactcaa tgcttgagta tactcactag actttgcttc gcaaagtcgt
+     5941 gaccgcctac ggcggctgcg gcgccctacg ggcttgctct ccgggcttcg ccctgcgcgg
+     6001 tcgctgcgct cccttgccag cccgtggata tgtggacgat ggccgcga
+//

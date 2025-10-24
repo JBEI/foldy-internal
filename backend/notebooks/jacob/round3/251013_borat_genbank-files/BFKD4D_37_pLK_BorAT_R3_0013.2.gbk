@@ -1,0 +1,345 @@
+LOCUS       pLK_BorAT_R3_0013.2     7880 bp    DNA     circular SYN 14-OCT-2025
+DEFINITION  pLK_BorAT_R3_0013.2.
+ACCESSION   pLK_BorAT_R3_0013
+VERSION     pLK_BorAT_R3_0013.2
+KEYWORDS    .
+SOURCE
+  ORGANISM  .
+            .
+COMMENT     Annotated with pLannotate v1.2.2
+FEATURES             Location/Qualifiers
+     rep_origin      1..589
+                     /note="pLannotate"
+                     /label="ori"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="rep_origin"
+                     /description="high-copy-number ColE1/pMB1/pBR322/pUC origin
+                     of replication "
+     CDS             6625..7707
+                     /note="pLannotate"
+                     /label="lacI"
+                     /database="snapgene"
+                     /identity="99.8"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="CDS"
+                     /description="lac repressor; lacI; The lac repressor binds
+                     to the lac operator to inhibit transcription in E. coli.
+                     This inhibition can be relieved by adding lactose or
+                     isopropyl-β-D-thiogalactopyranoside (IPTG)."
+     CDS             5399..6190
+                     /note="pLannotate"
+                     /label="KKA2_KLEPN"
+                     /database="swissprot"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="CDS"
+                     /description="Protein evidence at protein level: Swiss-Prot
+                     protein existence level 1. Resistance to kanamycin,
+                     neomycin, paromomycin, ribostamycin, butirosin and
+                     gentamicin B. From Klebsiella pneumoniae."
+     terminator      6224..6318
+                     /note="pLannotate"
+                     /label="lambda t0 terminator"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="terminator"
+                     /description="transcription terminator from phage lambda"
+     promoter        6547..6624
+                     /note="pLannotate"
+                     /label="lacI promoter"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="promoter"
+                     /description="lacI"
+     terminator      complement(952..1023)
+                     /note="pLannotate"
+                     /label="rrnB T1 terminator"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="terminator"
+                     /description="transcription terminator T1 from the E. coli
+                     rrnB gene"
+     protein_bind    complement(741..774)
+                     /note="pLannotate"
+                     /label="attB"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="protein_bind"
+                     /description="minimal attB site for the φC31 integrase
+                     (Groth et al., 2000) phage φC31 integrase"
+     terminator      5130..5161
+                     /note="pLannotate"
+                     /label="tonB terminator"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="terminator"
+                     /description="bidirectional E. coli tonB-P14 transcription
+                     terminator"
+     terminator      complement(909..936)
+                     /note="pLannotate"
+                     /label="T7Te terminator"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="terminator"
+                     /description="phage T7 early transcription terminator"
+     CDS             complement(1059..2396)
+                     /note="pLannotate"
+                     /label="ERYA3_SACER (fragment)"
+                     /database="swissprot"
+                     /identity="65.7"
+                     /match_length="14.1"
+                     /fragment="True"
+                     /other="CDS"
+                     /description="Protein evidence at protein level: Swiss-Prot
+                     protein existence level 1. Involved in the biosynthesis of
+                     antibiotic erythromycin via the biosynthesis of its
+                     aglycone precursor, 6-deoxyerythronolide B (6-dEB). From
+                     Saccharopolyspora erythraea (Streptomyces erythraeus)."
+     protein_bind    complement(4977..4993)
+                     /note="pLannotate"
+                     /label="lac operator"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="protein_bind"
+                     /description="The lac repressor binds to the lac operator
+                     to inhibit transcription in E. coli. This inhibition can be
+                     relieved by adding lactose or
+                     isopropyl-β-D-thiogalactopyranoside (IPTG). lac repressor
+                     encoded by lacI"
+     protein_bind    complement(4954..4970)
+                     /note="pLannotate"
+                     /label="lac operator"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="protein_bind"
+                     /description="The lac repressor binds to the lac operator
+                     to inhibit transcription in E. coli. This inhibition can be
+                     relieved by adding lactose or
+                     isopropyl-β-D-thiogalactopyranoside (IPTG). lac repressor
+                     encoded by lacI"
+     CDS             6325..6539
+                     /note="pLannotate"
+                     /label="TcR (fragment)"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="18.1"
+                     /fragment="True"
+                     /other="CDS"
+                     /description="tetracycline efflux protein; tet; confers
+                     resistance to tetracycline"
+     protein_bind    7720..7741
+                     /note="pLannotate"
+                     /label="CAP binding site"
+                     /database="snapgene"
+                     /identity="95.5"
+                     /match_length="100.0"
+                     /fragment="False"
+                     /other="protein_bind"
+                     /description="CAP binding activates transcription in the
+                     presence of cAMP. E. coli catabolite activator protein"
+     protein_bind    complement(5168..5210)
+                     /note="pLannotate"
+                     /label="phage φC31 attP (fragment)"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="43.0"
+                     /fragment="True"
+                     /other="protein_bind"
+                     /description="attachment site of phage φC31 phage φC31
+                     integrase"
+     promoter        complement(4922..4954)
+                     /note="pLannotate"
+                     /label="PLtetO-1 promoter (fragment)"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="44.6"
+                     /fragment="True"
+                     /other="promoter"
+                     /description="modified phage lambda PL promoter with tet
+                     operator sites (Lutz and Bujard, 1997)"
+     CDS             5263..5367
+                     /note="pLannotate"
+                     /label="TN5P_ECOLX (fragment)"
+                     /database="swissprot"
+                     /identity="94.3"
+                     /match_length="7.4"
+                     /fragment="True"
+                     /other="CDS"
+                     /description="Protein evidence at protein level: Swiss-Prot
+                     protein existence level 1. Mediates transposition of
+                     transposon Tn5 by a 'cut and paste' mechanism. First, the
+                     monomeric transposase binds the 19 bp inverted DNA repeats
+                     flanking the transposon. Then, dimerization of the
+                     DNA-bound transposase creates a synaptic DNA complex. After
+                     nicking of the first DNA strand, excision of the transposon
+                     proceeds through a series of intermediates. The transposase
+                     then mediates the insertion of the transposon at a new site
+                     by strand transfer. The activity of the wild-type
+                     transposase is very low, and is further inhibited by
+                     dimerization with the transposase inhibitor (inh). From
+                     Escherichia coli."
+     CDS             4999..5063
+                     /note="pLannotate"
+                     /label="TcR (fragment)"
+                     /database="snapgene"
+                     /identity="100.0"
+                     /match_length="5.5"
+                     /fragment="True"
+                     /other="CDS"
+                     /description="tetracycline efflux protein; tet; confers
+                     resistance to tetracycline"
+ORIGIN
+        1 ttgagatcct ttttttctgc gcgtaatctg ctgcttgcaa acaaaaaaac caccgctacc
+       61 agcggtggtt tgtttgccgg atcaagagct accaactctt tttccgaagg taactggctt
+      121 cagcagagcg cagataccaa atactgtcct tctagtgtag ccgtagttag gccaccactt
+      181 caagaactct gtagcaccgc ctacatacct cgctctgcta atcctgttac cagtggctgc
+      241 tgccagtggc gataagtcgt gtcttaccgg gttggactca agacgatagt taccggataa
+      301 ggcgcagcgg tcgggctgaa cggggggttc gtgcacacag cccagcttgg agcgaacgac
+      361 ctacaccgaa ctgagatacc tacagcgtga gctatgagaa agcgccacgc ttcccgaagg
+      421 gagaaaggcg gacaggtatc cggtaagcgg cagggtcgga acaggagagc gcacgaggga
+      481 gcttccaggg ggaaacgcct ggtatcttta tagtcctgtc gggtttcgcc acctctgact
+      541 tgagcgtcga tttttgtgat gctcgtcagg ggggcggagc ctatggaaaa acgccagcaa
+      601 cgcggccttt ttacggttcc tggccttttg ctggcctttt gctcacatgt tctttcctgc
+      661 gttatcccct gattctgtgg ataaccgtat taccgccttt gagtgagctg ataccgctcg
+      721 ccgcagccga acgcggagta cgcgcccggg gagcccaagg gcacgccctg gcacccgcag
+      781 cgcaataaaa aagcccccgg aaggtgatct tccgggggct ttctcatgcg ttgctagcgt
+      841 cggggtttgt accgtacacc actgagaccg cggtggttga ccagacaaac cacgacccta
+      901 ggtataaacg cagaaaggcc cacccgaagg tgagccagtg tgactctagt agagagcgtt
+      961 caccgacaaa caacagataa aacgaaaggc ccagtctttc gactgagcct ttcgttttat
+     1021 ttgatgcctg gagatcctta ctcgagtttg gatcctcagc tattgccgcc gcccagccag
+     1081 gcgtcgatgt ggcgggcgat cgcgtcggca tgttcctgca ccatcgtaaa gtggtcgcct
+     1141 gggacggcga cggtgtcgtg ctcgaagggc cacgtcggct tccagctgtc gtctggccac
+     1201 ggacccatcg gctcgccggc actaaccagc agggtcggca ggccggtttc acggggacgc
+     1261 cactgaccgg taaggcggtc gtaggcgccc agggcggtga gacgggtgtc gtccatccgc
+     1321 acagtctcgc ggtcgaacag ggtggcggtc agctcttcca accaggcgtt catcgcgtcc
+     1381 tggtgcccgg gcgggtagac gtcgatcagt accacacctc gtggcggatg cccgcgatcc
+     1441 aacagttcgg tcgccagagc gtaggccatc agtgcgcccg cgctatgacc ggccaccacg
+     1501 aacggtttgt cgccttgtgt cctaatgaca gcatcggctt gtaccgccgc cacggctgcc
+     1561 atcgacgacg gcagcggttc gccctcttca tagcccggct gaggcacggc ccgaacagga
+     1621 gcaattccgc gcagggcgcc tgcgagccgg gtgaactcgt gcggaccact gattgccgcg
+     1681 gttccggcgc agcagatcac cgtgacctcg ccgggaccat cggccatgtc cacgagatcc
+     1741 aaggagaacc cgtccgagcc gtcgaagtgc tcgcgaaaat ccgacagccc cgccagcagg
+     1801 tccaaatagc tgcggacgcg gcctgacacg cccgcctgac ggtagccatc gcgaagagcg
+     1861 ctggacgctt cgcgggcggg agtgccgcta tcctcgtcag acgcggcgga ccctgttgcg
+     1921 gctggtgcgg cagaaggcgc gtcacccacg agccctgccc tcagatgttc ggcgagggcg
+     1981 gctgggcttg gatagtcgaa cactacggct gacggcaggg ttagaccggt ggcggtcgcc
+     2041 aagcggttgc gcagctccac ggcggtcagc gagtccagcc cggcgtcctt aaaggctctg
+     2101 tcggcgcgga cggctgttgc cgtgccatgg ccaagcacat cggcggcgct cctgcgaacc
+     2161 aggtccagca gcacgtcaaa ggcggccgac aggtctgcca gctcggcgga ctcctcgtct
+     2221 gctccccatg ctaagtgggc ggcagggccc cgcaggcgtc gggcatgggt cagagcttcc
+     2281 gtgagagctc cacgtacagc tctgtcaggg tcgccgggcg cgccaagggt cgcggagccg
+     2341 tctgtgacgg tgatgaactc cgccgtgtcg ccgagcagtt cgtccagggt gcgggccagt
+     2401 gcagggtcgt ccgcggtatg cgccaccagg ctcaccggac gggcttcagc cagagcttcg
+     2461 cggacgccgc tcgcgtcggc tgttacgacg cgggtgtgtg tgccggctgg ccaggcatcc
+     2521 gggtcggtac ggtcagtcgt tccgggcgcg tgtacgagca gcaggctcgg gacctggtgc
+     2581 acggtggcca ggtgttgtgc gagggctgct ccagcgggcg tgtcagtgcc ggttacgacg
+     2641 gcggttccag gcccggcaaa ggtagcggga cgtggtcggc cgtccacggg agtgcgaagc
+     2701 aagcggggca ccagcaactt tccgtcgctg atggccagtt gcggctcatc ggacgctagg
+     2761 gcggcgagca acgtctcagg gtccggggcc tcggtgtcca ggtcgatgac ggtcaccgtc
+     2821 tcgtgcccag cggcttgtaa cgagcgcacg gcggcccaga gtgcggcacc taccgggtct
+     2881 ggggcagtat cacccgcggg ggtggcgcgt cttgtcagga ccaccagctc tgcgggggca
+     2941 tcgccgccgg tcacacgttc caccagcaag cgtgcctggg cgactggatc ggcggtgcca
+     3001 gtaggcggca gcaggactgt cgggtgggag ccggttccgg ccgtagtcgc cgagtcgggt
+     3061 tcggtggtgg cactgccgga ttccgttgtg gcgctgtctg gttctgtggt ggcggaatcg
+     3121 ctttccgtgg tggcgctgcc gggttccgct cctgcagctg atgccggggc gagatccgac
+     3181 tgcagttcga ccagaacacc tgcggcacga agtgcggcgg caagtccgac ggtgtcgtcg
+     3241 cccacaacgg tgcacgccgc agggcgcggt ctatctgcag gcactgcagg ggctggcaac
+     3301 caggccgggc ttaacagggc gtcgtggtgt ccatcggccg catgacgcgg ccagtacggc
+     3361 tgggcggcta acagcctgcg cacgattttg ccggacgggg tgcgcgggat acctgcggcc
+     3421 tcgtgaatgc gctcggggat cttgtacgcg ctcagacggg cgcggcagtg gtccagtact
+     3481 gcggcgatgt cgaggccgtc tggtcctggg accagccagg cgaccggcac ttccccgagg
+     3541 gtgtcatggg cagccccagc cacgcctgca tctgctaccc caggggcggt cctgagcacc
+     3601 gcttcaactt cgtcggggtg aatgttttcg ccaccgcgaa caaccaagtc cttcaggcgg
+     3661 ccgcacacgg tgaagtagcc tgcttcgtca cggcgggcca gatcgccggt gcggaaccag
+     3721 ccgtcgcgta acgcggctct agtggcttcg gggctgttgt ggtagcccac catgacgttc
+     3781 gggccgctga cccacacttc gccctccttg ccggcaggcg cgtcgtctcc ggtgtccggg
+     3841 tcgacgatgc gcacgtcgac accaggcact ggcaggccgc aagaaccgtc gacgcgggcc
+     3901 ccatccggtg gattcatggt gatggcgccg caggtttcgg ttgagccgta ggcgtctacc
+     3961 agcggcacgc cgaatgtctc ctcgaagcta cggcgcagtt cactgccggt cacggcgcca
+     4021 ccaaccagtc cgatgcgcag gtcgggcagg ctcaggccgg tccttcgggc ggtggtgacc
+     4081 aggtggtggt aggtggtagg caccccggcc agaaaagtgg cgcgttcggt acggagcagg
+     4141 tccaacacgt cgtcggggga gctgccttcg gtgatcctgg cggtggctcc gacggaggtc
+     4201 accgacagga cgcaggcgat gtgggacagg ctgtggaaca ggggcagcgg ccacacaacg
+     4261 cggtcatcct ggcgcaggtc cgggatgggc acatagctgg aggcgaccga ccacaggcag
+     4321 ttgcgctggg tgctcagcac ccccttgggg cgcccggtgg ttccggaggt gtaaaacatc
+     4381 caggcaacct cgtcgaggcc caagtcatcc ggggctggcg tgccgggatc ggtcaccgct
+     4441 aggtcgtcgt aggcgtgggc tccgggcggc acgtcgctgg tacctgccac caggacggtg
+     4501 aggtctgggg cggtacttga cgcctcccgc gagaaagtcg cggcgctacc cgcccctgcc
+     4561 aagacaaagc tcgcgccgct gtcggccagg agatattcga gctctgctgg ggcggactgc
+     4621 gggttcactg ggacacccac gcccccagca cgcacaaccg ccagatagcc ttccaccatc
+     4681 gcgacggagt tgcccaggca gagcgccacc cgatctccgc ggcctaagcc caggcggacc
+     4741 agatggccgg ctaagtggcg ggtccgcgtc tccaactccg cgtaggtgac cgagcggcga
+     4801 tcgtcggcga aggcgacctt ccccgggata cggcgggcat gttcgtgcaa cgttacggca
+     4861 agcggtgtta ccaggtccgg acgcatatgt atatctcctt cttaaaagat cttttgaatt
+     4921 cggtcagtgc gtcctgctga tgtgctcagt atcttgttat ccgctcacaa tgtcaattgt
+     4981 tatccgctca caattctcga tcctctacgc cggacgcatc gtggccggca tcaccggcgc
+     5041 cacaggtgcg gttgctggcg cctggaccaa aacgaaaaaa ggcccccctt tcgggaggcc
+     5101 tcttttctgg aatttggtac cgaggtgcta gtcaaaagcc tccgaccgga ggcttttgac
+     5161 tatcgatccc ccaactgaga gaactcaaag gttaccccag ttggggcact tagccgatat
+     5221 acgtatactc ttacttactt aagatctttt gaattcgacg tcggaattgc cagctggggc
+     5281 gccctctggt aaggttggga agccctgcaa agtaaactgg atggctttct tgccgccaag
+     5341 gatctgatgg cgcaggggat catgatctga tcaagagaca ggatgaggat cgtttcgcat
+     5401 gattgaacaa gatggattgc acgcaggttc tccggccgct tgggtggaga ggctattcgg
+     5461 ctatgactgg gcacaacaga caatcggctg ctctgatgcc gccgtgttcc ggctgtcagc
+     5521 gcaggggcgc ccggttcttt ttgtcaagac cgacctgtcc ggtgccctga atgaactgca
+     5581 ggacgaggca gcgcggctat cgtggctggc cacgacgggc gttccttgcg cagctgtgct
+     5641 cgacgttgtc actgaagcgg gaagggactg gctgctattg ggcgaagtgc cggggcagga
+     5701 tctcctgtca tctcaccttg ctcctgccga gaaagtatcc atcatggctg atgcaatgcg
+     5761 gcggctgcat acgcttgatc cggctacctg cccattcgac caccaagcga aacatcgcat
+     5821 cgagcgagca cgtactcgga tggaagccgg tcttgtcgat caggatgatc tggacgaaga
+     5881 gcatcagggg ctcgcgccag ccgaactgtt cgccaggctc aaggcgcgca tgcccgacgg
+     5941 cgaggatctc gtcgtgaccc atggcgatgc ctgcttgccg aatatcatgg tggaaaatgg
+     6001 ccgcttttct ggattcatcg actgtggccg gctgggtgtg gcggaccgct atcaggacat
+     6061 agcgttggct acccgtgata ttgctgaaga gcttggcggc gaatgggctg accgcttcct
+     6121 cgtgctttac ggtatcgccg ctcccgattc gcagcgcatc gccttctatc gccttcttga
+     6181 cgagttcttc tgagcgggac tctggggttc gagagctcgc ttggactcct gttgatagat
+     6241 ccagtaatga cctcagaact ccatctggat ttgttcagaa cgctcggttg ccgccgggcg
+     6301 ttttttattg gtgagaatcc aagcatatcg ccgacatcac cgatggggaa gatcgggctc
+     6361 gccacttcgg gctcatgagc gcttgtttcg gcgtgggtat ggtggcaggc cccgtggccg
+     6421 ggggactgtt gggcgccatc tccttgcatg caccattcct tgcggcggcg gtgctcaacg
+     6481 gcctcaacct actactgggc tgcttcctaa tgcaggagtc gcataaggga gagcgtcgag
+     6541 atcccggaca ccatcgaatg gcgcaaaacc tttcgcggta tggcatgata gcgcccggaa
+     6601 gagagtcaat tcagggtggt gaatgtgaaa ccagtaacgt tatacgatgt cgcagagtat
+     6661 gccggtgtct cttatcagac cgtttcccgc gtggtgaacc aggccagcca cgtttctgcg
+     6721 aaaacgcggg aaaaagtgga agcggcgatg gcggagctga attacattcc caaccgcgtg
+     6781 gcacaacaac tggcgggcaa acagtcgttg ctgattggcg ttgccacctc cagtctggcc
+     6841 ctgcacgcgc cgtcgcaaat tgtcgcggcg attaaatctc gcgccgatca actgggtgcc
+     6901 agcgtggtgg tgtcgatggt agaacgaagc ggcgtcgaag cctgtaaagc ggcggtgcac
+     6961 aatcttctcg cgcaacgcgt cagtgggctg atcattaact atccgctgga tgaccaggat
+     7021 gccattgctg tggaagctgc ctgcactaat gttccggcgt tatttcttga tgtctctgac
+     7081 cagacaccca tcaacagtat tattttctcc catgaagacg gtacgcgact gggcgtggag
+     7141 catctggtcg cattgggtca ccagcaaatc gcgctgttag cgggcccatt aagttctgtc
+     7201 tcggcgcgtc tgcgtctggc tggctggcat aaatatctca ctcgcaatca aattcagccg
+     7261 atagcggaac gggaaggcga ctggagtgcc atgtccggtt ttcaacaaac catgcaaatg
+     7321 ctgaatgagg gcatcgttcc cactgcgatg ctggttgcca acgatcagat ggcgctgggc
+     7381 gcaatgcgcg ccattaccga gtccgggctg cgcgttggtg cggacatctc ggtagtggga
+     7441 tacgacgata ccgaagacag ctcatgttat atcccgccgt taaccaccat caaacaggat
+     7501 tttcgcctgc tggggcaaac cagcgtggac cgcttgctgc aactctctca gggccaggcg
+     7561 gtgaagggca atcagctgtt gcccgtctca ctggtgaaaa gaaaaaccac cctggcgccc
+     7621 aatacgcaaa ccgcctctcc ccgcgcgttg gccgattcat taatgcagct ggcacgacag
+     7681 gtttcccgac tggaaagcgg gcagtgagcg caacgcaatt aatgtaagtt agctcactca
+     7741 ttaggcaccg acgtcaaaat acccccataa aaaaaggcgc cgaagcgcct taatacgtta
+     7801 ctagtcatga ccaaaatccc ttaacgtgag ttttcgttcc actgagcgtc agaccccgta
+     7861 gaaaagatca aaggatcttc
+//

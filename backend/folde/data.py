@@ -114,6 +114,87 @@ def get_available_proteingym_datasets(
     return filtered_metadata
 
 
+def try_load_sharded_embedding_file(embeddings_dir: str, prefix: str) -> pd.DataFrame:
+    """Load sharded embedding files matching pattern <prefix>-(\d+)_of_(\d+).csv.
+
+    Args:
+        embeddings_dir: Directory containing the embedding files
+        prefix: File prefix (e.g., "SPG1_STRSG_Olson_2014_embedding_15b")
+
+    Returns:
+        Concatenated DataFrame from all shards
+
+    Raises:
+        FileNotFoundError: If no shard files are found
+        ValueError: If shard validation fails (missing shards, duplicates, etc.)
+    """
+    shard_pattern = os.path.join(embeddings_dir, f"{prefix}-*_of_*.csv")
+    shard_files = glob.glob(shard_pattern)
+
+    if not shard_files:
+        raise FileNotFoundError(f"No shard files found matching pattern: {shard_pattern}")
+
+    # Parse shard information: {shard_idx: (total_shards, filepath)}
+    shard_info = {}
+    shard_regex = re.compile(rf"{re.escape(prefix)}-(\d+)_of_(\d+)\.csv$")
+
+    for filepath in shard_files:
+        match = shard_regex.search(filepath)
+        if not match:
+            continue
+        shard_idx = int(match.group(1))
+        total_shards = int(match.group(2))
+
+        if shard_idx in shard_info:
+            raise ValueError(
+                f"Duplicate shard index {shard_idx} found for {prefix}: "
+                f"{shard_info[shard_idx][1]} and {filepath}"
+            )
+
+        shard_info[shard_idx] = (total_shards, filepath)
+
+    # Validate shards
+    if not shard_info:
+        raise ValueError(f"No valid shard files found matching pattern: {shard_pattern}")
+
+    # Check all shards have the same total count
+    total_shard_counts = set(info[0] for info in shard_info.values())
+    if len(total_shard_counts) != 1:
+        raise ValueError(f"Inconsistent total shard counts found: {total_shard_counts}")
+
+    expected_total_shards = total_shard_counts.pop()
+
+    # Check all shard indices from 1 to N are present
+    found_indices = set(shard_info.keys())
+    expected_indices = set(range(1, expected_total_shards + 1))
+
+    if found_indices != expected_indices:
+        missing = expected_indices - found_indices
+        extra = found_indices - expected_indices
+        error_parts = []
+        if missing:
+            error_parts.append(f"missing shards: {sorted(missing)}")
+        if extra:
+            error_parts.append(f"unexpected shard indices: {sorted(extra)}")
+        raise ValueError(f"Shard validation failed for {prefix}: {', '.join(error_parts)}")
+
+    # Check no shard index is out of range
+    max_idx = max(found_indices)
+    if max_idx > expected_total_shards:
+        raise ValueError(f"Shard index {max_idx} exceeds total shard count {expected_total_shards}")
+
+    # Load and concatenate all shards in order
+    logger.info(f"Loading {expected_total_shards} sharded embedding files for {prefix}")
+    shard_dfs = []
+    for idx in range(1, expected_total_shards + 1):
+        filepath = shard_info[idx][1]
+        shard_df = pd.read_csv(filepath)
+        shard_dfs.append(shard_df)
+        logger.info(f"Loaded shard {idx}/{expected_total_shards} with {len(shard_df)} rows")
+
+    return pd.concat(shard_dfs, ignore_index=True)
+
+
 def get_proteingym_dataset(
     dms_id: str, embedding_model_id: str, naturalness_model_id: str
 ) -> Tuple[str, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -138,12 +219,24 @@ def get_proteingym_dataset(
         )
     wt_aa_seq = dms_metadata["target_seq"].iloc[0]
 
-    # Check that the embedding file exists
+    # #########################################################
+    # LOAD EMBEDDING DATA ######################################
     embedding_file_path = os.path.join(
         EMBEDDINGS_DIR, f"{dms_id}_embedding_{embedding_model_id}.csv"
     )
-    if not os.path.exists(embedding_file_path):
-        raise FileNotFoundError(f"Embedding file not found: {embedding_file_path}")
+
+    if os.path.exists(embedding_file_path):
+        # Single file case
+        embedding_df = pd.read_csv(embedding_file_path)
+    else:
+        # Try loading sharded files
+        prefix = f"{dms_id}_embedding_{embedding_model_id}"
+        try:
+            embedding_df = try_load_sharded_embedding_file(str(EMBEDDINGS_DIR), prefix)
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"Embedding file not found (neither single file nor shards): {embedding_file_path}"
+            )
 
     # Check that the naturalness file exists
     naturalness_file_path = os.path.join(
@@ -151,10 +244,6 @@ def get_proteingym_dataset(
     )
     if not os.path.exists(naturalness_file_path):
         raise FileNotFoundError(f"Naturalness file not found: {naturalness_file_path}")
-
-    # #########################################################
-    # LOAD EMBEDDING DATA ######################################
-    embedding_df = pd.read_csv(embedding_file_path)
     logger.info(f"Loaded embeddings for {dms_id} with {len(embedding_df)} rows")
     embedding_df["seq_id"] = embedding_df["seq_id"].apply(lambda x: maybe_modify_seq_id(dms_id, x))
     embedding_df = embedding_df.set_index("seq_id", drop=False)
