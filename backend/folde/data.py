@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -114,6 +115,28 @@ def get_available_proteingym_datasets(
     return filtered_metadata
 
 
+def _parse_embedding_columns_inplace(df: pd.DataFrame) -> pd.DataFrame:
+    """Parse embedding columns from JSON strings to numpy arrays in-place.
+
+    Modifies embedding columns in-place to avoid memory duplication.
+
+    Args:
+        df: DataFrame with potential embedding columns as JSON strings
+
+    Returns:
+        The same DataFrame with parsed embeddings (modified in-place)
+    """
+    for col in df.columns:
+        if col == "embedding" or col.startswith("embedding_layer_"):
+            if len(df) > 0 and isinstance(df[col].iloc[0], str):
+                # Parse in-place to avoid memory duplication
+                for idx in df.index:
+                    val = df.at[idx, col]
+                    if isinstance(val, str):
+                        df.at[idx, col] = np.array(json.loads(val))
+    return df
+
+
 def try_load_sharded_embedding_file(embeddings_dir: str, prefix: str) -> pd.DataFrame:
     """Load sharded embedding files matching pattern <prefix>-(\d+)_of_(\d+).csv.
 
@@ -183,14 +206,26 @@ def try_load_sharded_embedding_file(embeddings_dir: str, prefix: str) -> pd.Data
     if max_idx > expected_total_shards:
         raise ValueError(f"Shard index {max_idx} exceeds total shard count {expected_total_shards}")
 
-    # Load and concatenate all shards in order
+    # Load and concatenate all shards in parallel
     logger.info(f"Loading {expected_total_shards} sharded embedding files for {prefix}")
-    shard_dfs = []
-    for idx in range(1, expected_total_shards + 1):
+
+    def load_and_parse_shard(idx: int) -> pd.DataFrame:
         filepath = shard_info[idx][1]
         shard_df = pd.read_csv(filepath)
-        shard_dfs.append(shard_df)
-        logger.info(f"Loaded shard {idx}/{expected_total_shards} with {len(shard_df)} rows")
+        _parse_embedding_columns_inplace(shard_df)
+        logger.info(
+            f"Loaded and parsed shard {idx}/{expected_total_shards} with {len(shard_df)} rows"
+        )
+        return shard_df
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        # Submit all shard loading tasks
+        futures = {
+            idx: executor.submit(load_and_parse_shard, idx)
+            for idx in range(1, expected_total_shards + 1)
+        }
+        # Collect results in order
+        shard_dfs = [futures[idx].result() for idx in range(1, expected_total_shards + 1)]
 
     return pd.concat(shard_dfs, ignore_index=True)
 
@@ -228,8 +263,9 @@ def get_proteingym_dataset(
     if os.path.exists(embedding_file_path):
         # Single file case
         embedding_df = pd.read_csv(embedding_file_path)
+        _parse_embedding_columns_inplace(embedding_df)
     else:
-        # Try loading sharded files
+        # Try loading sharded files (parsing happens inside)
         prefix = f"{dms_id}_embedding_{embedding_model_id}"
         try:
             embedding_df = try_load_sharded_embedding_file(str(EMBEDDINGS_DIR), prefix)
@@ -398,16 +434,7 @@ def get_proteingym_dataset(
     category_df = category_df.reindex(activity_df.index)
     category_df = category_df.fillna(False)
 
-    # Convert embedding column from string to numpy array if needed
-    for col in embedding_df.columns:
-        if col == "embedding" or col.startswith("embedding_layer_"):
-            if isinstance(embedding_df[col].iloc[0], str):
-                # embedding_df["embedding"] = embedding_df["embedding"].apply(
-                #     lambda x: np.array(ast.literal_eval(x)) if isinstance(x, str) else x
-                # )
-                embedding_df[col] = embedding_df[col].apply(
-                    lambda x: np.array(json.loads(x)) if isinstance(x, str) else x
-                )
+    # Embeddings are already parsed during loading (via _parse_embedding_columns_inplace)
 
     # We lose ordering with the set operations but recover it with a sort later.
     logging.info(
