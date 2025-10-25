@@ -11,13 +11,15 @@ echo "==================================="
 echo "FolDE Data Upload to GCS"
 echo "==================================="
 echo ""
-echo "This will upload approximately 152GB of data to ${BUCKET}"
+echo "This will sync approximately 152GB of data to ${BUCKET}"
 echo "Breakdown:"
 echo "  - DMS_ProteinGym_substitutions: ~1.0GB"
 echo "  - embeddings: ~151GB"
 echo "  - naturalness: ~257MB"
 echo "  - DMS_substitutions.csv: ~208KB"
 echo "  - FLIP-AAV_multimutant_dataset.csv: ~462MB"
+echo ""
+echo "Using gsutil rsync - only new/changed files will be uploaded."
 echo ""
 read -p "Continue? (y/N) " -n 1 -r
 echo
@@ -41,34 +43,19 @@ if [ ! -d "${DATA_DIR}" ]; then
 fi
 
 echo ""
-echo "Starting upload..."
+echo "Starting rsync..."
 echo ""
 
-# Upload with progress and parallelism for faster transfer
-# -m: parallel upload
+# Use rsync for efficient upload
+# -m: parallel operations
 # -r: recursive
-# -o GSUtil:parallel_process_count=16: use 16 parallel processes
-# -o GSUtil:parallel_thread_count=10: use 10 threads per process
+# -d: delete remote files that don't exist locally
 
-echo "Uploading DMS_ProteinGym_substitutions (~1.0GB)..."
-gsutil -m -o GSUtil:parallel_process_count=16 cp -r "${DATA_DIR}/DMS_ProteinGym_substitutions" "${BUCKET}/"
-
-echo ""
-echo "Uploading embeddings (~151GB, this will take a while)..."
-gsutil -m -o GSUtil:parallel_process_count=16 cp -r "${DATA_DIR}/embeddings" "${BUCKET}/"
-
-echo ""
-echo "Uploading naturalness (~257MB)..."
-gsutil -m -o GSUtil:parallel_process_count=16 cp -r "${DATA_DIR}/naturalness" "${BUCKET}/"
-
-echo ""
-echo "Uploading CSV files..."
-gsutil cp "${DATA_DIR}/DMS_substitutions.csv" "${BUCKET}/"
-gsutil cp "${DATA_DIR}/FLIP-AAV_multimutant_dataset.csv" "${BUCKET}/"
+gsutil -m rsync -r -d "${DATA_DIR}" "${BUCKET}"
 
 echo ""
 echo "==================================="
-echo "Upload complete!"
+echo "Sync complete!"
 echo "==================================="
 echo ""
 echo "Verifying upload..."
