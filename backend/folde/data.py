@@ -138,7 +138,7 @@ def _parse_embedding_columns_inplace(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def try_load_sharded_embedding_file(embeddings_dir: str, prefix: str) -> pd.DataFrame:
-    """Load sharded embedding files matching pattern <prefix>-(\d+)_of_(\d+).csv.
+    """Load sharded embedding files matching pattern <prefix>-(#)_of_(#).csv.
 
     Args:
         embeddings_dir: Directory containing the embedding files
