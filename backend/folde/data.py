@@ -210,6 +210,7 @@ def try_load_sharded_embedding_file(embeddings_dir: str, prefix: str) -> pd.Data
     logger.info(f"Loading {expected_total_shards} sharded embedding files for {prefix}")
 
     def load_and_parse_shard(idx: int) -> pd.DataFrame:
+        logging.info(f"Loading shard {idx}/{expected_total_shards} from {shard_info[idx][1]}...")
         filepath = shard_info[idx][1]
         shard_df = pd.read_csv(filepath)
         _parse_embedding_columns_inplace(shard_df)

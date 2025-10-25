@@ -32,7 +32,7 @@ random_config = FolDEModelConfig(
 random_forest_config = FolDEModelConfig(
     name="RandomToRandomForest",
     naturalness_model_id="600m",
-    embedding_model_id="300m",
+    embedding_model_id="15b",
     zero_shot_model_name="RandomZeroShotModel",
     zero_shot_model_params={},
     few_shot_model_name="RandomForestFewShotModel",
@@ -178,5 +178,5 @@ results = simulate_campaigns_with_config_checkpoints(
     activity_column="DMS_score",
     max_rounds=10,
     random_seed=42,
-    num_workers=5,
+    num_workers=1,
 )
