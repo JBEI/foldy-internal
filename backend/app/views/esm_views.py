@@ -175,6 +175,15 @@ class StartNaturalnessResource(Resource):
         if not fold:
             raise BadRequest(f"Fold with ID {fold_id} not found")
 
+        # 3. Validate seq_ids.
+        if not fold.yaml_config:
+            raise BadRequest("Fold does not have a YAML config!")
+        boltz_yaml_helper = BoltzYamlHelper(fold.yaml_config)
+        if len(boltz_yaml_helper.get_protein_sequences()) > 1:
+            raise BadRequest(
+                "Fold has multiple protein sequences, which is not supported for ESM embeddings yet."
+            )
+
         existing_naturalness = Naturalness.query.filter(
             Naturalness.name == name, Naturalness.fold_id == fold_id
         ).first()

@@ -259,6 +259,12 @@ def get_esm_naturalness(naturalness_id: int):
             raise ValueError("Fold does not have a YAML config!")
         boltz_yaml_helper = BoltzYamlHelper(fold.yaml_config)
 
+        # 3. Validate seq_ids.
+        if len(boltz_yaml_helper.get_protein_sequences()) > 1:
+            raise ValueError(
+                "Fold has multiple protein sequences, which is not supported for ESM embeddings yet."
+            )
+
         protein_input = None
         if len(boltz_yaml_helper.get_protein_sequences()) > 1:
             protein_input = boltz_yaml_helper.get_protein_sequences()
