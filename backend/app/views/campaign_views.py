@@ -30,11 +30,14 @@ from app.api_fields import (
     paginated_campaigns_fields,
 )
 
-# Parser for pagination
+# Parser for pagination and search
 get_campaigns_parser = ns.parser()
 get_campaigns_parser.add_argument("page", type=int, default=1, help="Page number")
 get_campaigns_parser.add_argument("per_page", type=int, default=20, help="Items per page")
 get_campaigns_parser.add_argument("fold_id", type=int, help="Filter by fold ID")
+get_campaigns_parser.add_argument(
+    "search", type=str, help="Search campaigns by name, description, or fold"
+)
 
 
 @ns.route("/campaigns")
@@ -51,11 +54,15 @@ class CampaignsResource(Resource):
         page = args.get("page", 1)
         per_page = min(args.get("per_page", 20), 100)  # Limit to 100 items per page
         fold_id = args.get("fold_id")
+        search = args.get("search")
 
         # Add permission filtering based on fold visibility
         only_public = not user_jwt_grants_edit_access(get_jwt()["user_claims"])
 
-        query = Campaign.query.join(Fold)
+        # Join Fold and User to enable searching by fold owner email
+        from app.models import User
+
+        query = Campaign.query.join(Fold).join(User, Fold.user_id == User.id)
 
         # Filter campaigns based on fold visibility permissions
         if only_public:
@@ -63,6 +70,18 @@ class CampaignsResource(Resource):
 
         if fold_id:
             query = query.filter(Campaign.fold_id == fold_id)
+
+        # Apply search filter if provided
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                db.or_(
+                    Campaign.name.ilike(search_term),
+                    Campaign.description.ilike(search_term),
+                    Fold.name.ilike(search_term),
+                    User.email.ilike(search_term),
+                )
+            )
 
         # Order by most recent first
         query = query.order_by(Campaign.created_at.desc())

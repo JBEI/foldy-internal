@@ -32,7 +32,7 @@ x-common-env: &common-env
   GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
   GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
   GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}
-  WARNING_MESSAGE: "A migration happened recently, please let jbr@lbl.gov know if you have any issues."
+  WARNING_MESSAGE: "A migration happened recently. If you are having an error, log out and log back in. Please let jbr@lbl.gov know if you have any issues."
   EMAIL_USERNAME: ${EMAIL_USERNAME}
   EMAIL_PASSWORD: ${EMAIL_PASSWORD}
   RUN_ANNOTATE_PATH: /worker/run_annotate.sh

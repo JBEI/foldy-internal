@@ -156,7 +156,16 @@ const FewShotCampaignRoundView: React.FC<FewShotCampaignRoundViewProps> = ({
     // Embedding state moved to FewShotRunBuilder component
     const [priorRoundActivityData, setPriorRoundActivityData] = useState<Array<{ seq_id: string, activity: number }> | null>(null);
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-    const [nameFilter, setNameFilter] = useState<string | null>(null);
+
+    // Set default filter based on whether slate is locked in
+    const getDefaultFilter = () => {
+        if (currentRound.slate_seq_ids) {
+            return 'selected'; // Slate is locked in - show just the selected few shot run
+        } else {
+            return 'round'; // Slate not locked in - show few shot runs for this round
+        }
+    };
+    const [nameFilter, setNameFilter] = useState<string | null>(getDefaultFilter());
 
 
     // All useEffect hooks must come before any conditional returns

@@ -6,7 +6,8 @@ import UIkit from "uikit";
 import { Button, Space, Input, Select, Spin, Checkbox } from "antd";
 import { queueJob } from "./api/commonApi";
 import { getFoldFileZip, getFoldsWithPagination, getJobStatus } from "./api/foldApi";
-import { makeFoldTable } from "./util/foldTable";
+import { makeFoldTableAntd } from "./util/foldTableAntd";
+// import { makeFoldTable } from "./util/foldTable";
 import { NewDockPrompt } from "./util/newDockPrompt";
 import { updateFold, getFoldAffinityPrediction } from "./api/foldApi";
 import { Dock, Fold } from "./types/types";
@@ -235,7 +236,7 @@ function TagView() {
 
             {/* Folds Table */}
             {folds ? (
-                <div key="loadedDiv">{makeFoldTable(folds, {
+                <div key="loadedDiv">{makeFoldTableAntd(folds, {
                     editable: true,
                     onTagsChange: fetchAllFoldData
                 })}</div>

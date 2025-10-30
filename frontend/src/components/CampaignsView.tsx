@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Table, Button, Modal, Form, Input, Select, Typography, Space, Card, Pagination, Tag, Spin } from 'antd';
-import { PlusOutlined, EyeOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, EyeOutlined, EditOutlined, DeleteOutlined, AppstoreOutlined } from '@ant-design/icons';
 import { ColumnsType } from 'antd/es/table';
 import { Campaign, Fold as FoldType } from '../types/types';
 import { PaginatedCampaignsResponse, getCampaigns, createCampaign, deleteCampaign } from '../api/campaignApi';
@@ -10,6 +10,8 @@ import { notify } from '../services/NotificationService';
 import { ESMModelPicker } from './FoldView/ESMModelPicker';
 import debounce from 'lodash/debounce';
 import type { SelectProps } from 'antd';
+import { PageHeader } from './common/PageHeader';
+import { DecodedJwt } from '../services/authentication.service';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -26,7 +28,11 @@ interface LocalFold {
     owner_email?: string;
 }
 
-const CampaignsView: React.FC = () => {
+interface CampaignsViewProps {
+    decodedToken: DecodedJwt | null;
+}
+
+const CampaignsView: React.FC<CampaignsViewProps> = ({ decodedToken }) => {
     const navigate = useNavigate();
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [loading, setLoading] = useState(false);
@@ -38,11 +44,15 @@ const CampaignsView: React.FC = () => {
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [createForm] = Form.useForm();
 
-    const loadCampaignsAndFolds = async (page: number = 1) => {
+    // Initialize search with user email if available
+    const userEmail = decodedToken?.user_claims.email || '';
+    const [searchTerm, setSearchTerm] = useState(userEmail);
+
+    const loadCampaignsAndFolds = async (page: number = 1, search?: string) => {
         setLoading(true);
         try {
-            // First, load campaigns
-            const response: PaginatedCampaignsResponse = await getCampaigns(page, pageSize);
+            // Load campaigns with search parameter
+            const response: PaginatedCampaignsResponse = await getCampaigns(page, pageSize, undefined, search);
             setCampaigns(response.campaigns);
             setTotalCampaigns(response.total);
             setCurrentPage(response.page);
@@ -50,7 +60,7 @@ const CampaignsView: React.FC = () => {
             // Get unique fold IDs from the campaigns
             const foldIds = [...new Set(response.campaigns.map(campaign => campaign.fold_id))];
 
-            // Load only the relevant folds
+            // Load only the relevant folds (for the fold select dropdown in create modal)
             const foldsPromises = foldIds.map(async foldId => {
                 try {
                     return await getFold(foldId);
@@ -79,9 +89,10 @@ const CampaignsView: React.FC = () => {
         }
     };
 
+    // Load campaigns when search term changes or on mount
     useEffect(() => {
-        loadCampaignsAndFolds();
-    }, []);
+        loadCampaignsAndFolds(1, searchTerm || undefined);
+    }, [searchTerm]);
 
     const fetchFoldOptions = async (searchTerm: string): Promise<FoldOption[]> => {
         try {
@@ -188,48 +199,52 @@ const CampaignsView: React.FC = () => {
         });
     };
 
+
     const columns: ColumnsType<Campaign> = [
         {
-            title: 'Name',
-            dataIndex: 'name',
-            key: 'name',
-            width: '25%',
-            render: (name: string, record: Campaign) => (
-                <a
-                    href={`/campaigns/${record.id}`}
-                    onClick={(e) => {
-                        e.preventDefault();
-                        navigate(`/campaigns/${record.id}`);
-                    }}
-                    style={{
-                        color: '#1a1a1a',
-                        fontSize: '16px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        textDecoration: 'none',
-                        transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={(e) => {
-                        e.currentTarget.style.textDecoration = 'underline';
-                    }}
-                    onMouseLeave={(e) => {
-                        e.currentTarget.style.textDecoration = 'none';
-                    }}
-                >
-                    {name}
-                </a>
-            ),
-        },
-        {
-            title: 'Description',
-            dataIndex: 'description',
-            key: 'description',
-            width: '30%',
-            ellipsis: true,
-            render: (description: string) => (
-                <Text style={{ fontSize: '14px', color: '#262626' }}>
-                    {description || <span style={{ color: '#8c8c8c' }}>No description</span>}
-                </Text>
+            title: 'Campaign',
+            key: 'campaign',
+            width: '40%',
+            render: (_, record: Campaign) => (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <a
+                        href={`/campaigns/${record.id}`}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            navigate(`/campaigns/${record.id}`);
+                        }}
+                        style={{
+                            color: '#1a1a1a',
+                            fontSize: '18px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            textDecoration: 'none',
+                            transition: 'all 0.2s',
+                            lineHeight: '1.4',
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.textDecoration = 'underline';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.textDecoration = 'none';
+                        }}
+                    >
+                        {record.name}
+                    </a>
+                    <Text
+                        style={{
+                            fontSize: '13px',
+                            color: '#595959',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                            lineHeight: '1.5',
+                        }}
+                    >
+                        {record.description || <span style={{ color: '#bfbfbf', fontStyle: 'italic' }}>No description</span>}
+                    </Text>
+                </div>
             ),
         },
         {
@@ -245,18 +260,17 @@ const CampaignsView: React.FC = () => {
                         navigate(`/fold/${record.fold_id}`);
                     }}
                     style={{
-                        color: '#595959',
-                        fontSize: '13px',
+                        color: '#1890ff',
+                        fontSize: '14px',
+                        fontWeight: 500,
                         cursor: 'pointer',
                         textDecoration: 'none',
                         transition: 'all 0.2s',
                     }}
                     onMouseEnter={(e) => {
-                        e.currentTarget.style.color = '#1890ff';
                         e.currentTarget.style.textDecoration = 'underline';
                     }}
                     onMouseLeave={(e) => {
-                        e.currentTarget.style.color = '#595959';
                         e.currentTarget.style.textDecoration = 'none';
                     }}
                 >
@@ -265,38 +279,68 @@ const CampaignsView: React.FC = () => {
             ),
         },
         {
-            title: 'Fold Owner',
-            key: 'owner',
-            width: '12%',
+            title: 'Details',
+            key: 'details',
+            width: '20%',
             render: (_, record: Campaign) => {
                 const fold = folds.find(f => f.id === record.fold_id);
+                const roundsText = `${record.rounds?.length || 0} round${record.rounds?.length === 1 ? '' : 's'}`;
+                const dateText = new Date(record.created_at).toLocaleDateString();
+
                 return (
-                    <Text style={{ color: '#595959', fontSize: '12px' }}>
-                        {fold?.owner_email || '-'}
-                    </Text>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <Text style={{ fontSize: '12px', color: '#595959' }}>
+                            {fold?.owner_email || 'Unknown owner'}
+                        </Text>
+                        <Text style={{ fontSize: '12px', color: '#8c8c8c' }}>
+                            {roundsText} • {dateText}
+                        </Text>
+                    </div>
                 );
             },
         },
         {
-            title: 'Rounds',
-            key: 'rounds',
-            width: '8%',
-            render: (_, record: Campaign) => (
-                <Text style={{ fontSize: '13px' }}>{record.rounds?.length || 0}</Text>
-            ),
-        },
-        {
-            title: 'Created',
-            dataIndex: 'created_at',
-            key: 'created_at',
-            width: '10%',
-            render: (date: string) => (
-                <Text style={{ fontSize: '12px', color: '#595959' }}>
-                    {new Date(date).toLocaleDateString()}
-                </Text>
-            ),
-            sorter: (a: Campaign, b: Campaign) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-            defaultSortOrder: 'descend' as const,
+            title: 'Most Recent Round',
+            key: 'most_recent_round',
+            width: '15%',
+            render: (_, record: Campaign) => {
+                if (!record.rounds || record.rounds.length === 0) {
+                    return <Text style={{ fontSize: '12px', color: '#bfbfbf', fontStyle: 'italic' }}>No rounds</Text>;
+                }
+
+                // Find the most recent round by date
+                const mostRecentRound = [...record.rounds].sort((a, b) =>
+                    new Date(b.date_started).getTime() - new Date(a.date_started).getTime()
+                )[0];
+
+                const dateText = new Date(mostRecentRound.date_started).toLocaleDateString();
+
+                return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        {/* <Text style={{ fontSize: '11px', color: '#8c8c8c' }}>
+                            Round {mostRecentRound.round_number}
+                        </Text> */}
+                        <Text style={{ fontSize: '11px', color: '#8c8c8c' }}>
+                            {dateText}
+                        </Text>
+                    </div>
+                );
+            },
+            sorter: (a: Campaign, b: Campaign) => {
+                // Sort by most recent round date, campaigns with no rounds go to bottom
+                if (!a.rounds || a.rounds.length === 0) return 1;
+                if (!b.rounds || b.rounds.length === 0) return -1;
+
+                const mostRecentA = [...a.rounds].sort((x, y) =>
+                    new Date(y.date_started).getTime() - new Date(x.date_started).getTime()
+                )[0];
+                const mostRecentB = [...b.rounds].sort((x, y) =>
+                    new Date(y.date_started).getTime() - new Date(x.date_started).getTime()
+                )[0];
+
+                return new Date(mostRecentB.date_started).getTime() - new Date(mostRecentA.date_started).getTime();
+            },
+            defaultSortOrder: 'ascend' as const,
         },
         {
             title: 'Actions',
@@ -327,65 +371,78 @@ const CampaignsView: React.FC = () => {
 
     return (
         <div style={{ padding: '24px', height: '100%', overflow: 'auto' }}>
+            <PageHeader
+                title="Campaigns"
+                searchValue={searchTerm}
+                searchPlaceholder="Search campaigns by name, description, or fold..."
+                onSearchChange={setSearchTerm}
+                actions={
+                    <>
+                        <Button
+                            type="default"
+                            size="large"
+                            icon={<AppstoreOutlined />}
+                            onClick={() => setSearchTerm(" ")}
+                        >
+                            View All
+                        </Button>
+
+                        <Button
+                            type="primary"
+                            size="large"
+                            icon={<PlusOutlined />}
+                            onClick={() => setShowCreateModal(true)}
+                        >
+                            New Campaign
+                        </Button>
+                    </>
+                }
+            />
+
             <Card>
-                <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                        <Title level={2} style={{ margin: 0 }}>Campaigns</Title>
-                        <Text type="secondary">Manage your directed evolution campaigns</Text>
-                    </div>
-                    <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        onClick={() => setShowCreateModal(true)}
-                    >
-                        New Campaign
-                    </Button>
-                </div>
-
-                <div style={{
-                    overflowX: 'auto',
-                    marginBottom: '16px',
-                    WebkitOverflowScrolling: 'touch',
-                }}>
-                    <Table
-                        columns={columns}
-                        dataSource={campaigns}
-                        loading={loading}
-                        rowKey="id"
-                        pagination={false}
-                        style={{ minWidth: '800px' }}
-                        size="middle"
-                        onRow={() => ({
-                            style: {
-                                transition: 'background-color 0.2s',
-                            },
-                            onMouseEnter: (e: React.MouseEvent<HTMLTableRowElement>) => {
-                                e.currentTarget.style.backgroundColor = '#fafafa';
-                            },
-                            onMouseLeave: (e: React.MouseEvent<HTMLTableRowElement>) => {
-                                e.currentTarget.style.backgroundColor = '';
-                            },
-                        })}
-                    />
-                </div>
-
-                <div style={{ textAlign: 'right' }}>
-                    <Pagination
-                        current={currentPage}
-                        total={totalCampaigns}
-                        pageSize={pageSize}
-                        onChange={(page) => {
-                            setCurrentPage(page);
-                            loadCampaignsAndFolds(page);
-                        }}
-                        showSizeChanger={false}
-                        showQuickJumper
-                        showTotal={(total, range) =>
-                            `${range[0]}-${range[1]} of ${total} campaigns`
-                        }
-                    />
-                </div>
+                <Table
+                    columns={columns}
+                    dataSource={campaigns}
+                    loading={loading}
+                    rowKey="id"
+                    pagination={false}
+                    scroll={{ x: 800 }}
+                    size="large"
+                    onRow={() => ({
+                        style: {
+                            transition: 'background-color 0.2s',
+                        },
+                        onMouseEnter: (e: React.MouseEvent<HTMLTableRowElement>) => {
+                            e.currentTarget.style.backgroundColor = '#fafafa';
+                        },
+                        onMouseLeave: (e: React.MouseEvent<HTMLTableRowElement>) => {
+                            e.currentTarget.style.backgroundColor = '';
+                        },
+                    })}
+                />
+                <style>{`
+                    .ant-table-large .ant-table-tbody > tr > td {
+                        padding: 20px 16px !important;
+                    }
+                `}</style>
             </Card>
+
+            <div style={{ textAlign: 'center', marginTop: '24px' }}>
+                <Pagination
+                    current={currentPage}
+                    total={totalCampaigns}
+                    pageSize={pageSize}
+                    onChange={(page) => {
+                        setCurrentPage(page);
+                        loadCampaignsAndFolds(page, searchTerm || undefined);
+                    }}
+                    showSizeChanger={false}
+                    showQuickJumper
+                    showTotal={(total, range) =>
+                        `${range[0]}-${range[1]} of ${total} campaigns`
+                    }
+                />
+            </div>
 
             <Modal
                 title="Create New Campaign"

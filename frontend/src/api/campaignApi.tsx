@@ -43,7 +43,8 @@ export interface UpdateCampaignRoundRequest {
 export const getCampaigns = async (
     page: number = 1,
     perPage: number = 20,
-    foldId?: number
+    foldId?: number,
+    search?: string
 ): Promise<PaginatedCampaignsResponse> => {
     const params = new URLSearchParams({
         page: page.toString(),
@@ -52,6 +53,10 @@ export const getCampaigns = async (
 
     if (foldId) {
         params.append('fold_id', foldId.toString());
+    }
+
+    if (search) {
+        params.append('search', search);
     }
 
     const response = await axiosInstance.get<PaginatedCampaignsResponse>(

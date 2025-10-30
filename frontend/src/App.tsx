@@ -17,7 +17,7 @@ import UIkit from "uikit";
 import { Layout, Menu, Button as AntButton, Drawer, Spin, Tour, Modal, Typography as AntTypography, ConfigProvider, App as AntApp } from "antd";
 import { MenuOutlined, HomeOutlined, InfoCircleOutlined, SettingOutlined, DatabaseOutlined, TagOutlined, ExperimentOutlined, QuestionCircleOutlined, RocketOutlined } from "@ant-design/icons";
 import About from "./components/AboutView/About";
-import DashboardView from "./components/DashboardView";
+import FoldsView from "./components/FoldsView";
 import NewBoltzFoldView from "./components/NewFoldView/NewBoltzFoldView";
 // import NewFold from "./components/NewFoldView/NewFold2Uniforms";
 // import NewFold from "./components/NewFoldView/NewFoldView";
@@ -139,7 +139,7 @@ function RoutedApp({ token, setToken }: {
     // Tour steps
     const tourSteps = [
         {
-            title: 'Welcome to the Dashboard!',
+            title: 'Welcome to the Folds tab!',
             description: 'This is where you can view predicted protein structures, or folds.',
             target: () => dashboardNavRef.current,
         },
@@ -162,7 +162,7 @@ function RoutedApp({ token, setToken }: {
 
     // Start walkthrough handler
     const startWalkthrough = () => {
-        // Navigate to dashboard first
+        // Navigate to folds first
         if (location.pathname !== '/') {
             navigate('/');
         }
@@ -258,9 +258,9 @@ function RoutedApp({ token, setToken }: {
 
     const menuItems = [
         {
-            key: 'dashboard',
+            key: 'folds',
             icon: <HomeOutlined />,
-            label: 'Dashboard',
+            label: 'Folds',
             onClick: () => navigate('/')
         },
         {
@@ -330,7 +330,7 @@ function RoutedApp({ token, setToken }: {
                 </Link>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <span ref={dashboardNavRef}>
-                        <NavLink href="/">Dashboard</NavLink>
+                        <NavLink href="/">Folds</NavLink>
                     </span>
                     <span ref={campaignsNavRef}>
                         <NavLink href="/campaigns">Campaigns</NavLink>
@@ -520,7 +520,7 @@ function RoutedApp({ token, setToken }: {
                     />
                     <Route
                         path="/campaigns"
-                        element={<CampaignsView />}
+                        element={<CampaignsView decodedToken={fullDecodedToken} />}
                     />
                     <Route
                         path="/campaigns/:campaignId"
@@ -569,7 +569,7 @@ function RoutedApp({ token, setToken }: {
                     <Route
                         path="/"
                         element={
-                            <DashboardView
+                            <FoldsView
                                 decodedToken={fullDecodedToken}
                                 viewAllRef={viewAllRef}
                                 newFoldRef={newFoldRef}
@@ -626,7 +626,7 @@ function RoutedApp({ token, setToken }: {
 
                     <AntTypography.Title level={4} style={{ marginTop: '24px' }}>🚀 Get Started:</AntTypography.Title>
                     <ul style={{ paddingLeft: '20px' }}>
-                        <li>Browse existing structures from the <strong>Dashboard</strong></li>
+                        <li>Browse existing structures from the <strong>Folds</strong> tab</li>
                         <li>Create predictions by clicking <strong>"New Fold"</strong> (editors only)</li>
                         <li>Explore the comprehensive analysis tools in each fold</li>
                         <li>Run protein engineering <strong>Campaigns</strong> for optimization</li>

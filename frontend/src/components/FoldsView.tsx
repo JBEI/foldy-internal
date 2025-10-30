@@ -5,15 +5,16 @@ import {
     DecodedJwt,
     redirectToLogin,
 } from "../services/authentication.service";
-import { makeFoldTable } from "../util/foldTable";
+import { makeFoldTableAntd } from "../util/foldTableAntd";
 import qs from "query-string";
 import debounce from "lodash/debounce";
 import { getFoldsWithPagination } from "../api/foldApi";
 import { Fold } from "src/types/types";
 import { notify } from "../services/NotificationService";
-import { Input, Button, Space, Divider, Card, Spin, Pagination, Typography } from 'antd';
+import { Button, Card, Spin, Pagination, Typography } from 'antd';
 import { AppstoreOutlined, PlusOutlined, LoginOutlined } from '@ant-design/icons';
 import { StandaloneFoldyMascot } from '../util/foldyMascot';
+import { PageHeader } from './common/PageHeader';
 
 const { Text, Title } = Typography;
 
@@ -55,7 +56,7 @@ function getQueryStringValue(
     return value.map((e) => e || "");
 }
 
-function AuthenticatedDashboardView(props: {
+function AuthenticatedFoldsView(props: {
     decodedToken: DecodedJwt;
     viewAllRef?: React.RefObject<HTMLElement>;
     newFoldRef?: React.RefObject<HTMLElement>;
@@ -155,92 +156,82 @@ function AuthenticatedDashboardView(props: {
 
     return authenticationService.currentJwtStringValue ? (
         <div style={{ flexGrow: 1, overflowY: "scroll", padding: '24px' }}>
-            <Space direction="vertical" size="large" style={{ width: '100%', justifyContent: 'space-between', display: 'flex' }}>
-                {/* Header */}
-                {/* <Title level={2} style={{ marginBottom: '8px' }}>Protein Folds</Title> */}
-                <div style={{ width: '100%', display: 'flex', gap: '16px', alignItems: 'center' }}>
-                    {/* Enhanced Search - fills available width */}
-                    <Input.Search
-                        placeholder="Search folds by name, owner, or tags..."
-                        value={filterFormValue}
-                        onChange={(e) => updateSearchBarText(e.target.value)}
-                        size="large"
-                        allowClear
-                        enterButton={false}
-                        style={{ flex: 1 }}
-                    />
-
-                    {/* Action Buttons */}
-                    <Button
-                        ref={props.viewAllRef}
-                        type="default"
-                        size="large"
-                        icon={<AppstoreOutlined />}
-                        onClick={() => searchForNewTerm(" ")}
-                    >
-                        View All
-                    </Button>
-
-                    <Link to={"/newFold"}>
+            <PageHeader
+                title="Folds"
+                searchValue={filterFormValue}
+                searchPlaceholder="Search folds by name, owner, or tags..."
+                onSearchChange={updateSearchBarText}
+                actions={
+                    <>
                         <Button
-                            ref={props.newFoldRef}
-                            type="primary"
+                            ref={props.viewAllRef}
+                            type="default"
                             size="large"
-                            icon={<PlusOutlined />}
+                            icon={<AppstoreOutlined />}
+                            onClick={() => searchForNewTerm(" ")}
                         >
-                            New Fold
+                            View All
                         </Button>
-                    </Link>
+
+                        <Link to={"/newFold"}>
+                            <Button
+                                ref={props.newFoldRef}
+                                type="primary"
+                                size="large"
+                                icon={<PlusOutlined />}
+                            >
+                                New Fold
+                            </Button>
+                        </Link>
+                    </>
+                }
+            />
+
+            {folds ? (
+                <div
+                    key="loadedDiv"
+                    style={{ opacity: searchIsStale ? "60%" : "100%" }}
+                >
+                    {/* Folds Table */}
+                    <Card>
+                        {makeFoldTableAntd(folds, {
+                            editable: true,
+                            userType: props.decodedToken.user_claims.type,
+                            onTagsChange: refetchData
+                        })}
+                    </Card>
+
+                    {/* Total count and pagination */}
+                    <div style={{ textAlign: 'center', marginTop: '24px' }}>
+                        {totalCount > PAGE_SIZE ? (
+                            <Pagination
+                                current={pageNum}
+                                pageSize={PAGE_SIZE}
+                                total={totalCount}
+                                onChange={setPage}
+                                showSizeChanger={false}
+                                showQuickJumper={false}
+                                showTotal={(total, range) => {
+                                    const endRange = Math.min(range[1], total);
+                                    return `${range[0]}-${endRange} of ${total} folds`;
+                                }}
+                                hideOnSinglePage={true}
+                                size="default"
+                            />
+                        ) : (
+                            <Text type="secondary" style={{ fontSize: '14px' }}>
+                                {totalCount === 1 ? '1 fold' : `${totalCount} folds`}
+                            </Text>
+                        )}
+                    </div>
                 </div>
-
-                {/* <Divider style={{ margin: '16px 0' }} /> */}
-
-                {folds ? (
-                    <div
-                        key="loadedDiv"
-                        style={{ opacity: searchIsStale ? "60%" : "100%" }}
-                    >
-                        {/* Folds Table */}
-                        <Card>
-                            {makeFoldTable(folds, {
-                                editable: true,
-                                userType: props.decodedToken.user_claims.type,
-                                onTagsChange: refetchData
-                            })}
-                        </Card>
-
-                        {/* Total count and pagination */}
-                        <div style={{ textAlign: 'center', marginTop: '24px' }}>
-                            {totalCount > PAGE_SIZE ? (
-                                <Pagination
-                                    current={pageNum}
-                                    pageSize={PAGE_SIZE}
-                                    total={totalCount}
-                                    onChange={setPage}
-                                    showSizeChanger={false}
-                                    showQuickJumper={false}
-                                    showTotal={(total, range) => {
-                                        const endRange = Math.min(range[1], total);
-                                        return `${range[0]}-${endRange} of ${total} folds`;
-                                    }}
-                                    hideOnSinglePage={true}
-                                    size="default"
-                                />
-                            ) : (
-                                <Text type="secondary" style={{ fontSize: '14px' }}>
-                                    {totalCount === 1 ? '1 fold' : `${totalCount} folds`}
-                                </Text>
-                            )}
-                        </div>
-                    </div>
-                ) : (
-                    <div style={{ textAlign: 'center', padding: '60px 0' }} key="unloadedDiv">
-                        <Spin size="large" tip="Loading folds...">
-                            <div style={{ minHeight: '100px' }} />
-                        </Spin>
-                    </div>
-                )}
-            </Space>
+            ) : (
+                <div style={{ textAlign: 'center', padding: '60px 0' }} key="unloadedDiv">
+                    <Spin size="large" tip="Loading folds...">
+                        <div style={{ minHeight: '100px' }} />
+                    </Spin>
+                </div>
+            )}
         </div>
     ) : null;
 }
@@ -328,7 +319,7 @@ function UnauthenticatedLandingPage() {
     );
 }
 
-function DashboardView(props: {
+function FoldsView(props: {
     decodedToken: DecodedJwt | null;
     viewAllRef?: React.RefObject<HTMLElement>;
     newFoldRef?: React.RefObject<HTMLElement>;
@@ -337,7 +328,7 @@ function DashboardView(props: {
         return <UnauthenticatedLandingPage />;
     }
     return (
-        <AuthenticatedDashboardView
+        <AuthenticatedFoldsView
             decodedToken={props.decodedToken}
             viewAllRef={props.viewAllRef}
             newFoldRef={props.newFoldRef}
@@ -345,4 +336,4 @@ function DashboardView(props: {
     );
 }
 
-export default DashboardView;
+export default FoldsView;
