@@ -175,21 +175,25 @@ class FoldyESMCClient(FoldyESMClient):
             model_name: Name of the ESM-C model to load
         """
         import torch
+        import multiprocessing
         from esm.models.esmc import ESMC
         from esm.sdk.api import ESMProtein, LogitsConfig
         from esm.utils.structure.protein_complex import ProteinComplex
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # Avoid CUDA in forked subprocesses or when CUDA is unavailable
+        if multiprocessing.current_process().name != "MainProcess" or not torch.cuda.is_available():
+            device = torch.device("cpu")
+        else:
+            device = torch.device("cuda")
+
         model = ESMC.from_pretrained(model_name).to(device)
 
-        # --- Add this block: ensure dtype compatibility ---
+        # Ensure dtype compatibility on older GPUs
         if device.type == "cuda":
             major, _ = torch.cuda.get_device_capability()
-            if major < 8:  # Turing (RTX 20xx) or older → no bfloat16 support
+            if major < 8:
                 model = model.to(torch.float16)
-        # ---------------------------------------------------
 
-        print(f"[ESMC] Loaded {model_name} on {device} with dtype {next(model.parameters()).dtype}")
         self.client = model
         self.device = device
 
@@ -411,9 +415,15 @@ class FoldyESM3Client(FoldyESMClient):
             model_name: Name of the ESM-3 model to load
         """
         import torch
+        import multiprocessing
         from esm.models.esm3 import ESM3
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # Avoid CUDA in forked subprocesses or when CUDA is unavailable
+        if multiprocessing.current_process().name != "MainProcess" or not torch.cuda.is_available():
+            device = torch.device("cpu")
+        else:
+            device = torch.device("cuda")
+
         self.client = ESM3.from_pretrained(model_name).to(device)
         self.device = device
 
@@ -522,6 +532,8 @@ class FoldyESM1and2Client(FoldyESMClient):
             model_name: Name of the ESM-1 or ESM-2 model to load
         """
         import torch
+        import multiprocessing
+        import os
 
         logging.info(
             f"Loading ESM-1/2 model: {model_name} (note: we have esm in sys.modules: {'esm' in sys.modules})"
@@ -534,13 +546,19 @@ class FoldyESM1and2Client(FoldyESMClient):
 
         self.model_name = model_name
 
+        # Avoid CUDA in forked subprocesses or when CUDA is unavailable
+        if multiprocessing.current_process().name != "MainProcess" or not torch.cuda.is_available():
+            self.device = torch.device("cpu")
+        else:
+            self.device = torch.device("cuda")
+
         # Load model from torch hub
         self.model, self.alphabet = torch.hub.load("facebookresearch/esm:main", model_name)  # type: ignore[reportGeneralTypeIssues]
         self.batch_converter = self.alphabet.get_batch_converter()
         self.model.eval()  # Set to evaluation mode
 
         # For 15B model, use accelerate to split across GPU + CPU only on smaller GPUs
-        if model_name == "esm2_t48_15B_UR50D" and torch.cuda.is_available():
+        if model_name == "esm2_t48_15B_UR50D" and self.device.type == "cuda":
             # Check available GPU memory
             total_memory_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
 
@@ -579,11 +597,40 @@ class FoldyESM1and2Client(FoldyESMClient):
                 logging.info(
                     f"Loaded {model_name} entirely on GPU (GPU memory: {total_memory_gb:.1f}GB)"
                 )
-        elif torch.cuda.is_available():
-            self.model = self.model.cuda()
-            self.device = torch.device("cuda")
+        # Move model to appropriate device
+        if self.device.type == "cuda":
+            # For 15B model, use accelerate to split across GPU + CPU only on smaller GPUs
+            if model_name == "esm2_t48_15B_UR50D" and self.device.type == "cuda":
+                total_memory_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+
+                if total_memory_gb < 50:  # Only use CPU offloading on GPUs with <50GB
+                    try:
+                        import accelerate
+                        from accelerate import dispatch_model, infer_auto_device_map
+
+                        max_memory = {0: "42GiB", "cpu": "100GiB"}
+                        device_map = infer_auto_device_map(
+                            self.model,
+                            max_memory=max_memory,
+                            no_split_module_classes=[
+                                "ESM1bLayerNorm",
+                                "TransformerLayer",
+                            ],
+                        )
+
+                        self.model = dispatch_model(self.model, device_map=device_map)
+                    except ImportError:
+                        logging.warning("accelerate not available, falling back to CPU for 15B model")
+                        self.device = torch.device("cpu")
+                else:
+                    self.model = self.model.cuda()
+            else:
+                self.model = self.model.to(self.device)
         else:
-            self.device = torch.device("cpu")
+            # CPU mode
+            pass
+
+        # Late set_start_method removed - done early now
 
     def embed(
         self,

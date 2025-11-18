@@ -12,6 +12,7 @@ ENV APP_HOME /backend
 WORKDIR $APP_HOME
 
 RUN /opt/conda/envs/worker/bin/pip install gunicorn
+RUN /opt/conda/envs/worker/bin/pip install git+https://github.com/Profluent-AI/E1.git
 # Copy local code to the container image.
 COPY backend/ ./
 

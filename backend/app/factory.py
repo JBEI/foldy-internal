@@ -1,4 +1,6 @@
 import json
+import logging
+import sys
 import os
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
@@ -310,7 +312,39 @@ def create_app(config_object: str = "settings") -> Flask:
     from app.views.campaign_views import ns as campaign_views_ns
     from app.views.dna_build_views import ns as dna_build_views_ns
     from app.views.dock_views import ns as dock_views_ns
-    from app.views.esm_views import ns as esm_views_ns
+    
+    # Lazy-load heavy imports only when needed (avoids CUDA init during worker startup)
+    esm_views_ns = None
+    
+    # Check for worker environment override
+    if os.environ.get("DEVICE") == "cpu":
+        print("FACTORY: DEVICE=cpu environment variable detected - skipping torch/E1 imports")
+    else:
+        try:
+            import torch
+            print(f"FACTORY: torch version: {torch.__version__}")
+        except Exception as torch_e:
+            print(f"FACTORY: torch import failed: {torch_e}")
+        
+        try:
+            import torchvision
+            print(f"FACTORY: torchvision version: {torchvision.__version__}")
+        except Exception as tv_e:
+            print(f"FACTORY: torchvision import failed: {tv_e}")
+        
+        try:
+            from E1.modeling import E1ForMaskedLM
+            logging.info("FACTORY: E1 import succeeded")
+        except Exception as e1_e:
+            logging.warning("E1 unavailable (Python/version issue); skipping E1 features.")
+    
+    try:
+        from app.views.esm_views import ns as esm_views_ns
+        print("FACTORY: esm_views import succeeded")
+    except Exception as e:
+        print(f"FACTORY: esm_views import failed: {type(e).__name__}: {e}")
+        esm_views_ns = None
+    
     from app.views.few_shot_views import ns as few_shot_views_ns
     from app.views.file_views import ns as file_views_ns
     from app.views.fold_views import ns as fold_views_ns
@@ -363,7 +397,8 @@ def create_app(config_object: str = "settings") -> Flask:
     api.add_namespace(dock_views_ns, "/api")
     api.add_namespace(file_views_ns, "/api")
     api.add_namespace(fold_views_ns, "/api")
-    api.add_namespace(esm_views_ns, "/api")
+    if esm_views_ns:
+        api.add_namespace(esm_views_ns, "/api")
     api.add_namespace(few_shot_views_ns, "/api")
     api.add_namespace(other_views_ns, "/api")
 

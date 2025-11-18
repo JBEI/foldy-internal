@@ -45,6 +45,20 @@ RUN /scripts/conda_env_setup.sh
 RUN /opt/conda/bin/conda create -y -n boltzenv python=3.11
 # RUN /opt/conda/envs/boltzenv/bin/python -m pip install boltz==1.0.0
 RUN /root/.local/bin/uv pip install --python /opt/conda/envs/boltzenv/bin/python boltz==2.1.1
+# In your Dockerfile, after boltz installation:
+RUN /opt/conda/envs/boltzenv/bin/python <<'EOF'
+file_path = '/opt/conda/envs/boltzenv/lib/python3.11/site-packages/cuequivariance_ops/triton/cache_manager.py'
+with open(file_path, 'r') as f:
+    content = f.read()
+
+content = content.replace(
+    'power_limit = pynvml.nvmlDeviceGetPowerManagementLimit(handle)',
+    'try:\n        power_limit = pynvml.nvmlDeviceGetPowerManagementLimit(handle)\n    except pynvml.NVMLError_NotSupported:\n        power_limit = 0'
+)
+
+with open(file_path, 'w') as f:
+    f.write(content)
+EOF
 # RUN /opt/conda/envs/boltzenv/bin/python -m pip install boltz==2.2.0
 
 # # Chat suggested this, for when on a weird network.

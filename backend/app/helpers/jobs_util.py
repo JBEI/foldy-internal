@@ -69,7 +69,7 @@ def get_torch_cuda_is_available_and_add_logs(add_log: Callable[[str], Any]) -> b
 
     add_log("=== GPU Diagnostics ===")
     add_log(f"PyTorch version: {torch.__version__}")
-    add_log(f"CUDA is{' not' if not torch.cuda.is_available() else ''} available")
+    # add_log(f"CUDA is{' not' if not torch.cuda.is_available() else ''} available")
 
     # Check if PyTorch was built with CUDA
     add_log(f"PyTorch CUDA built: {torch.version.cuda is not None}")  # type: ignore[reportAttributeAccessIssue] # torch.version module incomplete typing

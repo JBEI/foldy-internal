@@ -31,6 +31,9 @@ ns = Namespace("esm_views", decorators=[jwt_required(fresh=True)])
 ALLOWED_ESM_MODELS: List[str] = [
     "esmc_600m",
     "esmc_300m",
+    "e1-150m",
+    "e1-300m",
+    "e1-600m",
     "esm3-open",
     "esm2_t6_8M_UR50D",
     "esm2_t12_35M_UR50D",

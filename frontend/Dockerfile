@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
 # Add custom .npmrc for faster installs
 RUN echo "network-timeout=100000\nprefer-offline=true\nprogress=false" > .npmrc
 
+RUN npm config set script-shell /bin/sh
 COPY package.json package-lock.json /app/
 
 # Supposedly more reliable than npm install
@@ -22,16 +23,11 @@ COPY ./ /app/
 
 ARG BACKEND_URL
 ARG INSTITUTION
-ARG TESELAGEN_BACKEND_URL
+# ARG TESELAGEN_BACKEND_URL
 
 # Make sure these two required build args are provided.
 RUN test -n "$BACKEND_URL"
 RUN test -n "$INSTITUTION"
-
-RUN VITE_INSTITUTION=$INSTITUTION \
-    VITE_BACKEND_URL=$BACKEND_URL \
-    VITE_TESELAGEN_BACKEND_URL=$TESELAGEN_BACKEND_URL \
-    npm run build
 
 ARG HOST
 

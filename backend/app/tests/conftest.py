@@ -9,7 +9,7 @@ from werkzeug.exceptions import BadRequest
 
 from app.extensions import db
 from app.helpers.fold_storage_manager import FoldStorageManager
-from app.models import Evolution, Fold, Invokation, User
+from app.models import Fold, Invokation, User
 from app.util import FoldStorageManager
 
 

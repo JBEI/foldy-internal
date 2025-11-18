@@ -79,7 +79,7 @@
     "lint": "eslint --ext .js,.jsx,.ts,.tsx src",
     "lint:fix": "eslint --ext .js,.jsx,.ts,.tsx src --fix",
     "dev": "vite",
-    "build": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vite build",
+    "build": "NODE_OPTIONS=--max-old-space-size=4096 vite build",
     "preview": "vite preview",
     "analyze": "vite build --mode analyze"
   },

@@ -87,7 +87,7 @@ def validate_embedding_inputs(
 def get_esm_embeddings(
     embed_id: int,
 ):
-    """Compute the ESM embeddings and store them with the storage manager.
+    """Compute the ESM/E1 embeddings and store them with the storage manager.
 
     Arguments:
         embed_id: ID of the embedding record to run.
@@ -157,7 +157,7 @@ def get_esm_embeddings(
         logging.info(f"Will be embedding {len(dms_seq_ids)} sequences")
 
         # 5. Import ESM and create client.
-        logging.info(f"Importing ESM and creating client for {embedding_model}")
+        logging.info(f"Importing ESM/E1 and creating client for {embedding_model}")
 
         gpu_available = get_torch_cuda_is_available_and_add_logs(logging.info)
 

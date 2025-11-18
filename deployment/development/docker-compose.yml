@@ -96,6 +96,13 @@ services:
       timeout: 10s
       retries: 3
     entrypoint: /opt/conda/envs/worker/bin/python /backend/main.py
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   worker_esm:
     <<: *worker-base
@@ -105,7 +112,13 @@ services:
     environment: *worker-env
     volumes: *worker-volumes
     entrypoint: /opt/conda/envs/worker/bin/python /backend/rq_worker_main.py cpu esm
-
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
   # worker_prosst:
   #   <<: *worker-base
   #   build:
@@ -129,6 +142,13 @@ services:
       - ./backend/migrations:/backend/migrations
       - ./.boltz:/.boltz
     entrypoint: /opt/conda/envs/worker/bin/python /backend/rq_worker_main.py boltz
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   db:
     environment:

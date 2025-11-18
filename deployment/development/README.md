@@ -11,6 +11,22 @@ Ensure you have the following tools installed:
 - **Python 3.12** - Backend development
 - **Node.js** (via nvm) - Frontend development
 
+## GPU Setup (for boltz/esm workers)
+
+1. Install NVIDIA Container Toolkit: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+   ```
+   curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+   curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+     sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+     sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+   sudo apt-get update &amp;&amp; sudo apt-get install -y nvidia-container-toolkit
+   sudo nvidia-ctk runtime configure --runtime=docker
+   sudo systemctl restart docker
+   ```
+2. Verify: ` `
+3. Run compose: `DOCKER_BUILDKIT=1 docker compose --file deployment/development/docker-compose.yml --project-directory . up`
+4. Restart: `DOCKER_BUILDKIT=1 docker compose --file deployment/development/docker-compose.yml --project-directory . down && DOCKER_BUILDKIT=1 docker compose --file deployment/development/docker-compose.yml --project-directory . up --build`
+
 ## Quick Start
 
 For experienced developers, here's the minimal setup:
@@ -74,6 +90,7 @@ This installs the project in editable mode with all development dependencies def
 #### Install nvm (Node Version Manager)
 
 **macOS/Linux:**
+
 ```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
 # Restart terminal or run:
@@ -107,6 +124,7 @@ npm install
 #### Pre-commit Hooks
 
 Pre-commit hooks ensure code quality by running:
+
 - **pyright** - Type checking
 - **black** - Code formatting
 - **isort** - Import sorting
@@ -124,6 +142,7 @@ pre-commit run --all-files
 #### Configuration Files
 
 The setup uses these configuration files:
+
 - `.pre-commit-config.yaml` - Pre-commit hook configuration
 - `pyrightconfig.json` - Type checking configuration
 - `backend/pyproject.toml` - Python project configuration (black, isort settings)
@@ -138,6 +157,7 @@ DOCKER_BUILDKIT=1 docker compose --file deployment/development/docker-compose.ym
 ```
 
 This starts:
+
 - Backend Flask application
 - Frontend development server (Vite)
 - PostgreSQL database
@@ -186,6 +206,7 @@ docker compose --file deployment/development/docker-compose.yml --project-direct
 #### Testing
 
 **Backend Tests:**
+
 ```bash
 # Run all tests
 docker compose --file deployment/development/test-docker-compose.yml --project-directory . up
@@ -195,6 +216,7 @@ docker compose --file deployment/development/docker-compose.yml --project-direct
 ```
 
 **Frontend Tests:**
+
 ```bash
 cd frontend
 npm test
@@ -207,23 +229,27 @@ When you need to selectively merge changes from a source repository into an upst
 **Process:**
 
 1. **Create a branch from your source repository:**
+
    ```bash
    git checkout -b sync-upstream
    ```
 
 2. **Pull in the upstream changes:**
+
    ```bash
    git pull <upstream-remote> <upstream-branch>
    # Example: git pull origin main
    ```
 
 3. **Find the merge-base commit** (the point where the branches diverged):
+
    ```bash
    git merge-base <upstream-remote>/<upstream-branch> HEAD
    # This outputs a commit hash like: 32b3bc7a1b2c3d4e5f6g7h8i9j0k
    ```
 
 4. **Soft reset to the merge-base** (keeps all changes staged):
+
    ```bash
    git reset --soft <merge-base-commit-hash>
    ```
@@ -231,6 +257,7 @@ When you need to selectively merge changes from a source repository into an upst
    At this point, all differences between the upstream and your current branch are staged and ready to commit.
 
 5. **Selectively stage only the files you want to sync:**
+
    ```bash
    # First, unstage everything
    git reset
@@ -248,6 +275,7 @@ When you need to selectively merge changes from a source repository into an upst
    ```
 
 6. **Commit and push:**
+
    ```bash
    git commit -m "Sync selected changes from internal development"
    git push <upstream-remote> sync-upstream
@@ -259,6 +287,7 @@ When you need to selectively merge changes from a source repository into an upst
    ```
 
 **Example workflow:**
+
 ```bash
 git checkout -b public-sync
 git pull origin main
@@ -281,6 +310,7 @@ This approach allows you to maintain separate development and public repositorie
 The development environment includes pre-computed test cases for protein folding:
 
 **Example Protein:**
+
 - **Name**: Any name
 - **Sequence**: `MEHLYLSLVLLFVSSISLSLFFLFYKHKSMFTGANLPPGKIGYPLIGESLEFLSTGWKGHPEKFIFDRMSKYSSQIFKTSILGEPTAVFPGAVCNKFLFSNENKLVNAWWPASVDKIFPSSLQTSSKEEAKKMRKLLPQFLKPEALHRYIGIMDSIAQRHFADSWENKNQVIVFPLAKRYTFWLACRLFISVEDPTHVSRFADPFQLLAAGIISIPIDLPGTPFRKAINASQFIRKELLAIIRQRKIDLGEGKASPTQDILSHMLLTCDENGQYMNELDIADKILGLLVGGHDTASAACTFVVKFLAELPHIYEQVYKEQMEIAKSKVPGELLNWEDIQKMKYSWNVACEVMRLAPPLQGAFREAITDFVFNGFSIPKGWKLYWSANSTHKSPDYFPEPDKFDPTRFEGNGPAPYTFVPFGGGPRMCPGKEYARLEILVFMHNLVKRFKWEKLVPDEKIVVDPMPIPAKGLPVRLYPHKA`
 - **Dock Name**: nadhd2
@@ -290,6 +320,7 @@ The development environment includes pre-computed test cases for protein folding
 #### Hot Reloading
 
 Both frontend and backend support hot reloading during development:
+
 - **Frontend**: Vite automatically reloads on file changes
 - **Backend**: Flask development server reloads on Python file changes
 
@@ -340,6 +371,7 @@ npm install
 ## Next Steps
 
 After setup:
+
 1. Explore the codebase in `backend/` and `frontend/src/`
 2. Try creating a test protein fold at http://localhost:3000
 3. Review the [architecture documentation](../../docs/architecture.md)

@@ -35,6 +35,7 @@ def get_naturalness(
     # Import ESM client
     logging.info(f"Creating ESM client for {logit_model}")
     import torch
+    import app.helpers.e1_client  # triggers E1 monkey patch
 
     from app.helpers.esm_client import FoldyESMClient
 

@@ -111,6 +111,20 @@ def run_boltz(fold_id, invokation_id):
                 "--write_full_pae",
                 "--write_full_pde",
             ]
+            if accelerator == "gpu":
+                logging.info("Creating NVML monkey patch wrapper for GeForce RTX 2080 Ti (pynvml.NVMLError_NotSupported on power management limit)")
+                wrapper_path = Path(temp_dir) / "wrapper.py"
+                wrapper_content = """import pynvml
+setattr(pynvml, 'nvmlDeviceGetPowerManagementLimit', lambda handle: 250000)  # 250W TDP in microWatts for RTX 2080 Ti
+print("Applied monkey patch to pynvml.nvmlDeviceGetPowerManagementLimit")
+setattr(pynvml, 'nvmlDeviceGetNumGpuCores', lambda handle: 4352)  # RTX 2080 Ti: 68 SMs * 64 cores/SM
+print("Patched nvmlDeviceGetNumGpuCores")
+from boltz.main import cli
+cli()
+"""
+                wrapper_path.write_text(wrapper_content)
+                boltz_command[0] = "/opt/conda/envs/boltzenv/bin/python"
+                boltz_command.insert(1, str(wrapper_path))
             logging.info(f"Running boltz with command: {boltz_command}")
 
             process = subprocess.Popen(

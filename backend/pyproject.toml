@@ -53,7 +53,7 @@ description = "Foldy backend services"
 authors = [
     {name = "Jacob Roberts", email = "jbr@lbl.gov"}
 ]
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12"
 dependencies = [
     # Web / API layers
     "Flask==2.3.3",
@@ -92,8 +92,8 @@ dependencies = [
     "google-cloud-storage==3.1.0",
 
     # Data / numerics / plotting
-    "numpy==1.26.0",
-    "pandas==2.2.2",
+    "numpy",
+    "pandas",
     "scipy==1.15.2",
     "scikit-learn==1.6.1",
     "seaborn==0.13.2",
@@ -120,6 +120,8 @@ dependencies = [
     "ipywidgets==8.1.5",
     "tqdm==4.67.1",
     "statannotations==0.7.2",
+    "transformers",
+    "datasets",
 ]
 
 [project.optional-dependencies]
@@ -142,11 +144,15 @@ dev = [
     "pip-tools",
 
     # ML/GPU dependencies from worker conda environment (setup.sh)
-    "torch>=2.2.0,<2.3.0",
-    "torchvision>=0.17.0,<0.18.0",
-    "torchaudio>=2.2.0,<2.3.0",
-    "gpytorch>=1.14.0,<1.15.0",
-    "botorch>=0.14.0,<0.15.0",
-    "linear_operator>=0.6.0,<0.7.0",
-    "pyro-ppl>=1.8.4",
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "gpytorch",
+    "botorch",
+    "linear_operator",
+    "pyro-ppl",
+
+    # E1 dependencies
+    "transformers",
+    "datasets",
 ]

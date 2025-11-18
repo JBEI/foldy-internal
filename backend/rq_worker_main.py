@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import multiprocessing as mp
+mp.set_start_method("spawn", force=True)
 import argparse
 import logging
 import os
@@ -6,15 +8,13 @@ import signal
 import sys
 
 import redis
-from rq import Worker
-from rq.utils import now
-from rq.worker import Worker, signal_name
+from rq import SimpleWorker
 
 from app.factory import create_app
 from app.helpers.rq_helpers import get_redis_connection
 
 
-class GracefulWorker(Worker):
+class GracefulWorker(SimpleWorker):
     """
     Fast but *graceful* shutdown:
       • on SIGTERM/SIGINT → mark stop-requested
@@ -31,9 +31,6 @@ class GracefulWorker(Worker):
         # Tell RQ main loop to break after current job
         self._stop_requested = True
 
-        # Forward TERM to the child so its finally-blocks can run
-        if self.horse_pid:
-            os.killpg(os.getpgid(self.horse_pid), signal.SIGTERM)
 
         # Do *not* wait() or raise SystemExit here.
         # monitor_work_horse() will reap exactly once and
@@ -50,12 +47,6 @@ parser.add_argument(
 args = parser.parse_args()
 
 
-def handle_worker_death(job, *exc_info):
-    # Custom handler for worker deaths (e.g., OOM)
-    print(f"Worker for job {job.id} was killed: {exc_info}")
-    # Add logging or notification logic here
-
-
 def main():
     # Initialize Flask app
     app = create_app("rq_worker_settings")
@@ -68,8 +59,6 @@ def main():
         worker = GracefulWorker(
             args.queues,
             connection=redis_conn,
-            exception_handlers=[handle_worker_death],
-            work_horse_killed_handler=handle_worker_death,
             # You can add other worker config here:
             # job_timeout=app.config.get('RQ_DEFAULT_TIMEOUT')
         )

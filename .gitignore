@@ -104,6 +104,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.venv-e1
 env/
 venv/
 ENV/
@@ -148,7 +149,7 @@ backend/notebooks/jacob/flip-aav.csv
 backend/folde/data/*
 backend/foldydata/*
 .boltz/
-
+E1-copy
 backend/EvolveTest
 
 CLAUDE.md
