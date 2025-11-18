@@ -5,14 +5,6 @@ import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from Bio.PDB.MMCIFParser import (
-    MMCIFParser,  # type: ignore[reportPrivateImportUsage] # Bio.PDB module structure quirk
-)
-from Bio.PDB.PDBIO import (
-    PDBIO,  # type: ignore[reportPrivateImportUsage] # Bio.PDB module structure quirk
-)
-from werkzeug.exceptions import BadRequest
-
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.jobs_util import (
@@ -20,6 +12,13 @@ from app.helpers.jobs_util import (
     get_torch_cuda_is_available_and_add_logs,
 )
 from app.models import Fold, Invokation
+from Bio.PDB.MMCIFParser import (
+    MMCIFParser,  # type: ignore[reportPrivateImportUsage] # Bio.PDB module structure quirk
+)
+from Bio.PDB.PDBIO import (
+    PDBIO,  # type: ignore[reportPrivateImportUsage] # Bio.PDB module structure quirk
+)
+from werkzeug.exceptions import BadRequest
 
 
 def try_check_smiles_string_validity(smiles_string):
@@ -64,6 +63,8 @@ def run_boltz(fold_id, invokation_id):
 
             # Download the fasta file to the temporary directory.
             fsm = FoldStorageManager()
+            if fsm is None:
+                raise BadRequest("FoldStorageManager setup failed")
             fsm.setup()
             # binary_fasta_str = fsm.storage_manager.get_binary(
             #     fold_id, fasta_relative_path
@@ -73,6 +74,8 @@ def run_boltz(fold_id, invokation_id):
             yaml_file_str = fold.yaml_config
             yaml_file_path = Path(temp_dir) / "input.yml"
             yaml_file_path.write_text(yaml_file_str)
+            if not fsm or fsm.storage_manager is None:
+                raise BadRequest("Storage manager not initialized")
             fsm.storage_manager.write_file(fold_id, "boltz_input.yaml", yaml_file_str)
             logging.info(f"YAML file contents: {yaml_file_str}")
 
@@ -112,7 +115,9 @@ def run_boltz(fold_id, invokation_id):
                 "--write_full_pde",
             ]
             if accelerator == "gpu":
-                logging.info("Creating NVML monkey patch wrapper for GeForce RTX 2080 Ti (pynvml.NVMLError_NotSupported on power management limit)")
+                logging.info(
+                    "Creating NVML monkey patch wrapper for GeForce RTX 2080 Ti (pynvml.NVMLError_NotSupported on power management limit)"
+                )
                 wrapper_path = Path(temp_dir) / "wrapper.py"
                 wrapper_content = """import pynvml
 setattr(pynvml, 'nvmlDeviceGetPowerManagementLimit', lambda handle: 250000)  # 250W TDP in microWatts for RTX 2080 Ti
@@ -144,6 +149,8 @@ cli()
                 raise subprocess.CalledProcessError(process.returncode, process.args)
 
             logging.info(f'Uploading files {list(Path(temp_dir).glob("*"))}')
+            if not fsm or fsm.storage_manager is None:
+                raise BadRequest("Storage manager not initialized for upload")
             fsm.storage_manager.upload_folder(fold_id, temp_dir, "boltz")
             logging.info(f"Now converting mmCIF to PDB")
 
@@ -158,6 +165,8 @@ cli()
             logging.info(f"Copying {cif_file} to ranked_0.cif")
 
             try:
+                if not fsm or fsm.storage_manager is None:
+                    raise BadRequest("Storage manager not initialized for CIF write")
                 fsm.storage_manager.write_file(fold_id, "ranked_0.cif", cif_file.read_text())
             except Exception as e:
                 logging.error(f"Error writing CIF to cif: {e}")

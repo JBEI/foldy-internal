@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union, cast
 import numpy as np
 import pandas as pd
 import torch
+from app.helpers.sequence_util import is_homolog_seq_id
 from numpy.typing import NDArray
 from pandas import DataFrame
 from pandas.core.frame import DataFrame
@@ -15,7 +16,6 @@ from scipy.special import softmax
 from sklearn.metrics import recall_score
 from sklearn.neighbors import KNeighborsRegressor
 
-from app.helpers.sequence_util import is_homolog_seq_id
 from folde.types import FolDEModelConfig, ModelDiff, ModelEvaluation
 
 DMS_SHORTNAMES = {

@@ -1,7 +1,7 @@
 /**
  * E1-ESM drop-in compatibility layer for Foldy frontend
  * Usage: import { E1Model } from 'foly/e1-esm'
- * 
+ *
  * Auto-detects model size from env/config, supports browser/Node.js
  * Proxies to Foldy backend /esm_views/embeddings API
  */
@@ -60,7 +60,7 @@ export class E1Model {
       // For drop-in compatibility, return mock structure matching ESM
       // Real implementation would await job completion
       return [[...Array(1280).fill(0.0)]]; // E1-300M dim=1280 placeholder
-      
+
     } catch (error) {
       console.error(`E1(${this.modelName}) embedding failed:`, error);
       throw new Error(`E1 embedding failed: ${error}`);
@@ -75,7 +75,7 @@ export class E1Model {
     model: 'e1-150m' | 'e1-300m' | 'e1-600m' = 'e1-300m'
   ): Promise<number[][][]> {
     const seqArray = Array.isArray(sequences) ? sequences : [sequences];
-    
+
     try {
       const formData = new FormData();
       formData.append('sequences', JSON.stringify(seqArray.map(s => ({seq: s}))));
@@ -88,10 +88,10 @@ export class E1Model {
       });
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      
+
       const data = await response.json();
       return data.results?.map((r: any) => r.embedding) || [];
-      
+
     } catch (error) {
       console.error('Direct E1 embedding failed:', error);
       throw error;
@@ -106,13 +106,13 @@ function getDefaultModel(): 'e1-150m' | 'e1-300m' | 'e1-600m' {
     const viteModel = import.meta.env.VITE_E1_MODEL_SIZE;
     if (viteModel) return viteModel as any;
   }
-  
+
   // Node.js: process.env
   if (typeof process !== 'undefined' && process.env) {
     const nodeModel = process.env.E1_MODEL_SIZE;
     if (nodeModel) return nodeModel as any;
   }
-  
+
   // Default
   return 'e1-300m';
 }

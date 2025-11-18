@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import multiprocessing as mp
+
 mp.set_start_method("spawn", force=True)
 import argparse
 import logging
@@ -8,10 +9,9 @@ import signal
 import sys
 
 import redis
-from rq import SimpleWorker
-
 from app.factory import create_app
 from app.helpers.rq_helpers import get_redis_connection
+from rq import SimpleWorker
 
 
 class GracefulWorker(SimpleWorker):
@@ -23,14 +23,15 @@ class GracefulWorker(SimpleWorker):
     """
 
     def request_stop(self, signum, frame):
-        self.log.warning("%s received – requesting warm shutdown", signal_name(signum))
+        self.log.warning("%s received – requesting warm shutdown", signal.Signals(signum).name)
 
         # Record when we asked so RQ's debounce still works
-        self._shutdown_requested_date = now()
+        from datetime import datetime
+
+        self._shutdown_requested_date = datetime.now()
 
         # Tell RQ main loop to break after current job
         self._stop_requested = True
-
 
         # Do *not* wait() or raise SystemExit here.
         # monitor_work_horse() will reap exactly once and

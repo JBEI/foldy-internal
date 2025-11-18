@@ -15,10 +15,10 @@ from typing import Dict, List
 
 import numpy as np
 import pandas as pd
+from app.helpers.sequence_util import get_allele_set, get_loci_set, is_homolog_seq_id
 from scipy.stats import spearmanr
 from sklearn.metrics import mean_squared_error, roc_auc_score
 
-from app.helpers.sequence_util import get_allele_set, get_loci_set, is_homolog_seq_id
 from folde.data import get_proteingym_dataset
 from folde.few_shot_models import get_consensus_scores, get_few_shot_model
 from folde.types import (

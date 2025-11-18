@@ -16,7 +16,6 @@ spec:
   resources:
     requests:
       storage: 3000Gi
-
 ---
 kind: Pod
 apiVersion: v1

@@ -1,5 +1,4 @@
 import pytest
-
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 
 # Sample YAML strings for testing

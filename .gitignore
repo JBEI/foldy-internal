@@ -154,7 +154,7 @@ backend/EvolveTest
 
 CLAUDE.md
 CLAUDE_NOTES.md
-
+storage
 **/.claude/settings.local.json
 
 frontend/stats.html

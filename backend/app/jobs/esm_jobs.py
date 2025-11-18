@@ -13,10 +13,6 @@ from io import BytesIO, StringIO
 from pathlib import Path
 
 import pandas as pd
-from Bio import SeqIO
-from flask import current_app
-from werkzeug.exceptions import BadRequest
-
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.esm_client import FoldyESMClient
 from app.helpers.esm_util import get_naturalness
@@ -38,6 +34,9 @@ from app.helpers.sequence_util import (
     seq_id_to_seq,
 )
 from app.models import Dock, Embedding, FewShot, Fold, Invokation, Naturalness
+from Bio import SeqIO
+from flask import current_app
+from werkzeug.exceptions import BadRequest
 
 
 def load_fasta_to_dict(homolog_fasta: str) -> dict[str, str]:
@@ -210,6 +209,8 @@ def get_esm_embeddings(
 
         logging.info(f"Saving output to {embedding_path}")
         fsm = FoldStorageManager()
+        if fsm is None:
+            raise BadRequest("FoldStorageManager setup failed")
         fsm.setup()
         fsm.storage_manager.write_file(fold.id, embedding_path, embedding_csv_string)
 
@@ -252,6 +253,8 @@ def get_esm_naturalness(naturalness_id: int):
         logging.info("Starting naturalness...")
 
         fsm = FoldStorageManager()
+        if fsm is None:
+            raise BadRequest("FoldStorageManager setup failed")
         fsm.setup()
 
         # 3. Validate seq_ids.
@@ -275,6 +278,8 @@ def get_esm_naturalness(naturalness_id: int):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             if naturalness_record.use_structure:
+                if fsm.storage_manager is None:
+                    raise BadRequest("Storage manager not initialized for structure")
                 pdb_binary = fsm.storage_manager.get_binary(fold.id, "ranked_0.cif")
                 with open(os.path.join(temp_dir, "ranked_0.cif"), "wb") as f:
                     f.write(pdb_binary)
@@ -308,6 +313,8 @@ def get_esm_naturalness(naturalness_id: int):
         logits_path = f"naturalness/naturalness_{naturalness_name}.json"
         melted_path = f"naturalness/naturalness_{naturalness_name}_melted.csv"
 
+        if fsm.storage_manager is None:
+            raise BadRequest("Storage manager not initialized for naturalness write")
         fsm.storage_manager.write_file(fold.id, logits_path, logits_json)
         fsm.storage_manager.write_file(fold.id, melted_path, melted_csv_string)
 
@@ -336,7 +343,6 @@ def finetune_esm_model(few_shot_id: int):
 
         logging.info("Loading training code.")
         import torch
-
         from app.helpers.finetuning.training import score_sequences, train_per_protein
 
         if not fold.yaml_config:
@@ -446,10 +452,14 @@ def finetune_esm_model(few_shot_id: int):
             logging.info(f"Saving tokenizer and model to {model_dir}")
             tokenizer.save_pretrained(str(Path(temp_dir) / "tokenizer"))
             model.save_pretrained(str(Path(temp_dir) / "model"))
+            if fsm.storage_manager is None:
+                raise BadRequest("Storage manager not initialized for model upload")
             fsm.storage_manager.upload_folder(fold.id, temp_dir, model_dir)
 
         # Save training history
         history_json = json.dumps(history)
+        if fsm.storage_manager is None:
+            raise BadRequest("Storage manager not initialized for history write")
         fsm.storage_manager.write_file(fold.id, f"{model_dir}/history.json", history_json)
 
         # Get all sequences to score
@@ -462,6 +472,8 @@ def finetune_esm_model(few_shot_id: int):
         scores_fpath = f"few_shots/{few_shot.name}/scores.csv"
         logging.info(f"Saving scores to {scores_fpath}")
         scores_csv = scores_df.to_csv(index=False)
+        if fsm.storage_manager is None:
+            raise BadRequest("Storage manager not initialized for scores write")
         fsm.storage_manager.write_file(fold.id, scores_fpath, scores_csv)
 
         logging.info(f"Finished finetuning and scoring.")

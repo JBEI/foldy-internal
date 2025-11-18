@@ -14,6 +14,12 @@ from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
 import numpy as np
 import pandas as pd
 import torch
+from app.helpers.preference_ranking import (
+    BradleyTerryMLP,
+    PreferenceTrainer,
+    create_preference_model,
+)
+from app.helpers.sequence_util import sort_seq_id_list
 from numpy.typing import NDArray
 from pandas import DataFrame, Series
 from sklearn.ensemble import RandomForestRegressor as SklearnRandomForestRegressor
@@ -21,12 +27,6 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold
 from sklearn.neural_network import MLPRegressor as SklearnMLPRegressor
 
-from app.helpers.preference_ranking import (
-    BradleyTerryMLP,
-    PreferenceTrainer,
-    create_preference_model,
-)
-from app.helpers.sequence_util import sort_seq_id_list
 from folde.util import (
     NaturalnessImputer,
     cluster_sort_seq_ids,

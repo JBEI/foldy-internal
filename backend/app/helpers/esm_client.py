@@ -78,6 +78,18 @@ class FoldyESMClient(ABC):
         Raises:
             ValueError: If model_name does not match any known model type
         """
+        logging.info(
+            f"ESMClient.get_client called with model_name='{model_name}' - ORIGINAL METHOD"
+        )
+        logging.info(
+            f"Is monkeypatched? original_get_client is {getattr(cls, 'original_get_client', 'MISSING')}"
+        )
+        if model_name.startswith("e1-"):
+            from app.helpers.e1_client import get_e1_client
+
+            logging.info(f"ROUTE e1- DETECTED: Calling get_e1_client('{model_name}')")
+            return get_e1_client(model_name)
+
         if model_name.startswith("esmc"):
             return FoldyESMCClient(model_name)
         elif model_name.startswith("esm3"):
@@ -85,6 +97,9 @@ class FoldyESMClient(ABC):
         elif model_name.startswith("esm1") or model_name.startswith("esm2"):
             return FoldyESM1and2Client(model_name)
         else:
+            logging.error(
+                f"FINAL FALLBACK: Unknown model type '{model_name}' - no e1-, esmc-, esm3-, esm1/2- prefix match"
+            )
             raise ValueError(f"Unknown model type: {model_name}")
 
     @abstractmethod
@@ -174,8 +189,9 @@ class FoldyESMCClient(FoldyESMClient):
         Args:
             model_name: Name of the ESM-C model to load
         """
-        import torch
         import multiprocessing
+
+        import torch
         from esm.models.esmc import ESMC
         from esm.sdk.api import ESMProtein, LogitsConfig
         from esm.utils.structure.protein_complex import ProteinComplex
@@ -414,8 +430,9 @@ class FoldyESM3Client(FoldyESMClient):
         Args:
             model_name: Name of the ESM-3 model to load
         """
-        import torch
         import multiprocessing
+
+        import torch
         from esm.models.esm3 import ESM3
 
         # Avoid CUDA in forked subprocesses or when CUDA is unavailable
@@ -531,9 +548,10 @@ class FoldyESM1and2Client(FoldyESMClient):
         Args:
             model_name: Name of the ESM-1 or ESM-2 model to load
         """
-        import torch
         import multiprocessing
         import os
+
+        import torch
 
         logging.info(
             f"Loading ESM-1/2 model: {model_name} (note: we have esm in sys.modules: {'esm' in sys.modules})"
@@ -620,7 +638,9 @@ class FoldyESM1and2Client(FoldyESMClient):
 
                         self.model = dispatch_model(self.model, device_map=device_map)
                     except ImportError:
-                        logging.warning("accelerate not available, falling back to CPU for 15B model")
+                        logging.warning(
+                            "accelerate not available, falling back to CPU for 15B model"
+                        )
                         self.device = torch.device("cpu")
                 else:
                     self.model = self.model.cuda()

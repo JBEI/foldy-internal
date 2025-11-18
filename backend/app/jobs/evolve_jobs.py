@@ -12,9 +12,6 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from werkzeug.exceptions import BadRequest
-
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.jobs_util import (
@@ -28,6 +25,9 @@ from app.helpers.sequence_util import (
     process_and_validate_evolve_input_files,
 )
 from app.models import FewShot, Fold, Invokation
+from sklearn.ensemble import RandomForestRegressor
+from werkzeug.exceptions import BadRequest
+
 from folde.few_shot_models import get_few_shot_model, is_valid_few_shot_model_name
 
 

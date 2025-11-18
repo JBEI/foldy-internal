@@ -4,7 +4,6 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 import pandas as pd
-
 from app.helpers.jobs_util import get_torch_cuda_is_available_and_add_logs
 from app.helpers.sequence_util import (
     get_seq_ids_for_deep_mutational_scan,
@@ -34,9 +33,8 @@ def get_naturalness(
     """
     # Import ESM client
     logging.info(f"Creating ESM client for {logit_model}")
-    import torch
     import app.helpers.e1_client  # triggers E1 monkey patch
-
+    import torch
     from app.helpers.esm_client import FoldyESMClient
 
     # Log cache directories
@@ -45,9 +43,9 @@ def get_naturalness(
 
     # Try to get Hugging Face cache dir if available
     try:
-        from huggingface_hub import get_cache_dir
+        import huggingface_hub
 
-        hf_cache_dir = get_cache_dir()
+        hf_cache_dir = huggingface_hub.get_cache_dir()
         logging.info(f"Hugging Face cache directory: {hf_cache_dir}")
     except Exception as e:
         logging.info(f"Hugging Face cache directory command failed: {e}")
@@ -96,11 +94,13 @@ def get_naturalness(
         melted_df["locus"] = melted_df.seq_id.apply(seq_id_to_locus)
 
         # Add the "WT marginal" score column
-        wt_naturalness = (
-            melted_df[melted_df.seq_id.apply(lambda x: x[0] == x[-1])]
-            .rename(columns={"probability": "wt_probability"})
-            .drop(columns=["seq_id"])
-        )
+        wt_naturalness = pd.DataFrame()
+        if not melted_df.empty and "seq_id" in melted_df.columns:
+            wt_naturalness = (
+                melted_df[melted_df.seq_id.apply(lambda x: x[0] == x[-1])]
+                .rename(columns={"probability": "wt_probability"})
+                .drop(columns=["seq_id"])
+            )
 
         melted_df = pd.merge(
             melted_df, wt_naturalness, left_on="locus", right_on="locus", how="left"
@@ -111,14 +111,16 @@ def get_naturalness(
 
         # Create position_probs format for JSON
         position_probs: List[Dict[str, Any]] = []
-        for pos in range(1, len(wt_aa_seq) + 1):
-            pos_probs = melted_df[melted_df.locus == pos]
-            wt_aa = wt_aa_seq[pos - 1]
-            probs = [
-                float(pos_probs[pos_probs.seq_id.str.endswith(aa)].probability.iloc[0])
-                for aa in pos_probs.seq_id.str[-1].unique()
-            ]
-            position_probs.append({"locus": pos, "wt_aa": wt_aa, "probabilities": probs})
+        if not melted_df.empty:
+            for pos in range(1, len(wt_aa_seq) + 1):
+                pos_probs = melted_df[melted_df.locus == pos]
+                if not pos_probs.empty:
+                    wt_aa = wt_aa_seq[pos - 1]
+                    probs = [
+                        float(pos_probs[pos_probs.seq_id.str.endswith(aa)].probability.iloc[0])
+                        for aa in pos_probs.seq_id.str[-1].unique()
+                    ]
+                    position_probs.append({"locus": pos, "wt_aa": wt_aa, "probabilities": probs})
 
         logits_json = json.dumps(position_probs)
 
