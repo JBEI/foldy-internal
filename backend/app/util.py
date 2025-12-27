@@ -119,6 +119,7 @@ def start_stage(fold_id: int, stage: str, email_on_completion: bool) -> None:
             get_job_type_replacement(fold, "boltz"),
             job_timeout="12h",
             result_ttl=48 * 60 * 60,  # 2 days
+            retry=Retry(max=3, interval=[60, 120, 300]),  # Retry on MSA PENDING timeout
             **email_args,
         )
         add_meta_to_job(boltz_job, fold, "boltz", fold.id)

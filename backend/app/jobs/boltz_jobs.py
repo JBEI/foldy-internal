@@ -1,7 +1,9 @@
 import io
 import logging
+import re
 import string
 import subprocess
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -20,6 +22,12 @@ from app.helpers.jobs_util import (
     get_torch_cuda_is_available_and_add_logs,
 )
 from app.models import Fold, Invokation
+
+# Maximum time to wait for MSA server jobs stuck in PENDING state before failing.
+# The ColabFold MSA server can drop or deprioritize jobs, causing them to stay
+# PENDING forever. Failing fast allows RQ retry to resubmit with a fresh job ID.
+# See: https://github.com/sokrypton/ColabFold/issues/606
+MSA_PENDING_TIMEOUT_SECONDS = 10 * 60  # 10 minutes
 
 
 def try_check_smiles_string_validity(smiles_string):
@@ -120,8 +128,35 @@ def run_boltz(fold_id, invokation_id):
                 text=True,
             )
 
+            # Track MSA PENDING state to detect stuck jobs
+            pending_start_time = None
+            pending_pattern = re.compile(r"PENDING.*\d+/\d+")
+
             for line in iter(process.stdout.readline, ""):
                 logging.info(line.strip())
+
+                # Check if this line indicates MSA jobs stuck in PENDING
+                if pending_pattern.search(line):
+                    if pending_start_time is None:
+                        pending_start_time = time.time()
+                        logging.info(
+                            f"MSA server jobs entered PENDING state. "
+                            f"Will timeout after {MSA_PENDING_TIMEOUT_SECONDS // 60} minutes."
+                        )
+                    elif time.time() - pending_start_time > MSA_PENDING_TIMEOUT_SECONDS:
+                        process.kill()
+                        process.wait()
+                        raise TimeoutError(
+                            f"MSA server jobs stuck in PENDING state for over "
+                            f"{MSA_PENDING_TIMEOUT_SECONDS // 60} minutes. "
+                            f"The ColabFold server may have dropped this job. "
+                            f"See: https://github.com/sokrypton/ColabFold/issues/606"
+                        )
+                elif "RUNNING" in line or "COMPLETE" in line:
+                    # Reset timer if jobs start making progress
+                    if pending_start_time is not None:
+                        logging.info("MSA server jobs progressing, resetting PENDING timer.")
+                        pending_start_time = None
 
             process.stdout.close()
             process.wait()
