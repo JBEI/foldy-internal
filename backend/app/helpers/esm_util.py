@@ -36,7 +36,7 @@ def get_naturalness(
     logging.info(f"Creating ESM client for {logit_model}")
     import torch
 
-    from app.helpers.esm_client import FoldyESMClient
+    from app.helpers.esm_client import FoldyPLMClient
 
     # Log cache directories
     torch_cache_dir = torch.hub.get_dir()
@@ -57,7 +57,7 @@ def get_naturalness(
     get_torch_cuda_is_available_and_add_logs(logging.info)
 
     # Create client using factory method
-    client = FoldyESMClient.get_client(logit_model)
+    client = FoldyPLMClient.get_client(logit_model)
     logging.info(f"Model {logit_model} loaded successfully")
 
     # Get logits using the client

@@ -33,6 +33,15 @@ RUN /root/.local/bin/uv pip install --python /opt/conda/envs/worker/bin/python -
     accelerate==0.27.2 \
     esm==3.1.3
 
+# Install Profluent E1 model package
+RUN /root/.local/bin/uv pip install --python /opt/conda/envs/worker/bin/python --no-cache \
+    "e1-protein @ git+https://github.com/Profluent-AI/E1.git"
+
+# Install flash-attn for optimal E1 performance on CUDA 8.0+ GPUs (Ampere and newer)
+# This is a hard requirement for E1 models
+RUN /root/.local/bin/uv pip install --python /opt/conda/envs/worker/bin/python --no-cache \
+    flash-attn --no-build-isolation
+
 # TODO(jacob): Move this into setup.sh.
 RUN /opt/conda/bin/conda install -y -n worker -c conda-forge libgcc-ng libstdcxx-ng
 RUN /root/.local/bin/uv pip install --python /opt/conda/envs/worker/bin/python nvidia-ml-py

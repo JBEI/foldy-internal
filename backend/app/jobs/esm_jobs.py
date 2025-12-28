@@ -18,7 +18,7 @@ from flask import current_app
 from werkzeug.exceptions import BadRequest
 
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
-from app.helpers.esm_client import FoldyESMClient
+from app.helpers.esm_client import FoldyPLMClient
 from app.helpers.esm_util import get_naturalness
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.gpu_util import clean_up_torch_memory, log_memory_usage
@@ -161,7 +161,7 @@ def get_esm_embeddings(
 
         gpu_available = get_torch_cuda_is_available_and_add_logs(logging.info)
 
-        foldy_esm_client = FoldyESMClient.get_client(embedding_model)
+        foldy_esm_client = FoldyPLMClient.get_client(embedding_model)
 
         def get_embedding_dict(seq_id, seq):
             embedding_list = foldy_esm_client.embed(

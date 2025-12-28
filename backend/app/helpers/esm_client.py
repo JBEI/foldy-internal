@@ -56,29 +56,31 @@ def recursive_cleanup(obj):
     return obj  # Return object with cleaned up components
 
 
-class FoldyESMClient(ABC):
+class FoldyPLMClient(ABC):
     """
-    Interface for ESM model clients that provide embedding and logit functionality.
+    Interface for Protein Language Model clients that provide embedding and logit functionality.
 
-    This abstract base class defines the interface that all ESM client
-    implementations must follow.
+    This abstract base class defines the interface that all PLM client
+    implementations must follow. Supports ESM, ESM-C, ESM-3, Profluent E1, and other models.
     """
 
     @classmethod
-    def get_client(cls, model_name: str) -> "FoldyESMClient":
+    def get_client(cls, model_name: str) -> "FoldyPLMClient":
         """
-        Factory method to create appropriate ESM client based on model name.
+        Factory method to create appropriate PLM client based on model name.
 
         Args:
-            model_name: Name of the ESM model to use
+            model_name: Name of the protein language model to use
 
         Returns:
-            An instance of the appropriate FoldyESMClient subclass
+            An instance of the appropriate FoldyPLMClient subclass
 
         Raises:
             ValueError: If model_name does not match any known model type
         """
-        if model_name.startswith("esmc"):
+        if model_name.startswith("e1_"):
+            return FoldyE1Client(model_name)
+        elif model_name.startswith("esmc"):
             return FoldyESMCClient(model_name)
         elif model_name.startswith("esm3"):
             return FoldyESM3Client(model_name)
@@ -129,7 +131,7 @@ class FoldyESMClient(ABC):
         pass
 
 
-class FoldyESMCClient(FoldyESMClient):
+class FoldyESMCClient(FoldyPLMClient):
     """
     ESM-C model client implementation for the foldy platform.
 
@@ -395,7 +397,7 @@ class FoldyESMCClient(FoldyESMClient):
         return pd.DataFrame(melted_rows)
 
 
-class FoldyESM3Client(FoldyESMClient):
+class FoldyESM3Client(FoldyPLMClient):
     """
     ESM-3 model client implementation for the foldy platform.
 
@@ -476,7 +478,7 @@ class FoldyESM3Client(FoldyESMClient):
     get_logits = FoldyESMCClient.get_logits
 
 
-class FoldyESM1and2Client(FoldyESMClient):
+class FoldyESM1and2Client(FoldyPLMClient):
     """
     ESM-1 and ESM-2 model client implementation for the foldy platform.
 
@@ -732,6 +734,238 @@ class FoldyESM1and2Client(FoldyESMClient):
                 if vocab_char in self.alphabet.standard_toks:  # Only include standard amino acids
                     prob = probs[vocab_idx]
                     seq_id = f"{wt_aa}{pos}{vocab_char}"
+                    melted_rows.append({"seq_id": seq_id, "probability": prob})
+
+        return pd.DataFrame(melted_rows)
+
+
+class FoldyE1Client(FoldyPLMClient):
+    """
+    Profluent E1 model client implementation for the foldy platform.
+
+    Handles Profluent E1 specific operations including embedding extraction
+    and logit computation. E1 models are designed as drop-in replacements
+    for ESM models with improved performance.
+    """
+
+    # Standard amino acids for logit output
+    STANDARD_AAS = "ACDEFGHIKLMNPQRSTVWY"
+
+    # Model name mapping from foldy names to HuggingFace names
+    MODEL_NAME_MAP = {
+        "e1_150m": "Profluent-Bio/E1-150m",
+        "e1_300m": "Profluent-Bio/E1-300m",
+        "e1_600m": "Profluent-Bio/E1-600m",
+    }
+
+    def _pool_by_domains(
+        self, hidden_states: "torch.Tensor", domain_boundaries: List[int]
+    ) -> "torch.Tensor":
+        """
+        Pool hidden states by domains and concatenate the results.
+
+        Args:
+            hidden_states: Tensor of shape [seq_len, hidden_dim]
+            domain_boundaries: List of domain boundary positions (0-indexed)
+
+        Returns:
+            Concatenated tensor of domain embeddings
+        """
+        import torch
+
+        if not domain_boundaries:
+            return hidden_states.mean(dim=0)
+
+        # Convert to sorted list and add 0 at the start and seq_len at the end
+        boundaries = [0] + sorted(domain_boundaries) + [hidden_states.shape[0]]
+        domain_embeddings = []
+
+        for i in range(len(boundaries) - 1):
+            start_idx = boundaries[i]
+            end_idx = boundaries[i + 1]
+            domain_embedding = hidden_states[start_idx:end_idx, :].mean(dim=0)
+            domain_embeddings.append(domain_embedding)
+
+        return torch.cat(domain_embeddings, dim=-1)
+
+    def __init__(self, model_name: str) -> None:
+        """
+        Initialize the E1 client with the specified model.
+
+        Args:
+            model_name: Name of the E1 model to load (e1_150m, e1_300m, e1_600m)
+        """
+        import torch
+        from E1.batch_preparer import E1BatchPreparer
+        from E1.modeling import E1ForMaskedLM
+
+        self.model_name = model_name
+        hf_model_name = self.MODEL_NAME_MAP.get(model_name)
+        if not hf_model_name:
+            raise ValueError(
+                f"Unknown E1 model: {model_name}. Available models: {list(self.MODEL_NAME_MAP.keys())}"
+            )
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = E1ForMaskedLM.from_pretrained(hf_model_name).to(self.device)
+        self.model.eval()
+
+        # Check for bfloat16 support
+        if self.device.type == "cuda":
+            major, _ = torch.cuda.get_device_capability()
+            self.use_bf16 = major >= 8  # Ampere (RTX 30xx) or newer
+        else:
+            self.use_bf16 = False
+
+        self.batch_preparer = E1BatchPreparer()
+
+        print(
+            f"[E1] Loaded {model_name} ({hf_model_name}) on {self.device} "
+            f"with bf16={'enabled' if self.use_bf16 else 'disabled'}"
+        )
+
+    def embed(
+        self,
+        sequence_or_complex: SequenceOrComplexType,
+        cif_file_path: Optional[str] = None,
+        extra_layers: List[int] = [],
+        domain_boundaries: List[int] = [],
+    ) -> List[List[float]]:
+        """
+        Get embedding for a protein sequence.
+
+        Args:
+            sequence_or_complex: Protein sequence string (complex not supported)
+            cif_file_path: Not supported for E1
+            extra_layers: Not supported for E1
+            domain_boundaries: List of domain boundary positions for domain pooling
+
+        Returns:
+            A list containing the embedding vector(s)
+
+        Raises:
+            ValueError: If a complex, CIF file, or extra_layers are provided (not supported)
+        """
+        import gc
+
+        import torch
+
+        if cif_file_path:
+            raise ValueError("E1 does not support CIF or PDB-based embeddings")
+        if isinstance(sequence_or_complex, list):
+            raise ValueError("E1 does not support protein complexes")
+        if len(extra_layers) > 0:
+            raise ValueError("E1 does not support extra layers")
+
+        sequence = sequence_or_complex
+
+        # Force CUDA synchronization before we start
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+        embeddings_result = None
+        try:
+            # Prepare batch using E1BatchPreparer
+            batch = self.batch_preparer.get_batch_kwargs([sequence], device=self.device)
+
+            with torch.no_grad():
+                with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.use_bf16):
+                    outputs = self.model(
+                        input_ids=batch["input_ids"],
+                        within_seq_position_ids=batch["within_seq_position_ids"],
+                        global_position_ids=batch["global_position_ids"],
+                        sequence_ids=batch["sequence_ids"],
+                        past_key_values=None,
+                        use_cache=False,
+                        output_attentions=False,
+                        output_hidden_states=False,
+                    )
+
+                # Get embeddings for residues only (exclude boundary tokens)
+                residue_selector = ~self.batch_preparer.get_boundary_token_mask(batch["input_ids"])
+                residue_embeddings = outputs.embeddings[0, residue_selector[0]].detach().cpu()
+
+                # Pool by domains
+                pooled_embedding = self._pool_by_domains(residue_embeddings, domain_boundaries)
+                embeddings_result = [pooled_embedding.tolist()]
+
+        finally:
+            # Force garbage collection
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+
+        return embeddings_result
+
+    def get_logits(
+        self,
+        sequence_or_complex: SequenceOrComplexType,
+        cif_file_path: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """
+        Get logits for a protein sequence.
+
+        Args:
+            sequence_or_complex: Protein sequence string (complex not supported)
+            cif_file_path: Not supported for E1
+
+        Returns:
+            A pandas DataFrame with sequence logits in melted format with
+            columns 'seq_id' and 'probability'
+
+        Raises:
+            ValueError: If a complex or CIF file is provided (not supported)
+        """
+        import torch
+
+        if isinstance(sequence_or_complex, list):
+            raise ValueError("E1 does not support protein complexes")
+        if cif_file_path:
+            raise ValueError("E1 does not support CIF or PDB-based logits")
+
+        sequence = sequence_or_complex
+
+        # Prepare batch
+        batch = self.batch_preparer.get_batch_kwargs([sequence], device=self.device)
+
+        with torch.no_grad():
+            with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.use_bf16):
+                outputs = self.model(
+                    input_ids=batch["input_ids"],
+                    within_seq_position_ids=batch["within_seq_position_ids"],
+                    global_position_ids=batch["global_position_ids"],
+                    sequence_ids=batch["sequence_ids"],
+                    past_key_values=None,
+                    use_cache=False,
+                    output_attentions=False,
+                    output_hidden_states=False,
+                )
+
+        # Get logits for residues only (exclude boundary tokens)
+        residue_selector = ~self.batch_preparer.get_boundary_token_mask(batch["input_ids"])
+        residue_logits = outputs.logits[0, residue_selector[0]]
+
+        # Convert to probabilities
+        sequence_probs = torch.softmax(residue_logits, dim=-1).cpu()
+
+        # Get the vocabulary from the batch preparer/tokenizer
+        # E1 uses a similar vocabulary structure to ESM
+        vocab = self.batch_preparer.tokenizer.get_vocab()
+        # Create reverse mapping: token_id -> token_str
+        id_to_token = {v: k for k, v in vocab.items()}
+
+        melted_rows: List[Dict[str, Any]] = []
+
+        for pos in range(len(sequence)):  # 0-indexed positions in the filtered output
+            wt_aa = sequence[pos]
+            probs = sequence_probs[pos, :].tolist()
+
+            for aa in self.STANDARD_AAS:
+                if aa in vocab:
+                    token_id = vocab[aa]
+                    prob = probs[token_id]
+                    seq_id = f"{wt_aa}{pos + 1}{aa}"  # 1-based position for seq_id
                     melted_rows.append({"seq_id": seq_id, "probability": prob})
 
         return pd.DataFrame(melted_rows)

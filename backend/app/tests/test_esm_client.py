@@ -7,10 +7,11 @@ import pytest
 import torch
 
 from app.helpers.esm_client import (
+    FoldyE1Client,
     FoldyESM1and2Client,
     FoldyESM3Client,
     FoldyESMCClient,
-    FoldyESMClient,
+    FoldyPLMClient,
 )
 
 # Test sequences
@@ -102,11 +103,11 @@ def mock_esm2_hub():
 
 def test_get_client_invalid():
     with pytest.raises(ValueError):
-        FoldyESMClient.get_client("invalid_model")
+        FoldyPLMClient.get_client("invalid_model")
 
 
 def test_esmc_embed(mock_torch_device, mock_esmc_client):
-    client = FoldyESMClient.get_client("esmc_t36_3B_UR50D")
+    client = FoldyPLMClient.get_client("esmc_t36_3B_UR50D")
     embedding = client.embed(TEST_SEQUENCE)
 
     assert isinstance(embedding, list)
@@ -115,13 +116,13 @@ def test_esmc_embed(mock_torch_device, mock_esmc_client):
 
 
 def test_esmc_embed_with_pdb_fails(mock_torch_device, mock_esmc_client):
-    client = FoldyESMClient.get_client("esmc_t36_3B_UR50D")
+    client = FoldyPLMClient.get_client("esmc_t36_3B_UR50D")
     with pytest.raises(ValueError, match="ESM-C does not support PDB-based embeddings"):
         client.embed(TEST_SEQUENCE, TEST_PDB_PATH)
 
 
 def test_esm3_embed_with_pdb_succeeds(mock_torch_device, mock_esm3_client):
-    client = FoldyESMClient.get_client("esm3_t36_3B_UR50D")
+    client = FoldyPLMClient.get_client("esm3_t36_3B_UR50D")
     embedding = client.embed(TEST_SEQUENCE, TEST_PDB_PATH)
 
     assert isinstance(embedding, list)
@@ -130,7 +131,7 @@ def test_esm3_embed_with_pdb_succeeds(mock_torch_device, mock_esm3_client):
 
 
 def test_esm2_embed_with_pdb_fails(mock_torch_device, mock_esm2_hub):
-    client = FoldyESMClient.get_client("esm2_t33_650M_UR50D")
+    client = FoldyPLMClient.get_client("esm2_t33_650M_UR50D")
     with pytest.raises(ValueError, match="do not support PDB-based embeddings"):
         client.embed(TEST_SEQUENCE, TEST_PDB_PATH)
 
@@ -142,7 +143,7 @@ def test_esmc_get_logits(mock_torch_device, mock_esmc_client):
     )  # batch, seq_len + special tokens, vocab_size
     mock_esmc_client.logits.return_value = Mock(logits=Mock(sequence=sequence_logits))
 
-    client = FoldyESMClient.get_client("esmc_t36_3B_UR50D")
+    client = FoldyPLMClient.get_client("esmc_t36_3B_UR50D")
     df = client.get_logits(TEST_SEQUENCE)
 
     assert isinstance(df, pd.DataFrame)
@@ -152,7 +153,7 @@ def test_esmc_get_logits(mock_torch_device, mock_esmc_client):
 
 
 def test_esm2_embed(mock_torch_device, mock_esm2_hub):
-    client = FoldyESMClient.get_client("esm2_t33_650M_UR50D")
+    client = FoldyPLMClient.get_client("esm2_t33_650M_UR50D")
     embedding = client.embed(TEST_SEQUENCE)
 
     assert isinstance(embedding, list)
@@ -161,13 +162,13 @@ def test_esm2_embed(mock_torch_device, mock_esm2_hub):
 
 
 def test_esm2_embed_with_pdb(mock_torch_device, mock_esm2_hub):
-    client = FoldyESMClient.get_client("esm2_t33_650M_UR50D")
+    client = FoldyPLMClient.get_client("esm2_t33_650M_UR50D")
     with pytest.raises(ValueError):
         client.embed(TEST_SEQUENCE, TEST_PDB_PATH)
 
 
 def test_esm2_get_logits(mock_torch_device, mock_esm2_hub):
-    client = FoldyESMClient.get_client("esm2_t33_650M_UR50D")
+    client = FoldyPLMClient.get_client("esm2_t33_650M_UR50D")
     df = client.get_logits(TEST_SEQUENCE)
 
     assert isinstance(df, pd.DataFrame)
@@ -177,13 +178,13 @@ def test_esm2_get_logits(mock_torch_device, mock_esm2_hub):
 
 
 def test_esm2_get_logits_with_pdb(mock_torch_device, mock_esm2_hub):
-    client = FoldyESMClient.get_client("esm2_t33_650M_UR50D")
+    client = FoldyPLMClient.get_client("esm2_t33_650M_UR50D")
     with pytest.raises(ValueError):
         client.get_logits(TEST_SEQUENCE, TEST_PDB_PATH)
 
 
 def test_esm3_embed_with_extra_layers(mock_torch_device, mock_esm3_client):
-    client = FoldyESMClient.get_client("esm3_t36_3B_UR50D")
+    client = FoldyPLMClient.get_client("esm3_t36_3B_UR50D")
     embedding = client.embed(TEST_SEQUENCE, extra_layers=[1, 2, 3])
 
     assert isinstance(embedding, list)
