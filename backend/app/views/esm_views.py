@@ -29,15 +29,23 @@ from app.util import get_job_type_replacement
 ns = Namespace("esm_views", decorators=[jwt_required(fresh=True)])
 
 ALLOWED_ESM_MODELS: List[str] = [
+    # Profluent E1 models
+    "e1_150m",
+    "e1_300m",
+    "e1_600m",
+    # ESM-C models
     "esmc_600m",
     "esmc_300m",
+    # ESM-3 models
     "esm3-open",
+    # ESM-2 models
     "esm2_t6_8M_UR50D",
     "esm2_t12_35M_UR50D",
     "esm2_t30_150M_UR50D",
     "esm2_t33_650M_UR50D",
     "esm2_t36_3B_UR50D",
     "esm2_t48_15B_UR50D",
+    # ESM-1v models
     "esm1v_t33_650M_UR90S_1",
     "esm1v_t33_650M_UR90S_2",
     "esm1v_t33_650M_UR90S_3",

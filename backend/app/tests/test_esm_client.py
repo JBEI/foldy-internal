@@ -7,16 +7,18 @@ import pytest
 import torch
 
 from app.helpers.esm_client import (
+    FoldyE1Client,
     FoldyESM1and2Client,
     FoldyESM3Client,
     FoldyESMCClient,
-    FoldyESMClient,
+    FoldyPLMClient,
 )
 
 # Test sequences
 TEST_SEQUENCE = "MGSSHHHHHHSSGLVPRGSHM"
 TEST_PDB_PATH = "app/tests/testdata/rubisco-boltz.pdb"
 ESM3_VOCAB_SIZE = 64
+E1_VOCAB_SIZE = 32  # E1 uses a smaller vocabulary
 
 
 @pytest.fixture
@@ -24,6 +26,52 @@ def mock_torch_device():
     with patch("torch.device") as mock_device, patch("torch.cuda.is_available", return_value=False):
         mock_device.return_value = "cpu"
         yield mock_device
+
+
+@pytest.fixture
+def mock_e1_client():
+    """Mock fixture for Profluent E1 model."""
+    with patch("E1.modeling.E1ForMaskedLM") as MockE1Model, \
+         patch("E1.batch_preparer.E1BatchPreparer") as MockBatchPreparer:
+
+        # Create mock model
+        mock_model = Mock()
+        MockE1Model.from_pretrained.return_value = mock_model
+        mock_model.to.return_value = mock_model
+        mock_model.eval.return_value = None
+
+        # Create mock batch preparer
+        mock_batch_preparer = Mock()
+        MockBatchPreparer.return_value = mock_batch_preparer
+
+        # Mock get_batch_kwargs
+        mock_batch = {
+            "input_ids": torch.zeros((1, len(TEST_SEQUENCE) + 2), dtype=torch.long),
+            "within_seq_position_ids": torch.zeros((1, len(TEST_SEQUENCE) + 2), dtype=torch.long),
+            "global_position_ids": torch.zeros((1, len(TEST_SEQUENCE) + 2), dtype=torch.long),
+            "sequence_ids": torch.zeros((1, len(TEST_SEQUENCE) + 2), dtype=torch.long),
+        }
+        mock_batch_preparer.get_batch_kwargs.return_value = mock_batch
+
+        # Mock get_boundary_token_mask - returns True for first and last tokens (boundary)
+        boundary_mask = torch.zeros((1, len(TEST_SEQUENCE) + 2), dtype=torch.bool)
+        boundary_mask[0, 0] = True  # First token is boundary
+        boundary_mask[0, -1] = True  # Last token is boundary
+        mock_batch_preparer.get_boundary_token_mask.return_value = boundary_mask
+
+        # Mock tokenizer vocab
+        mock_tokenizer = Mock()
+        vocab = {aa: i for i, aa in enumerate("ACDEFGHIKLMNPQRSTVWY")}
+        mock_tokenizer.get_vocab.return_value = vocab
+        mock_batch_preparer.tokenizer = mock_tokenizer
+
+        # Mock model forward pass
+        mock_embeddings = torch.randn(1, len(TEST_SEQUENCE) + 2, 1280)
+        mock_logits = torch.randn(1, len(TEST_SEQUENCE) + 2, E1_VOCAB_SIZE)
+        mock_output = Mock(embeddings=mock_embeddings, logits=mock_logits)
+        mock_model.return_value = mock_output
+
+        yield mock_model, mock_batch_preparer
 
 
 @pytest.fixture
@@ -102,11 +150,11 @@ def mock_esm2_hub():
 
 def test_get_client_invalid():
     with pytest.raises(ValueError):
-        FoldyESMClient.get_client("invalid_model")
+        FoldyPLMClient.get_client("invalid_model")
 
 
 def test_esmc_embed(mock_torch_device, mock_esmc_client):
-    client = FoldyESMClient.get_client("esmc_t36_3B_UR50D")
+    client = FoldyPLMClient.get_client("esmc_t36_3B_UR50D")
     embedding = client.embed(TEST_SEQUENCE)
 
     assert isinstance(embedding, list)
@@ -115,13 +163,13 @@ def test_esmc_embed(mock_torch_device, mock_esmc_client):
 
 
 def test_esmc_embed_with_pdb_fails(mock_torch_device, mock_esmc_client):
-    client = FoldyESMClient.get_client("esmc_t36_3B_UR50D")
+    client = FoldyPLMClient.get_client("esmc_t36_3B_UR50D")
     with pytest.raises(ValueError, match="ESM-C does not support PDB-based embeddings"):
         client.embed(TEST_SEQUENCE, TEST_PDB_PATH)
 
 
 def test_esm3_embed_with_pdb_succeeds(mock_torch_device, mock_esm3_client):
-    client = FoldyESMClient.get_client("esm3_t36_3B_UR50D")
+    client = FoldyPLMClient.get_client("esm3_t36_3B_UR50D")
     embedding = client.embed(TEST_SEQUENCE, TEST_PDB_PATH)
 
     assert isinstance(embedding, list)
@@ -130,7 +178,7 @@ def test_esm3_embed_with_pdb_succeeds(mock_torch_device, mock_esm3_client):
 
 
 def test_esm2_embed_with_pdb_fails(mock_torch_device, mock_esm2_hub):
-    client = FoldyESMClient.get_client("esm2_t33_650M_UR50D")
+    client = FoldyPLMClient.get_client("esm2_t33_650M_UR50D")
     with pytest.raises(ValueError, match="do not support PDB-based embeddings"):
         client.embed(TEST_SEQUENCE, TEST_PDB_PATH)
 
@@ -142,7 +190,7 @@ def test_esmc_get_logits(mock_torch_device, mock_esmc_client):
     )  # batch, seq_len + special tokens, vocab_size
     mock_esmc_client.logits.return_value = Mock(logits=Mock(sequence=sequence_logits))
 
-    client = FoldyESMClient.get_client("esmc_t36_3B_UR50D")
+    client = FoldyPLMClient.get_client("esmc_t36_3B_UR50D")
     df = client.get_logits(TEST_SEQUENCE)
 
     assert isinstance(df, pd.DataFrame)
@@ -152,7 +200,7 @@ def test_esmc_get_logits(mock_torch_device, mock_esmc_client):
 
 
 def test_esm2_embed(mock_torch_device, mock_esm2_hub):
-    client = FoldyESMClient.get_client("esm2_t33_650M_UR50D")
+    client = FoldyPLMClient.get_client("esm2_t33_650M_UR50D")
     embedding = client.embed(TEST_SEQUENCE)
 
     assert isinstance(embedding, list)
@@ -161,13 +209,13 @@ def test_esm2_embed(mock_torch_device, mock_esm2_hub):
 
 
 def test_esm2_embed_with_pdb(mock_torch_device, mock_esm2_hub):
-    client = FoldyESMClient.get_client("esm2_t33_650M_UR50D")
+    client = FoldyPLMClient.get_client("esm2_t33_650M_UR50D")
     with pytest.raises(ValueError):
         client.embed(TEST_SEQUENCE, TEST_PDB_PATH)
 
 
 def test_esm2_get_logits(mock_torch_device, mock_esm2_hub):
-    client = FoldyESMClient.get_client("esm2_t33_650M_UR50D")
+    client = FoldyPLMClient.get_client("esm2_t33_650M_UR50D")
     df = client.get_logits(TEST_SEQUENCE)
 
     assert isinstance(df, pd.DataFrame)
@@ -177,13 +225,13 @@ def test_esm2_get_logits(mock_torch_device, mock_esm2_hub):
 
 
 def test_esm2_get_logits_with_pdb(mock_torch_device, mock_esm2_hub):
-    client = FoldyESMClient.get_client("esm2_t33_650M_UR50D")
+    client = FoldyPLMClient.get_client("esm2_t33_650M_UR50D")
     with pytest.raises(ValueError):
         client.get_logits(TEST_SEQUENCE, TEST_PDB_PATH)
 
 
 def test_esm3_embed_with_extra_layers(mock_torch_device, mock_esm3_client):
-    client = FoldyESMClient.get_client("esm3_t36_3B_UR50D")
+    client = FoldyPLMClient.get_client("esm3_t36_3B_UR50D")
     embedding = client.embed(TEST_SEQUENCE, extra_layers=[1, 2, 3])
 
     assert isinstance(embedding, list)
@@ -206,3 +254,89 @@ def verify_logits_df_structure(df: pd.DataFrame, sequence: str):
     # Verify seq_id format (e.g., "M1A" for mutation of M at position 1 to A)
     assert all(len(seq_id) >= 3 for seq_id in df["seq_id"])
     assert all(0 <= prob <= 1 for prob in df["probability"])
+
+
+# ============== Profluent E1 Tests ==============
+
+
+def test_get_client_e1_routing(mock_torch_device, mock_e1_client):
+    """Test that E1 model names are routed to FoldyE1Client."""
+    client = FoldyPLMClient.get_client("e1_300m")
+    assert isinstance(client, FoldyE1Client)
+
+
+def test_get_client_e1_all_sizes(mock_torch_device, mock_e1_client):
+    """Test that all E1 model sizes can be instantiated."""
+    for model_name in ["e1_150m", "e1_300m", "e1_600m"]:
+        client = FoldyPLMClient.get_client(model_name)
+        assert isinstance(client, FoldyE1Client)
+
+
+def test_e1_embed(mock_torch_device, mock_e1_client):
+    """Test E1 embedding generation."""
+    client = FoldyPLMClient.get_client("e1_300m")
+    embedding = client.embed(TEST_SEQUENCE)
+
+    assert isinstance(embedding, list)
+    assert len(embedding) == 1
+    assert len(embedding[0]) == 1280  # Expected embedding dimension
+
+
+def test_e1_embed_with_pdb_fails(mock_torch_device, mock_e1_client):
+    """Test that E1 raises error when CIF/PDB file is provided."""
+    client = FoldyPLMClient.get_client("e1_300m")
+    with pytest.raises(ValueError, match="E1 does not support CIF or PDB-based embeddings"):
+        client.embed(TEST_SEQUENCE, TEST_PDB_PATH)
+
+
+def test_e1_embed_with_complex_fails(mock_torch_device, mock_e1_client):
+    """Test that E1 raises error for protein complexes."""
+    client = FoldyPLMClient.get_client("e1_300m")
+    complex_input = [("A", "MGSSH"), ("B", "HHHHH")]
+    with pytest.raises(ValueError, match="E1 does not support protein complexes"):
+        client.embed(complex_input)
+
+
+def test_e1_embed_with_extra_layers_fails(mock_torch_device, mock_e1_client):
+    """Test that E1 raises error when extra_layers is requested."""
+    client = FoldyPLMClient.get_client("e1_300m")
+    with pytest.raises(ValueError, match="E1 does not support extra layers"):
+        client.embed(TEST_SEQUENCE, extra_layers=[1, 2, 3])
+
+
+def test_e1_get_logits(mock_torch_device, mock_e1_client):
+    """Test E1 logits generation."""
+    client = FoldyPLMClient.get_client("e1_300m")
+    df = client.get_logits(TEST_SEQUENCE)
+
+    assert isinstance(df, pd.DataFrame)
+    assert "seq_id" in df.columns
+    assert "probability" in df.columns
+    assert len(df) > 0
+
+
+def test_e1_get_logits_with_pdb_fails(mock_torch_device, mock_e1_client):
+    """Test that E1 raises error for CIF/PDB-based logits."""
+    client = FoldyPLMClient.get_client("e1_300m")
+    with pytest.raises(ValueError, match="E1 does not support CIF or PDB-based logits"):
+        client.get_logits(TEST_SEQUENCE, TEST_PDB_PATH)
+
+
+def test_e1_get_logits_with_complex_fails(mock_torch_device, mock_e1_client):
+    """Test that E1 raises error for complex logits."""
+    client = FoldyPLMClient.get_client("e1_300m")
+    complex_input = [("A", "MGSSH"), ("B", "HHHHH")]
+    with pytest.raises(ValueError, match="E1 does not support protein complexes"):
+        client.get_logits(complex_input)
+
+
+def test_e1_embed_with_domain_boundaries(mock_torch_device, mock_e1_client):
+    """Test E1 embedding with domain pooling."""
+    client = FoldyPLMClient.get_client("e1_300m")
+    # Domain boundary at position 10 (splits sequence into two domains)
+    embedding = client.embed(TEST_SEQUENCE, domain_boundaries=[10])
+
+    assert isinstance(embedding, list)
+    assert len(embedding) == 1
+    # With domain pooling, embedding should be concatenation of 2 domain embeddings
+    assert len(embedding[0]) == 1280 * 2

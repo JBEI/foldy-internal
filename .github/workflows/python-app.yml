@@ -33,11 +33,16 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest pytest-cov
+        pip install pytest pytest-cov pyright torch
 
-    - name: Run mypy type checker
+    - name: Run pyright type checker
       run: |
-        mypy app
+        pyright --pythonversion 3.12
+
+    - name: Verify critical imports
+      run: |
+        python -c "from app.helpers.esm_client import FoldyPLMClient, FoldyE1Client, FoldyESMCClient, FoldyESM1and2Client, FoldyESM3Client; print('All client imports OK')"
+        python -c "from app.views.esm_views import ALLOWED_ESM_MODELS, ALLOWED_NATURALNESS_MODELS; print(f'E1 models in allowed list: {[m for m in ALLOWED_ESM_MODELS if m.startswith(\"e1_\")]}')"
 
     - name: Run pytest with coverage
       run: |
