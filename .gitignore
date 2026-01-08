@@ -148,9 +148,10 @@ backend/notebooks/jacob/flip-aav.csv
 backend/folde/data/*
 backend/foldydata/*
 .boltz/
-
+E1/
 backend/EvolveTest
-
+AGENTS.md
+SPEC.md
 CLAUDE.md
 CLAUDE_NOTES.md
 

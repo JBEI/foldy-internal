@@ -4,13 +4,23 @@ import { Logit } from "../types/types";
 /**
  * Starts logits computation
  */
-export const startLogits = async (foldId: number, name: string, logitModel: string, useStructure: boolean, getDepthTwoLogits: boolean): Promise<Logit> => {
+export const startLogits = async (
+    foldId: number,
+    name: string,
+    logitModel: string,
+    useStructure: boolean,
+    getDepthTwoLogits: boolean,
+    useMsaContext: boolean = false,
+    msaA3m: string | null = null
+): Promise<Logit> => {
     const response = await axiosInstance.post(
         `/api/startnaturalness/${foldId}`, {
         name: name,
         logit_model: logitModel,
         use_structure: useStructure,
         get_depth_two_logits: getDepthTwoLogits,
+        use_msa_context: useMsaContext,
+        ...(msaA3m ? { msa_a3m: msaA3m } : {}),
     });
     return response.data;
 };
@@ -26,7 +36,9 @@ export const startEmbeddings = async (
     extraLayers: string[],
     embeddingModel: string,
     homologFasta: string | null = null,
-    domainBoundaries: string[] = []
+    domainBoundaries: string[] = [],
+    useMsaContext: boolean = false,
+    msaA3m: string | null = null
 ): Promise<boolean> => {
     const response = await axiosInstance.post(
         `/api/embeddings`,
@@ -39,6 +51,8 @@ export const startEmbeddings = async (
             extra_layers: extraLayers.join(','),
             domain_boundaries: domainBoundaries.join(','),
             homolog_fasta: homologFasta || undefined,
+            use_msa_context: useMsaContext,
+            ...(msaA3m ? { msa_a3m: msaA3m } : {}),
         }
     );
     return response.data;

@@ -36,8 +36,14 @@ def add_meta_to_job(job: Job, fold: Fold, job_type: str, related_object_id: Opti
 
 def send_status_update_email(job: Job, status: str, extra_body: Optional[str] = None) -> None:
     """Send a status update email"""
-    if not current_app.config["EMAIL_USERNAME"] or not current_app.config["EMAIL_PASSWORD"]:
-        raise KeyError("No email username / password provided: will not send email.")
+    email_username = current_app.config.get("EMAIL_USERNAME")
+    email_password = current_app.config.get("EMAIL_PASSWORD")
+    if not email_username or not email_password:
+        logging.warning(
+            "Skipping status email for job %s: EMAIL_USERNAME/PASSWORD not configured.",
+            job.id,
+        )
+        return
 
     if any(
         key not in job.meta for key in ["fold_id", "fold_name", "job_type", "related_object_id"]
@@ -61,8 +67,8 @@ def send_status_update_email(job: Job, status: str, extra_body: Optional[str] = 
     server = EmailServer(
         "smtp.gmail.com",
         587,
-        current_app.config["EMAIL_USERNAME"],
-        current_app.config["EMAIL_PASSWORD"],
+        email_username,
+        email_password,
     )
 
     link = f'{current_app.config["FRONTEND_URL"]}/fold/{fold_id}'

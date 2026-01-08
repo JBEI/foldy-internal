@@ -107,10 +107,20 @@ naturalness_fields = type_ns.model(
         "logit_model": fields.String(required=True),
         "use_structure": fields.Boolean(required=False),
         "get_depth_two_logits": fields.Boolean(required=False),
+        "use_msa_context": fields.Boolean(required=False),
+        "msa_a3m_path": fields.String(required=False),
         "output_fpath": fields.String(required=False),
         "output_fpath_computed": fields.String(required=False),
         "invokation_id": fields.Integer(required=False),
         "date_created": fields.DateTime(required=False),
+    },
+)
+
+naturalness_input_fields = type_ns.inherit(
+    "NaturalnessInputFields",
+    naturalness_fields,
+    {
+        "msa_a3m": fields.String(required=False),
     },
 )
 
@@ -126,10 +136,20 @@ embedding_fields = type_ns.model(
         "homolog_fasta": fields.String(required=False),
         "extra_layers": fields.String(required=False),
         "domain_boundaries": fields.String(required=False),
+        "use_msa_context": fields.Boolean(required=False),
+        "msa_a3m_path": fields.String(required=False),
         "output_fpath": fields.String(required=False),
         "output_fpath_computed": fields.String(required=False),
         "invokation_id": fields.Integer(required=False),
         "date_created": fields.DateTime(required=False),
+    },
+)
+
+embedding_input_fields = type_ns.inherit(
+    "EmbeddingInputFields",
+    embedding_fields,
+    {
+        "msa_a3m": fields.String(required=False),
     },
 )
 

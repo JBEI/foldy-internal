@@ -1,5 +1,6 @@
 import json
 import logging
+import random
 import sys
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union, cast
@@ -96,6 +97,8 @@ class FoldyPLMClient(ABC):
         cif_file_path: Optional[str] = None,
         extra_layers: List[int] = [],
         domain_boundaries: List[int] = [],
+        use_msa_context: bool = False,
+        msa_a3m_path: Optional[str] = None,
     ) -> List[List[float]]:
         """
         Get embedding for a protein sequence or complex.
@@ -106,6 +109,8 @@ class FoldyPLMClient(ABC):
             cif_file_path: Optional path to a CIF file for structure-aware models
             extra_layers: List of layer indices to return embeddings for
             domain_boundaries: List of domain boundary positions for domain pooling
+            use_msa_context: Whether to prepend E1 MSA context (E1-only)
+            msa_a3m_path: Path to a local .a3m file to sample context from
 
         Returns:
             A list of list of floats representing embedding vectors for extra_layers, and the final layer.
@@ -114,7 +119,11 @@ class FoldyPLMClient(ABC):
 
     @abstractmethod
     def get_logits(
-        self, sequence_or_complex: SequenceOrComplexType, cif_file_path: Optional[str] = None
+        self,
+        sequence_or_complex: SequenceOrComplexType,
+        cif_file_path: Optional[str] = None,
+        use_msa_context: bool = False,
+        msa_a3m_path: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         Get logits for a protein sequence or complex.
@@ -123,12 +132,40 @@ class FoldyPLMClient(ABC):
             sequence_or_complex: Either a protein sequence string or a list of
                                 (chain_id, sequence) tuples for complexes
             cif_file_path: Optional path to a CIF file for structure-aware models
+            use_msa_context: Whether to prepend E1 MSA context (E1-only)
+            msa_a3m_path: Path to a local .a3m file to sample context from
 
         Returns:
             A pandas DataFrame with sequence logits in melted format with
             columns 'seq_id' and 'probability'
         """
         pass
+
+    def supports_batch_embedding(self) -> bool:
+        """Return True if the client can embed multiple sequences in one forward pass."""
+        return False
+
+    def embed_batch(
+        self,
+        sequences: List[str],
+        cif_file_path: Optional[str] = None,
+        extra_layers: List[int] = [],
+        domain_boundaries: List[int] = [],
+        use_msa_context: bool = False,
+        msa_a3m_path: Optional[str] = None,
+    ) -> List[List[List[float]]]:
+        """Embed a list of sequences, defaulting to sequential single-embed calls."""
+        return [
+            self.embed(
+                sequence,
+                cif_file_path=cif_file_path,
+                extra_layers=extra_layers,
+                domain_boundaries=domain_boundaries,
+                use_msa_context=use_msa_context,
+                msa_a3m_path=msa_a3m_path,
+            )
+            for sequence in sequences
+        ]
 
 
 class FoldyESMCClient(FoldyPLMClient):
@@ -257,6 +294,8 @@ class FoldyESMCClient(FoldyPLMClient):
         cif_file_path: Optional[str] = None,
         extra_layers: List[int] = [],
         domain_boundaries: List[int] = [],
+        use_msa_context: bool = False,
+        msa_a3m_path: Optional[str] = None,
     ) -> List[List[float]]:
         """
         Get embedding for a protein sequence or complex.
@@ -276,6 +315,9 @@ class FoldyESMCClient(FoldyPLMClient):
         import torch
         from esm.sdk.api import ESMProtein, LogitsConfig
         from esm.utils.structure.protein_complex import ProteinComplex
+
+        if use_msa_context:
+            raise ValueError("MSA context is only supported for E1 models")
 
         # Force CUDA synchronization before we start
         if torch.cuda.is_available():
@@ -341,6 +383,8 @@ class FoldyESMCClient(FoldyPLMClient):
         self,
         sequence_or_complex: SequenceOrComplexType,
         cif_file_path: Optional[str] = None,
+        use_msa_context: bool = False,
+        msa_a3m_path: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         Get logits for a protein sequence or complex.
@@ -358,6 +402,9 @@ class FoldyESMCClient(FoldyPLMClient):
         from esm.sdk.api import ESMProtein, LogitsConfig
         from esm.utils.constants import esm3 as esm3_constants
         from esm.utils.structure.protein_complex import ProteinComplex
+
+        if use_msa_context:
+            raise ValueError("MSA context is only supported for E1 models")
 
         if isinstance(sequence_or_complex, list):
             protein_tensor = self._get_esm_protein_tensor_for_complex(
@@ -486,6 +533,28 @@ class FoldyESM1and2Client(FoldyPLMClient):
     compared to ESM-3 and ESM-C.
     """
 
+    MODEL_TO_NUM_LAYERS = {
+        "esm2_t48_15B_UR50D": 48,
+        "esm2_t36_3B_UR50D": 36,
+        "esm2_t33_650M_UR50D": 33,
+        "esm2_t30_150M_UR50D": 30,
+        "esm2_t12_35M_UR50D": 12,
+        "esm2_t6_8M_UR50D": 6,
+        "esm1v_t33_650M_UR90S_1": 33,
+        "esm1v_t33_650M_UR90S_2": 33,
+        "esm1v_t33_650M_UR90S_3": 33,
+        "esm1v_t33_650M_UR90S_4": 33,
+        "esm1v_t33_650M_UR90S_5": 33,
+        "esm_msa1b_t12_100M_UR50S": 12,
+        "esm_msa1_t12_100M_UR50S": 12,
+        "esm1b_t33_650M_UR50S": 33,
+        "esm1_t34_670M_UR50S": 34,
+        "esm1_t34_670M_UR50D": 34,
+        "esm1_t34_670M_UR100": 34,
+        "esm1_t12_85M_UR50S": 12,
+        "esm1_t6_43M_UR50S": 6,
+    }
+
     def _pool_by_domains(
         self, hidden_states: "torch.Tensor", domain_boundaries: List[int]
     ) -> "torch.Tensor":
@@ -587,12 +656,91 @@ class FoldyESM1and2Client(FoldyPLMClient):
         else:
             self.device = torch.device("cpu")
 
+    def supports_batch_embedding(self) -> bool:
+        return True
+
+    def embed_batch(
+        self,
+        sequences: List[str],
+        cif_file_path: Optional[str] = None,
+        extra_layers: List[int] = [],
+        domain_boundaries: List[int] = [],
+        use_msa_context: bool = False,
+        msa_a3m_path: Optional[str] = None,
+    ) -> List[List[List[float]]]:
+        """
+        Get embeddings for a batch of protein sequences.
+
+        Returns:
+            A list of embedding lists (one per input sequence).
+        """
+        import gc
+
+        import torch
+
+        if use_msa_context:
+            raise ValueError("MSA context is only supported for E1 models")
+        if cif_file_path:
+            raise ValueError("ESM1 and 2 do not support CIF or PDB-based embeddings")
+        if len(extra_layers) > 0:
+            raise ValueError("ESM1 and 2 do not support extra layers")
+        if not sequences:
+            return []
+
+        # Force CUDA synchronization before we start
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+        batch_tokens = None
+        token_embeddings = None
+        results = None
+        embeddings: List[List[List[float]]] = []
+
+        try:
+            data = [("protein", sequence) for sequence in sequences]
+            _, _, batch_tokens = self.batch_converter(data)
+            batch_tokens = batch_tokens.to(self.device)
+            batch_lens = (batch_tokens != self.alphabet.padding_idx).sum(dim=1)
+
+            with torch.no_grad():
+                results = self.model(
+                    batch_tokens, repr_layers=[self.MODEL_TO_NUM_LAYERS.get(self.model_name)]
+                )
+                layer_num = self.MODEL_TO_NUM_LAYERS.get(self.model_name)
+                token_embeddings = results["representations"][layer_num]
+
+                for idx, seq_len in enumerate(batch_lens):
+                    seq_len_int = int(seq_len.item())
+                    token_embeddings_no_special = token_embeddings[idx, 1 : seq_len_int - 1]
+                    protein_embedding = (
+                        self._pool_by_domains(token_embeddings_no_special, domain_boundaries)
+                        .detach()
+                        .cpu()
+                    )
+                    embeddings.append([protein_embedding.tolist()])
+
+        finally:
+            for local_var in ["batch_tokens", "token_embeddings", "results"]:
+                if local_var in locals() and locals()[local_var] is not None:
+                    del locals()[local_var]
+
+            gc.collect()
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+                torch.cuda.ipc_collect()
+
+        return embeddings
+
     def embed(
         self,
         sequence_or_complex: SequenceOrComplexType,
         cif_file_path: Optional[str] = None,
         extra_layers: List[int] = [],
         domain_boundaries: List[int] = [],
+        use_msa_context: bool = False,
+        msa_a3m_path: Optional[str] = None,
     ) -> List[List[float]]:
         """
         Get embedding for a protein sequence.
@@ -613,11 +761,19 @@ class FoldyESM1and2Client(FoldyPLMClient):
 
         import torch
 
+        if use_msa_context:
+            raise ValueError("MSA context is only supported for E1 models")
+
         # Force CUDA synchronization before we start
         if torch.cuda.is_available():
             torch.cuda.synchronize()
 
         sequence = sequence_or_complex
+        if use_msa_context:
+            if not msa_a3m_path:
+                raise ValueError("msa_a3m_path is required when use_msa_context=true")
+            context = self._get_msa_context(msa_a3m_path)
+            sequence = f"{context},{sequence}"
         if cif_file_path:
             raise ValueError("ESM1 and 2 do not support CIF or PDB-based embeddings")
         if isinstance(sequence_or_complex, list):
@@ -634,33 +790,11 @@ class FoldyESM1and2Client(FoldyPLMClient):
             _, _, batch_tokens = self.batch_converter(data)
             batch_tokens = batch_tokens.to(self.device)
 
-            MODEL_TO_NUM_LAYERS = {
-                "esm2_t48_15B_UR50D": 48,
-                "esm2_t36_3B_UR50D": 36,
-                "esm2_t33_650M_UR50D": 33,
-                "esm2_t30_150M_UR50D": 30,
-                "esm2_t12_35M_UR50D": 12,
-                "esm2_t6_8M_UR50D": 6,
-                "esm1v_t33_650M_UR90S_1": 33,
-                "esm1v_t33_650M_UR90S_2": 33,
-                "esm1v_t33_650M_UR90S_3": 33,
-                "esm1v_t33_650M_UR90S_4": 33,
-                "esm1v_t33_650M_UR90S_5": 33,
-                "esm_msa1b_t12_100M_UR50S": 12,
-                "esm_msa1_t12_100M_UR50S": 12,
-                "esm1b_t33_650M_UR50S": 33,
-                "esm1_t34_670M_UR50S": 34,
-                "esm1_t34_670M_UR50D": 34,
-                "esm1_t34_670M_UR100": 34,
-                "esm1_t12_85M_UR50S": 12,
-                "esm1_t6_43M_UR50S": 6,
-            }
-
             with torch.no_grad():
                 results = self.model(
-                    batch_tokens, repr_layers=[MODEL_TO_NUM_LAYERS.get(self.model_name)]
+                    batch_tokens, repr_layers=[self.MODEL_TO_NUM_LAYERS.get(self.model_name)]
                 )
-                layer_num = MODEL_TO_NUM_LAYERS.get(self.model_name)
+                layer_num = self.MODEL_TO_NUM_LAYERS.get(self.model_name)
                 token_embeddings = results["representations"][layer_num]
 
                 # Remove cls and eos tokens, then pool by domains within no_grad block
@@ -692,6 +826,8 @@ class FoldyESM1and2Client(FoldyPLMClient):
         self,
         sequence_or_complex: SequenceOrComplexType,
         cif_file_path: Optional[str] = None,
+        use_msa_context: bool = False,
+        msa_a3m_path: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         Get logits for a protein sequence.
@@ -708,6 +844,9 @@ class FoldyESM1and2Client(FoldyPLMClient):
             ValueError: If a complex or CIF/PDB file is provided (not supported)
         """
         import torch
+
+        if use_msa_context:
+            raise ValueError("MSA context is only supported for E1 models")
 
         if isinstance(sequence_or_complex, list):
             raise ValueError("ESM1 and 2 do not support protein complexes")
@@ -795,6 +934,7 @@ class FoldyE1Client(FoldyPLMClient):
         Args:
             model_name: Name of the E1 model to load (e1_150m, e1_300m, e1_600m)
         """
+        import os
         import torch
         from E1.batch_preparer import E1BatchPreparer
         from E1.modeling import E1ForMaskedLM
@@ -818,11 +958,121 @@ class FoldyE1Client(FoldyPLMClient):
             self.use_bf16 = False
 
         self.batch_preparer = E1BatchPreparer()
+        self._msa_context_cache: Dict[str, str] = {}
+        self._msa_context_seed: Optional[int] = None
+        self._inductor_disabled = False
+        if os.environ.get("FOLDY_E1_DISABLE_TORCH_COMPILE") == "1":
+            self._disable_torch_compile("FOLDY_E1_DISABLE_TORCH_COMPILE=1")
 
         print(
             f"[E1] Loaded {model_name} ({hf_model_name}) on {self.device} "
             f"with bf16={'enabled' if self.use_bf16 else 'disabled'}"
         )
+
+    def supports_batch_embedding(self) -> bool:
+        return True
+
+    def _disable_torch_compile(self, reason: str) -> None:
+        if self._inductor_disabled:
+            return
+
+        disabled = False
+        try:
+            import torch._dynamo
+
+            torch._dynamo.config.disable = True
+            torch._dynamo.config.suppress_errors = True
+            disabled = True
+        except Exception as exc:
+            logging.warning("E1: failed to disable torch.compile: %s", exc)
+
+        if disabled:
+            logging.warning("E1: torch.compile disabled (%s)", reason)
+        self._inductor_disabled = True
+
+    def _should_disable_inductor(self, exc: Exception) -> bool:
+        message = str(exc)
+        return "No valid triton configs" in message or (
+            "triton" in message and "out of resource" in message
+        )
+
+    def _run_model(self, batch: Dict[str, "torch.Tensor"]) -> Any:
+        import torch
+
+        def _forward():
+            with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.use_bf16):
+                return self.model(
+                    input_ids=batch["input_ids"],
+                    within_seq_position_ids=batch["within_seq_position_ids"],
+                    global_position_ids=batch["global_position_ids"],
+                    sequence_ids=batch["sequence_ids"],
+                    past_key_values=None,
+                    use_cache=False,
+                    output_attentions=False,
+                    output_hidden_states=False,
+                )
+
+        try:
+            with torch.no_grad():
+                return _forward()
+        except Exception as exc:
+            if not self._inductor_disabled and self._should_disable_inductor(exc):
+                logging.warning(
+                    "E1 attention kernel compile failed; retrying with torch.compile disabled: %s",
+                    exc,
+                )
+                self._disable_torch_compile("triton config error")
+                with torch.no_grad():
+                    return _forward()
+            raise
+
+    def _get_msa_context(self, msa_a3m_path: str) -> str:
+        if msa_a3m_path in self._msa_context_cache:
+            return self._msa_context_cache[msa_a3m_path]
+
+        try:
+            with open(msa_a3m_path, "r") as msa_file:
+                contents = msa_file.read()
+            if ">" not in contents:
+                context = contents.strip()
+                if not context:
+                    raise ValueError("Stored MSA context is empty")
+                self._msa_context_cache[msa_a3m_path] = context
+                logging.info(
+                    "E1 MSA context loaded from stored context file (%d sequences, msa_a3m_path=%s)",
+                    len(context.split(",")),
+                    msa_a3m_path,
+                )
+                return context
+        except OSError as exc:
+            logging.warning("E1 MSA context read failed; falling back to sampling: %s", exc)
+
+        if self._msa_context_seed is None:
+            self._msa_context_seed = random.SystemRandom().randrange(0, 2**32 - 1)
+
+        from E1.msa_sampling import ContextSpecification, sample_context
+
+        context_spec = ContextSpecification()
+        context, context_ids = sample_context(
+            msa_a3m_path,
+            max_num_samples=context_spec.max_num_samples,
+            max_token_length=context_spec.max_token_length,
+            max_query_similarity=context_spec.max_query_similarity,
+            min_query_similarity=context_spec.min_query_similarity,
+            neighbor_similarity_lower_bound=context_spec.neighbor_similarity_lower_bound,
+            seed=self._msa_context_seed,
+            device=self.device,
+        )
+        logging.info(
+            "E1 MSA context sampled %d sequences (msa_a3m_path=%s)",
+            len(context_ids),
+            msa_a3m_path,
+        )
+        if not context:
+            raise ValueError("MSA context sampling returned no context sequences")
+
+        self._msa_context_cache[msa_a3m_path] = context
+        return context
 
     def embed(
         self,
@@ -830,6 +1080,8 @@ class FoldyE1Client(FoldyPLMClient):
         cif_file_path: Optional[str] = None,
         extra_layers: List[int] = [],
         domain_boundaries: List[int] = [],
+        use_msa_context: bool = False,
+        msa_a3m_path: Optional[str] = None,
     ) -> List[List[float]]:
         """
         Get embedding for a protein sequence.
@@ -858,6 +1110,11 @@ class FoldyE1Client(FoldyPLMClient):
             raise ValueError("E1 does not support extra layers")
 
         sequence = sequence_or_complex
+        if use_msa_context:
+            if not msa_a3m_path:
+                raise ValueError("msa_a3m_path is required when use_msa_context=true")
+            context = self._get_msa_context(msa_a3m_path)
+            sequence = f"{context},{sequence}"
 
         # Force CUDA synchronization before we start
         if torch.cuda.is_available():
@@ -868,29 +1125,78 @@ class FoldyE1Client(FoldyPLMClient):
             # Prepare batch using E1BatchPreparer
             batch = self.batch_preparer.get_batch_kwargs([sequence], device=self.device)
 
-            with torch.no_grad():
-                with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.use_bf16):
-                    outputs = self.model(
-                        input_ids=batch["input_ids"],
-                        within_seq_position_ids=batch["within_seq_position_ids"],
-                        global_position_ids=batch["global_position_ids"],
-                        sequence_ids=batch["sequence_ids"],
-                        past_key_values=None,
-                        use_cache=False,
-                        output_attentions=False,
-                        output_hidden_states=False,
-                    )
+            outputs = self._run_model(batch)
 
-                # Get embeddings for residues only (exclude boundary tokens)
-                residue_selector = ~self.batch_preparer.get_boundary_token_mask(batch["input_ids"])
-                residue_embeddings = outputs.embeddings[0, residue_selector[0]].detach().cpu()
+            # Get embeddings for residues in the last sequence only (exclude boundary tokens)
+            boundary_token_mask = self.batch_preparer.get_boundary_token_mask(batch["input_ids"])
+            last_sequence_mask = batch["sequence_ids"] == batch["sequence_ids"].max(dim=1).values[:, None]
+            residue_selector = last_sequence_mask & ~boundary_token_mask
+            residue_embeddings = outputs.embeddings[0, residue_selector[0]].detach().cpu()
 
-                # Pool by domains
-                pooled_embedding = self._pool_by_domains(residue_embeddings, domain_boundaries)
-                embeddings_result = [pooled_embedding.tolist()]
+            # Pool by domains
+            pooled_embedding = self._pool_by_domains(residue_embeddings, domain_boundaries)
+            embeddings_result = [pooled_embedding.tolist()]
 
         finally:
             # Force garbage collection
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+
+        return embeddings_result
+
+    def embed_batch(
+        self,
+        sequences: List[str],
+        cif_file_path: Optional[str] = None,
+        extra_layers: List[int] = [],
+        domain_boundaries: List[int] = [],
+        use_msa_context: bool = False,
+        msa_a3m_path: Optional[str] = None,
+    ) -> List[List[List[float]]]:
+        """
+        Get embeddings for a batch of protein sequences.
+
+        Returns:
+            A list of embedding lists (one per input sequence).
+        """
+        import gc
+
+        import torch
+
+        if cif_file_path:
+            raise ValueError("E1 does not support CIF or PDB-based embeddings")
+        if len(extra_layers) > 0:
+            raise ValueError("E1 does not support extra layers")
+        if not sequences:
+            return []
+        if use_msa_context:
+            if not msa_a3m_path:
+                raise ValueError("msa_a3m_path is required when use_msa_context=true")
+            context = self._get_msa_context(msa_a3m_path)
+            sequences = [f"{context},{sequence}" for sequence in sequences]
+
+        # Force CUDA synchronization before we start
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+        embeddings_result: List[List[List[float]]] = []
+        try:
+            batch = self.batch_preparer.get_batch_kwargs(sequences, device=self.device)
+
+            outputs = self._run_model(batch)
+
+            boundary_token_mask = self.batch_preparer.get_boundary_token_mask(batch["input_ids"])
+            last_sequence_mask = batch["sequence_ids"] == batch["sequence_ids"].max(dim=1).values[:, None]
+            residue_selector = last_sequence_mask & ~boundary_token_mask
+
+            for idx in range(batch["input_ids"].shape[0]):
+                residue_embeddings = outputs.embeddings[idx, residue_selector[idx]].detach().cpu()
+                pooled_embedding = self._pool_by_domains(residue_embeddings, domain_boundaries)
+                embeddings_result.append([pooled_embedding.tolist()])
+
+        finally:
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -902,6 +1208,8 @@ class FoldyE1Client(FoldyPLMClient):
         self,
         sequence_or_complex: SequenceOrComplexType,
         cif_file_path: Optional[str] = None,
+        use_msa_context: bool = False,
+        msa_a3m_path: Optional[str] = None,
     ) -> pd.DataFrame:
         """
         Get logits for a protein sequence.
@@ -925,25 +1233,22 @@ class FoldyE1Client(FoldyPLMClient):
             raise ValueError("E1 does not support CIF or PDB-based logits")
 
         sequence = sequence_or_complex
+        query_sequence = sequence
+        if use_msa_context:
+            if not msa_a3m_path:
+                raise ValueError("msa_a3m_path is required when use_msa_context=true")
+            context = self._get_msa_context(msa_a3m_path)
+            sequence = f"{context},{sequence}"
 
         # Prepare batch
         batch = self.batch_preparer.get_batch_kwargs([sequence], device=self.device)
 
-        with torch.no_grad():
-            with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.use_bf16):
-                outputs = self.model(
-                    input_ids=batch["input_ids"],
-                    within_seq_position_ids=batch["within_seq_position_ids"],
-                    global_position_ids=batch["global_position_ids"],
-                    sequence_ids=batch["sequence_ids"],
-                    past_key_values=None,
-                    use_cache=False,
-                    output_attentions=False,
-                    output_hidden_states=False,
-                )
+        outputs = self._run_model(batch)
 
-        # Get logits for residues only (exclude boundary tokens)
-        residue_selector = ~self.batch_preparer.get_boundary_token_mask(batch["input_ids"])
+        # Get logits for residues in the last sequence only (exclude boundary tokens)
+        boundary_token_mask = self.batch_preparer.get_boundary_token_mask(batch["input_ids"])
+        last_sequence_mask = batch["sequence_ids"] == batch["sequence_ids"].max(dim=1).values[:, None]
+        residue_selector = last_sequence_mask & ~boundary_token_mask
         residue_logits = outputs.logits[0, residue_selector[0]]
 
         # Convert to probabilities
@@ -957,8 +1262,8 @@ class FoldyE1Client(FoldyPLMClient):
 
         melted_rows: List[Dict[str, Any]] = []
 
-        for pos in range(len(sequence)):  # 0-indexed positions in the filtered output
-            wt_aa = sequence[pos]
+        for pos in range(len(query_sequence)):  # 0-indexed positions in the filtered output
+            wt_aa = query_sequence[pos]
             probs = sequence_probs[pos, :].tolist()
 
             for aa in self.STANDARD_AAS:

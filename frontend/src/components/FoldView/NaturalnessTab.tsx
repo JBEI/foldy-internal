@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Naturalness, Invokation } from 'src/types/types';
+import { FileInfo, Naturalness, Invokation } from 'src/types/types';
 import { FaDownload, FaEye, FaFileCode, FaRedo, FaTrash } from 'react-icons/fa';
 import { downloadFileStraightToFilesystemFancy, getFile } from '../../api/fileApi';
 import { deleteNaturalness } from '../../api/embedApi';
@@ -22,11 +22,12 @@ interface NaturalnessTabProps {
     yamlConfig: string | null;
     jobs: Invokation[] | null;
     logits: Naturalness[] | null;
+    files?: FileInfo[];
     setSelectedSubsequence: (selection: Selection | null) => void;
     openUpLogsForJob: (jobId: number | undefined) => void;
 }
 
-const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlConfig, jobs, logits, setSelectedSubsequence, openUpLogsForJob }) => {
+const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlConfig, jobs, logits, files, setSelectedSubsequence, openUpLogsForJob }) => {
     const [showNaturalnessModal, setShowNaturalnessModal] = useState<boolean>(false);
     const [templateNaturalness, setTemplateNaturalness] = useState<Naturalness | null>(null);
 
@@ -262,6 +263,7 @@ const NaturalnessTab: React.FC<NaturalnessTabProps> = ({ foldId, foldName, yamlC
                 open={showNaturalnessModal}
                 onClose={() => setShowNaturalnessModal(false)}
                 foldIds={[foldId]}
+                files={files}
                 title={templateNaturalness ? "Redo Naturalness Run" : "New Naturalness Run"}
                 templateNaturalnessRun={templateNaturalness || undefined}
             />

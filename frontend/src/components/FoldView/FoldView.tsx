@@ -552,6 +552,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         yamlConfig={this.state.foldData?.yaml_config || null}
                         jobs={this.state.jobs}
                         logits={this.state.foldData?.naturalness_runs || null}
+                        files={this.state.files}
                         setSelectedSubsequence={this.setSelectedSubsequence}
                         openUpLogsForJob={this.openUpLogsForJob}
                     />
@@ -563,6 +564,7 @@ class InternalFoldView extends Component<FoldProps, FoldState> {
                         foldName={this.state.foldData?.name || null}
                         jobs={this.state.jobs}
                         embeddings={this.state.foldData?.embeddings || null}
+                        files={this.state.files}
                         openUpLogsForJob={this.openUpLogsForJob}
                     />
                 </li>

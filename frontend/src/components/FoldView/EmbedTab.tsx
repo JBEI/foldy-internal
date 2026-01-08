@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Embedding, Invokation } from '../../types/types';
+import { Embedding, FileInfo, Invokation } from '../../types/types';
 import { FaDownload, FaFileCode, FaRedo, FaTrash } from 'react-icons/fa';
 import { downloadFileStraightToFilesystemFancy } from '../../api/fileApi';
 import { deleteEmbedding } from '../../api/embedApi';
@@ -17,6 +17,7 @@ interface EmbedTabProps {
     foldName: string | null;
     jobs: Invokation[] | null;
     embeddings: Embedding[] | null;
+    files?: FileInfo[];
     openUpLogsForJob: (jobId: number | undefined) => void;
 }
 
@@ -90,7 +91,7 @@ const embeddingExpandableContent = <T extends Record<string, any>>(record: T): R
     );
 };
 
-const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings, openUpLogsForJob }) => {
+const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings, files, openUpLogsForJob }) => {
     const [showEmbeddingModal, setShowEmbeddingModal] = useState<boolean>(false);
     const [selectedEmbedding, setSelectedEmbedding] = useState<Embedding | null>(null);
     const [templateEmbedding, setTemplateEmbedding] = useState<Embedding | null>(null);
@@ -247,6 +248,7 @@ const EmbedTab: React.FC<EmbedTabProps> = ({ foldId, foldName, jobs, embeddings,
                 open={showEmbeddingModal}
                 onClose={() => setShowEmbeddingModal(false)}
                 foldIds={[foldId]}
+                files={files}
                 title={templateEmbedding ? "Redo Embedding Run" : "New Embedding Run"}
                 templateEmbedding={templateEmbedding || undefined}
             />

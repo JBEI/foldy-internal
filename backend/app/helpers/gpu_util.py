@@ -35,9 +35,12 @@ def _sample():
         mem = pynvml.nvmlDeviceGetMemoryInfo(_GPU_HANDLE)
         util = pynvml.nvmlDeviceGetUtilizationRates(_GPU_HANDLE)
         tcore = pynvml.nvmlDeviceGetTemperature(_GPU_HANDLE, pynvml.NVML_TEMPERATURE_GPU)
-        tmem = pynvml.nvmlDeviceGetTemperature(
-            _GPU_HANDLE, pynvml.NVML_TEMPERATURE_MEMORY  # type: ignore[reportAttributeAccessIssue] # pynvml typing incomplete
-        )
+        temp_mem_type = getattr(pynvml, "NVML_TEMPERATURE_MEMORY", None)
+        if temp_mem_type is not None:
+            try:
+                tmem = pynvml.nvmlDeviceGetTemperature(_GPU_HANDLE, temp_mem_type)
+            except Exception:
+                tmem = -1
         gpu_mem = mem.used / 1_048_576  # type: ignore[reportOperatorIssue] # pynvml mem.used type unclear                     # MB
         gpu_util = util.gpu
 

@@ -211,6 +211,8 @@ class Naturalness(PkModel):
     logit_model = Column(db.String, nullable=False)
     use_structure = Column(db.Boolean, nullable=True)
     get_depth_two_logits = Column(db.Boolean, nullable=True)
+    use_msa_context = Column(db.Boolean, nullable=True, default=False)
+    msa_a3m_path = Column(db.String, nullable=True)
     output_fpath = Column(db.String, nullable=True)
     date_created = Column(db.DateTime(timezone=True), nullable=True, default=datetime.now(UTC))
 
@@ -243,6 +245,8 @@ class Embedding(PkModel):
     homolog_fasta = Column(db.String, nullable=True)
     extra_layers = Column(db.String, nullable=True)
     domain_boundaries = Column(db.String, nullable=True)
+    use_msa_context = Column(db.Boolean, nullable=True, default=False)
+    msa_a3m_path = Column(db.String, nullable=True)
     output_fpath = Column(db.String, nullable=True)
     date_created = Column(db.DateTime(timezone=True), nullable=True, default=datetime.now(UTC))
 
@@ -297,6 +301,10 @@ class FewShot(PkModel):
         if self.output_fpath:
             return self.output_fpath
         return f"few_shots/{self.name}/predicted_activity.csv"
+
+
+# Backward-compatible alias for older imports/tests.
+Evolution = FewShot
 
 
 class Campaign(PkModel):

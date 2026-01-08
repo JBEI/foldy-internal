@@ -35,7 +35,7 @@ RUN /root/.local/bin/uv pip install --python /opt/conda/envs/worker/bin/python -
 
 # Install Profluent E1 model package
 RUN /root/.local/bin/uv pip install --python /opt/conda/envs/worker/bin/python --no-cache \
-    "e1-protein @ git+https://github.com/Profluent-AI/E1.git"
+    "e1 @ git+https://github.com/Profluent-AI/E1.git"
 
 # Install flash-attn for optimal E1 performance on CUDA 8.0+ GPUs (Ampere and newer)
 # This is a hard requirement for E1 models

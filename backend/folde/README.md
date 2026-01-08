@@ -17,10 +17,15 @@ This module provides infrastructure for simulating and evaluating machine learni
    # Recommended: make a python3.12 virtual environment:
    python3.12 -m venv .venv
    source .venv/bin/activate
+   # Or with uv:
+   # uv venv .venv
+   # source .venv/bin/activate
 
    # Install dependencies:
    cd backend
    pip install -e ".[dev]"
+   # Or with uv:
+   # uv pip install -e ".[dev]"
    ```
 
 2. **Download required data (~200GB):**

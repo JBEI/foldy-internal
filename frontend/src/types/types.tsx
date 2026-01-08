@@ -86,6 +86,8 @@ export interface Naturalness {
     logit_model: string;
     use_structure: boolean | null;
     get_depth_two_logits: boolean | null;
+    use_msa_context?: boolean;
+    msa_a3m_path?: string | null;
     output_fpath: string | null;
     output_fpath_computed: string;
     invokation_id: number;
@@ -102,6 +104,8 @@ export interface Embedding {
     homolog_fasta: string | null;
     extra_layers: string | null;
     domain_boundaries: string | null;
+    use_msa_context?: boolean;
+    msa_a3m_path?: string | null;
     output_fpath: string | null;
     output_fpath_computed: string;
     invokation_id: number | null;

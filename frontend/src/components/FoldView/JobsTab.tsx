@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Invokation } from "../../types/types";
 import { TabContainer, TableSection, SectionCard } from "../../util/tabComponents";
 import { AntTable, defaultExpandableContent } from "../../util/AntTable";
@@ -8,6 +8,18 @@ interface JobsTabProps {
 }
 
 const JobsTab: React.FC<JobsTabProps> = ({ jobs }) => {
+    const [nowMs, setNowMs] = useState(() => Date.now());
+
+    useEffect(() => {
+        if (!jobs?.some((job) => job.state?.toLowerCase() === "running")) {
+            return;
+        }
+
+        setNowMs(Date.now());
+        const intervalId = window.setInterval(() => setNowMs(Date.now()), 1000);
+        return () => window.clearInterval(intervalId);
+    }, [jobs]);
+
     const formatStartTime = (jobstarttime: string | null) => {
         if (!jobstarttime) return "Not Started / Unknown";
 
@@ -30,8 +42,27 @@ const JobsTab: React.FC<JobsTabProps> = ({ jobs }) => {
         }
     };
 
+    const getRuntimeSeconds = (job: Invokation): number | null => {
+        const baseRuntime = job.timedelta_sec ?? null;
+        if (job.state?.toLowerCase() !== "running") {
+            return baseRuntime;
+        }
+        if (!job.starttime) {
+            return baseRuntime;
+        }
+        const startMs = Date.parse(job.starttime);
+        if (Number.isNaN(startMs)) {
+            return baseRuntime;
+        }
+        const elapsedSeconds = Math.max(0, Math.floor((nowMs - startMs) / 1000));
+        if (baseRuntime === null) {
+            return elapsedSeconds;
+        }
+        return Math.max(baseRuntime, elapsedSeconds);
+    };
+
     const formatRunTime = (jobRunTime: number | null) => {
-        return jobRunTime
+        return jobRunTime !== null
             ? `${Math.floor(jobRunTime / (60 * 60))} hr ${Math.floor(jobRunTime / 60) % 60
             } min ${Math.floor(jobRunTime) % 60} sec`
             : "NA";
@@ -94,7 +125,7 @@ const JobsTab: React.FC<JobsTabProps> = ({ jobs }) => {
                             title: 'Runtime',
                             width: 120,
                             render: (_, job) => {
-                                const formatted = formatRunTime(job.timedelta_sec);
+                                const formatted = formatRunTime(getRuntimeSeconds(job));
                                 return <span title={formatted}>{formatted}</span>;
                             },
                         },

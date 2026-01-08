@@ -5,6 +5,9 @@ const { Text } = Typography;
 
 // Add this constant for model options
 const ESM_MODELS = [
+    { value: 'e1_150m', label: 'E1 (150M parameters)' },
+    { value: 'e1_300m', label: 'E1 (300M parameters)' },
+    { value: 'e1_600m', label: 'E1 (600M parameters)' },
     { value: 'esmc_600m', label: 'ESM-C (600M parameters, academic only)' },
     { value: 'esmc_300m', label: 'ESM-C (300M parameters, academic or commercial)' },
     { value: 'esm3-open', label: 'ESM-3 (works with structures, academic only)' },

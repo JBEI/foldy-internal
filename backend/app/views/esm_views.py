@@ -12,9 +12,10 @@ from rq import Callback
 from sqlalchemy.sql.elements import and_
 from werkzeug.exceptions import BadRequest
 
-from app.api_fields import embedding_fields, naturalness_fields
+from app.api_fields import embedding_input_fields, naturalness_fields, naturalness_input_fields
 from app.authorization import verify_has_edit_access
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
+from app.helpers.esm_util import normalize_msa_a3m_contents, validate_msa_a3m_contents
 from app.helpers.rq_helpers import (
     add_meta_to_job,
     get_queue,
@@ -59,7 +60,7 @@ ALLOWED_NATURALNESS_MODELS: List[str] = ALLOWED_ESM_MODELS + ["esm1v_t33_650M_UR
 @ns.route("/embeddings")
 class CalculateEmbeddingsResource(Resource):
     @verify_has_edit_access
-    @ns.expect(embedding_fields)
+    @ns.expect(embedding_input_fields)
     def post(self) -> bool:
         """Create a new embedding calculation job for a fold.
 
@@ -82,6 +83,8 @@ class CalculateEmbeddingsResource(Resource):
         extra_layers_str: str = req.get("extra_layers", "")
         domain_boundaries_str: str = req.get("domain_boundaries", "")
         homolog_fasta: str = req.get("homolog_fasta", None)
+        use_msa_context: bool = req.get("use_msa_context", False)
+        msa_a3m: str | None = req.get("msa_a3m")
 
         extra_seq_ids: list[str] = [
             seq_id.strip() for seq_id in extra_seq_ids_str.split(",") if seq_id.strip()
@@ -113,6 +116,15 @@ class CalculateEmbeddingsResource(Resource):
             )
         wt_aa_seq = boltz_yaml_helper.get_protein_sequences()[0][1]
 
+        if use_msa_context:
+            if not embedding_model.startswith("e1_"):
+                raise BadRequest("MSA context is only supported for E1 embedding models.")
+            if msa_a3m:
+                msa_a3m = normalize_msa_a3m_contents(msa_a3m, wt_aa_seq)
+                validate_msa_a3m_contents(msa_a3m, wt_aa_seq)
+            elif not esm_jobs.stored_msa_context_exists(fold_id):
+                raise BadRequest("msa_a3m is required when use_msa_context=true.")
+
         homolog_id_to_seq_map = esm_jobs.load_fasta_to_dict(homolog_fasta)
         esm_jobs.validate_embedding_inputs(
             wt_aa_seq, extra_seq_ids, dms_starting_seq_ids, homolog_id_to_seq_map
@@ -129,6 +141,7 @@ class CalculateEmbeddingsResource(Resource):
             extra_layers=",".join(extra_layers),
             domain_boundaries=",".join(domain_boundaries) if domain_boundaries else None,
             homolog_fasta=homolog_fasta,
+            use_msa_context=use_msa_context,
             invokation_id=new_invokation_id,
         )
 
@@ -136,6 +149,7 @@ class CalculateEmbeddingsResource(Resource):
         enqueued_job = esm_q.enqueue(
             esm_jobs.get_esm_embeddings,
             embed_record.id,
+            msa_a3m if use_msa_context else None,
             job_timeout="24h",
             result_ttl=48 * 60 * 60,  # 2 days
             on_success=Callback(send_success_email, timeout="5s"),
@@ -152,7 +166,7 @@ class CalculateEmbeddingsResource(Resource):
 @ns.route("/startnaturalness/<int:fold_id>")
 class StartNaturalnessResource(Resource):
     @verify_has_edit_access
-    @ns.expect(naturalness_fields)
+    @ns.expect(naturalness_input_fields)
     @ns.marshal_with(naturalness_fields)
     def post(self, fold_id: int) -> Naturalness:
         """Create a new naturalness calculation job for a fold.
@@ -172,6 +186,8 @@ class StartNaturalnessResource(Resource):
         logit_model: str = req["logit_model"]
         use_structure: bool = req.get("use_structure", False)
         get_depth_two_logits: bool = req.get("get_depth_two_logits", False)
+        use_msa_context: bool = req.get("use_msa_context", False)
+        msa_a3m: str | None = req.get("msa_a3m")
 
         if logit_model not in ALLOWED_NATURALNESS_MODELS:
             raise BadRequest(
@@ -191,6 +207,16 @@ class StartNaturalnessResource(Resource):
             raise BadRequest(
                 "Fold has multiple protein sequences, which is not supported for ESM embeddings yet."
             )
+        wt_aa_seq = boltz_yaml_helper.get_protein_sequences()[0][1]
+
+        if use_msa_context:
+            if not logit_model.startswith("e1_"):
+                raise BadRequest("MSA context is only supported for E1 naturalness models.")
+            if msa_a3m:
+                msa_a3m = normalize_msa_a3m_contents(msa_a3m, wt_aa_seq)
+                validate_msa_a3m_contents(msa_a3m, wt_aa_seq)
+            elif not esm_jobs.stored_msa_context_exists(fold_id):
+                raise BadRequest("msa_a3m is required when use_msa_context=true.")
 
         existing_naturalness = Naturalness.query.filter(
             Naturalness.name == name, Naturalness.fold_id == fold_id
@@ -207,6 +233,7 @@ class StartNaturalnessResource(Resource):
             logit_model=logit_model,
             use_structure=use_structure,
             get_depth_two_logits=get_depth_two_logits,
+            use_msa_context=use_msa_context,
             invokation_id=new_invokation_id,
         )
 
@@ -214,6 +241,7 @@ class StartNaturalnessResource(Resource):
         enqueued_job = esm_q.enqueue(
             esm_jobs.get_esm_naturalness,
             naturalness_record.id,
+            msa_a3m if use_msa_context else None,
             job_timeout="24h",
             result_ttl=48 * 60 * 60,  # 2 days
             on_success=Callback(send_success_email, timeout="5s"),

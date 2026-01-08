@@ -15,7 +15,12 @@ import numpy as np
 import pandas as pd
 from sklearn.neighbors import KNeighborsRegressor
 
-from folde.util import constant_liar_sample, get_consensus_scores, internal_sample_n_indices, NaturalnessImputer
+from folde.util import (
+    NaturalnessImputer,
+    constant_liar_sample,
+    get_consensus_scores,
+    internal_sample_n_indices,
+)
 
 # Registry of available zero-shot models
 _ZERO_SHOT_MODELS = {}
