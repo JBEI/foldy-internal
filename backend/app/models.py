@@ -25,6 +25,7 @@ class Invokation(PkModel):
     state = Column(db.String(80), nullable=True)
     starttime = Column(db.DateTime(timezone=True), nullable=True)
     timedelta = Column(db.Interval, nullable=True)
+    last_heartbeat = Column(db.DateTime(timezone=True), nullable=True)
 
     command = Column(db.Text, nullable=True)
     log = deferred(Column(db.Text, nullable=True))

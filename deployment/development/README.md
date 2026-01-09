@@ -198,7 +198,7 @@ docker compose --file deployment/development/docker-compose.yml --project-direct
 #### Access the Application
 
 - **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:5000
+- **Backend API**: http://localhost:8080
 
 ### 5. Development Workflow
 

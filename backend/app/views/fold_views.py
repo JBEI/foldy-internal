@@ -51,6 +51,10 @@ from app.api_fields import (
 from app.authorization import user_jwt_grants_edit_access, verify_has_edit_access
 from app.extensions import db
 from app.helpers.fold_storage_manager import FoldStorageManager
+from app.helpers.jobs_util import (
+    mark_invokation_failed_if_stale,
+    mark_invokations_failed_if_stale,
+)
 from app.helpers.rq_helpers import get_queue
 from app.jobs import esm_jobs, other_jobs
 from app.models import Dock, Fold, Invokation, User
@@ -223,7 +227,10 @@ class FoldResource(Resource):
 
         manager = FoldStorageManager()
         manager.setup()
-        return manager.get_fold_with_state(fold_id, only_public)
+        fold = manager.get_fold_with_state(fold_id, only_public)
+        if mark_invokations_failed_if_stale(fold.jobs):
+            db.session.commit()
+        return fold
 
     @ns.expect(fold_fields, validate=False)
     @verify_has_edit_access
@@ -252,7 +259,10 @@ class FoldResource(Resource):
 class InvokationLogsResource(Resource):
     @ns.marshal_with(full_invokation_fields)
     def get(self, invokation_id):
-        return Invokation.get_by_id(invokation_id)
+        invokation = Invokation.get_by_id(invokation_id)
+        if invokation and mark_invokation_failed_if_stale(invokation):
+            db.session.commit()
+        return invokation
 
 
 def convert_array_to_json_string(table: np.ndarray) -> str:

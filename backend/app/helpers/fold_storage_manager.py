@@ -63,7 +63,8 @@ class LocalBlob:
         """
         return os.path.exists(self.file_path)
 
-    def size(self):
+    @property
+    def size(self) -> int:
         """
         Returns the size of the file in bytes.
 

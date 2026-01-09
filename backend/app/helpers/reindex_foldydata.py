@@ -182,7 +182,9 @@ def reset_postgres_sequence(table: str, column: str = "id") -> None:
             COALESCE((SELECT MAX(id) FROM {table}), 1),
             (SELECT MAX(id) FROM {table}) IS NOT NULL
         )
-        """.format(table=table)
+        """.format(
+            table=table
+        )
     )
     db.session.execute(sql, {"table": table, "column": column})
 
@@ -234,9 +236,7 @@ def create_invokation(fold_id: int, run_type: str, run_time: datetime) -> Invoka
     return invokation
 
 
-def create_embedding_records(
-    fold: Fold, fold_dir: Path, dry_run: bool
-) -> Tuple[int, int]:
+def create_embedding_records(fold: Fold, fold_dir: Path, dry_run: bool) -> Tuple[int, int]:
     """Create embedding records from output CSVs."""
     created = 0
     skipped = 0
@@ -251,9 +251,7 @@ def create_embedding_records(
             continue
         embedding_model, name = parsed
         output_fpath = f"embed/{csv_path.name}"
-        existing = (
-            Embedding.query.filter_by(fold_id=fold.id, output_fpath=output_fpath).first()
-        )
+        existing = Embedding.query.filter_by(fold_id=fold.id, output_fpath=output_fpath).first()
         if existing:
             skipped += 1
             continue
@@ -292,9 +290,7 @@ def create_naturalness_records(
     for csv_path in sorted(naturalness_dir.glob("naturalness_*_melted.csv")):
         name = csv_path.name[len("naturalness_") : -len("_melted.csv")]
         output_fpath = f"naturalness/{csv_path.name}"
-        existing = (
-            Naturalness.query.filter_by(fold_id=fold.id, output_fpath=output_fpath).first()
-        )
+        existing = Naturalness.query.filter_by(fold_id=fold.id, output_fpath=output_fpath).first()
         if existing:
             skipped += 1
             continue
@@ -354,9 +350,7 @@ def reindex_foldydata(
                 f"[dry-run] Would create fold {fold_inputs.fold_id} ({name}) for {user.email}."
             )
             if include_runs:
-                create_embedding_records(
-                    Fold(id=fold_inputs.fold_id), fold_dir, dry_run=True
-                )
+                create_embedding_records(Fold(id=fold_inputs.fold_id), fold_dir, dry_run=True)
                 create_naturalness_records(
                     Fold(id=fold_inputs.fold_id),
                     fold_dir,

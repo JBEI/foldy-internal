@@ -235,6 +235,9 @@ class FoldyESMCClient(FoldyPLMClient):
         self.client = model
         self.device = device
 
+    def supports_batch_embedding(self) -> bool:
+        return True
+
     def _get_esm_protein_tensor_for_sequence(
         self, sequence: str, cif_file_path: Optional[str] = None
     ) -> Any:  # -> torch.Tensor (use Any to avoid torch import)
@@ -382,6 +385,90 @@ class FoldyESMCClient(FoldyPLMClient):
 
         return embeddings
 
+    def embed_batch(
+        self,
+        sequences: List[str],
+        cif_file_path: Optional[str] = None,
+        extra_layers: List[int] = [],
+        domain_boundaries: List[int] = [],
+        use_msa_context: bool = False,
+        msa_a3m_path: Optional[str] = None,
+    ) -> List[List[List[float]]]:
+        """
+        Get embeddings for a batch of protein sequences.
+
+        Returns:
+            A list of embedding lists (one per input sequence).
+        """
+        import torch
+        from esm.sdk.api import LogitsConfig
+        from esm.utils.sampling import _BatchedESMProteinTensor
+
+        if use_msa_context:
+            raise ValueError("MSA context is only supported for E1 models")
+        if cif_file_path:
+            raise ValueError("ESM-C does not support CIF or PDB-based embeddings")
+        if not sequences:
+            return []
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+        batch_tokens = None
+        logits_output = None
+        protein_tensor = None
+        embeddings: List[List[List[float]]] = []
+
+        try:
+            batch_tokens = self.client._tokenize(sequences)
+            pad_token_id = self.client.tokenizer.pad_token_id
+            if pad_token_id is None:
+                raise ValueError("ESM-C tokenizer is missing pad_token_id")
+            batch_lens = (batch_tokens != pad_token_id).sum(dim=1)
+
+            protein_tensor = _BatchedESMProteinTensor(sequence=batch_tokens)
+            with torch.no_grad():
+                logits_output = self.client.logits(
+                    protein_tensor,
+                    LogitsConfig(
+                        sequence=False,
+                        return_embeddings=True,
+                        return_hidden_states=True if len(extra_layers) > 0 else False,
+                    ),
+                )
+
+            hidden_states = logits_output.hidden_states if extra_layers else None
+            for idx, seq_len in enumerate(batch_lens):
+                seq_len_int = int(seq_len.item())
+                seq_embeddings: List[List[float]] = []
+                if extra_layers and hidden_states is not None:
+                    for extra_layer_idx in extra_layers:
+                        layer_hidden = hidden_states[extra_layer_idx][
+                            idx : idx + 1, :seq_len_int, :
+                        ]
+                        layer_embedding = self._pool_by_domains(
+                            layer_hidden, domain_boundaries
+                        ).squeeze(0)
+                        seq_embeddings.append(layer_embedding.detach().cpu().tolist())
+
+                final_hidden = logits_output.embeddings[idx : idx + 1, :seq_len_int, :]
+                final_embedding = self._pool_by_domains(final_hidden, domain_boundaries).squeeze(0)
+                seq_embeddings.append(final_embedding.detach().cpu().tolist())
+                embeddings.append(seq_embeddings)
+
+        finally:
+            if "logits_output" in locals() and logits_output is not None:
+                recursive_cleanup(logits_output)
+
+            if "protein_tensor" in locals() and protein_tensor is not None:
+                recursive_cleanup(protein_tensor)
+
+            for local_var in ["logits_output", "protein_tensor", "batch_tokens"]:
+                if local_var in locals() and locals()[local_var] is not None:
+                    del locals()[local_var]
+
+        return embeddings
+
     def get_logits(
         self,
         sequence_or_complex: SequenceOrComplexType,
@@ -522,6 +609,103 @@ class FoldyESM3Client(FoldyPLMClient):
             protein = ESMProtein.from_protein_complex(protein_complex)
 
         return self.client.encode(protein)
+
+    def supports_batch_embedding(self) -> bool:
+        return True
+
+    def embed_batch(
+        self,
+        sequences: List[str],
+        cif_file_path: Optional[str] = None,
+        extra_layers: List[int] = [],
+        domain_boundaries: List[int] = [],
+        use_msa_context: bool = False,
+        msa_a3m_path: Optional[str] = None,
+    ) -> List[List[List[float]]]:
+        """
+        Get embeddings for a batch of protein sequences.
+
+        Returns:
+            A list of embedding lists (one per input sequence).
+        """
+        import torch
+        from esm.sdk.api import LogitsConfig
+        from esm.utils import encoding
+        from esm.utils.misc import stack_variable_length_tensors
+        from esm.utils.sampling import _BatchedESMProteinTensor
+
+        if use_msa_context:
+            raise ValueError("MSA context is only supported for E1 models")
+        if cif_file_path:
+            raise ValueError("ESM-3 batch embedding does not support CIF or PDB inputs")
+        if not sequences:
+            return []
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+        batch_tokens = None
+        logits_output = None
+        protein_tensor = None
+        embeddings: List[List[List[float]]] = []
+
+        try:
+            sequence_tokenizer = self.client.tokenizers.sequence
+            pad_token_id = sequence_tokenizer.pad_token_id
+            if pad_token_id is None:
+                raise ValueError("ESM-3 sequence tokenizer is missing pad_token_id")
+
+            token_sequences = [
+                encoding.tokenize_sequence(sequence, sequence_tokenizer, add_special_tokens=True)
+                for sequence in sequences
+            ]
+            batch_tokens = stack_variable_length_tensors(
+                token_sequences, constant_value=pad_token_id
+            ).to(self.device)
+            batch_lens = (batch_tokens != pad_token_id).sum(dim=1)
+
+            protein_tensor = _BatchedESMProteinTensor(sequence=batch_tokens)
+            with torch.no_grad():
+                logits_output = self.client.logits(
+                    protein_tensor,
+                    LogitsConfig(
+                        sequence=False,
+                        return_embeddings=True,
+                        return_hidden_states=True if len(extra_layers) > 0 else False,
+                    ),
+                )
+
+            hidden_states = logits_output.hidden_states if extra_layers else None
+            for idx, seq_len in enumerate(batch_lens):
+                seq_len_int = int(seq_len.item())
+                seq_embeddings: List[List[float]] = []
+                if extra_layers and hidden_states is not None:
+                    for extra_layer_idx in extra_layers:
+                        layer_hidden = hidden_states[extra_layer_idx][
+                            idx : idx + 1, :seq_len_int, :
+                        ]
+                        layer_embedding = self._pool_by_domains(
+                            layer_hidden, domain_boundaries
+                        ).squeeze(0)
+                        seq_embeddings.append(layer_embedding.detach().cpu().tolist())
+
+                final_hidden = logits_output.embeddings[idx : idx + 1, :seq_len_int, :]
+                final_embedding = self._pool_by_domains(final_hidden, domain_boundaries).squeeze(0)
+                seq_embeddings.append(final_embedding.detach().cpu().tolist())
+                embeddings.append(seq_embeddings)
+
+        finally:
+            if "logits_output" in locals() and logits_output is not None:
+                recursive_cleanup(logits_output)
+
+            if "protein_tensor" in locals() and protein_tensor is not None:
+                recursive_cleanup(protein_tensor)
+
+            for local_var in ["logits_output", "protein_tensor", "batch_tokens"]:
+                if local_var in locals() and locals()[local_var] is not None:
+                    del locals()[local_var]
+
+        return embeddings
 
     # Implementation similar to ESMCClient - reuse these methods
     embed = FoldyESMCClient.embed
