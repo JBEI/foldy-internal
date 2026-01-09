@@ -8,21 +8,26 @@ import sys
 import tempfile
 import time
 import traceback
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
-from contextlib import nullcontext
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from Bio import SeqIO
 from flask import current_app
 from werkzeug.exceptions import BadRequest
 
+if TYPE_CHECKING:
+    import torch
+
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.esm_client import FoldyPLMClient
 from app.helpers.esm_util import (
-    get_naturalness,
+    MSA_A3M_STORAGE_PATH,
     MSA_CONTEXT_STORAGE_PATH,
+    get_naturalness,
     normalize_msa_a3m_contents,
     validate_msa_a3m_contents,
 )
@@ -100,10 +105,37 @@ def has_stored_msa_context(storage_manager, fold_id: int) -> bool:
         return False
 
 
+def has_stored_msa_a3m(storage_manager, fold_id: int) -> bool:
+    if storage_manager is None:
+        return False
+    try:
+        storage_manager.get_blob(fold_id, MSA_A3M_STORAGE_PATH)
+        return True
+    except Exception:
+        return False
+
+
 def stored_msa_context_exists(fold_id: int) -> bool:
     fsm = FoldStorageManager()
     fsm.setup()
     return has_stored_msa_context(fsm.storage_manager, fold_id)
+
+
+def stored_msa_a3m_exists(fold_id: int) -> bool:
+    fsm = FoldStorageManager()
+    fsm.setup()
+    return has_stored_msa_a3m(fsm.storage_manager, fold_id)
+
+
+def load_stored_msa_a3m(storage_manager, fold_id: int) -> str | None:
+    if storage_manager is None:
+        return None
+    try:
+        stored_msa = storage_manager.get_binary(fold_id, MSA_A3M_STORAGE_PATH)
+        return stored_msa.decode()
+    except Exception as exc:
+        logging.info("No stored MSA A3M found at %s: %s", MSA_A3M_STORAGE_PATH, exc)
+        return None
 
 
 def load_or_sample_msa_context(
@@ -112,10 +144,11 @@ def load_or_sample_msa_context(
     msa_a3m_path: str | None,
     device: "torch.device",
 ) -> str:
+    storage_manager = fsm.storage_manager
+    if storage_manager is None:
+        raise RuntimeError("Storage manager is not initialized.")
     try:
-        stored_context = fsm.storage_manager.get_binary(  # type: ignore[union-attr]
-            fold_id, MSA_CONTEXT_STORAGE_PATH
-        )
+        stored_context = storage_manager.get_binary(fold_id, MSA_CONTEXT_STORAGE_PATH)
         context = stored_context.decode()
         if context.strip():
             if msa_a3m_path:
@@ -133,6 +166,7 @@ def load_or_sample_msa_context(
         raise BadRequest("msa_a3m is required when use_msa_context=true.")
 
     import random
+
     from E1.msa_sampling import ContextSpecification, sample_context
 
     context_spec = ContextSpecification()
@@ -149,7 +183,7 @@ def load_or_sample_msa_context(
     )
     if not context:
         raise ValueError("MSA context sampling returned no context sequences")
-    fsm.storage_manager.write_file(fold_id, MSA_CONTEXT_STORAGE_PATH, context)  # type: ignore[union-attr]
+    storage_manager.write_file(fold_id, MSA_CONTEXT_STORAGE_PATH, context)
     logging.info(
         "Stored MSA context at %s (sampled %d sequences)",
         MSA_CONTEXT_STORAGE_PATH,
@@ -187,6 +221,9 @@ def get_esm_embeddings(
 
         fsm = FoldStorageManager()
         fsm.setup()
+        storage_manager = fsm.storage_manager
+        if storage_manager is None:
+            raise RuntimeError("Storage manager is not initialized.")
 
         dms_starting_seq_ids = (
             embed_record.dms_starting_seq_ids.split(",")
@@ -222,13 +259,17 @@ def get_esm_embeddings(
             )
         wt_aa_seq = boltz_yaml_helper.get_protein_sequences()[0][1]
 
+        stored_context_exists = False
+        stored_a3m_exists = False
         if use_msa_context:
+            stored_context_exists = has_stored_msa_context(storage_manager, fold.id)
+            stored_a3m_exists = has_stored_msa_a3m(storage_manager, fold.id)
             if not embedding_model.startswith("e1_"):
                 raise BadRequest("MSA context is only supported for E1 embedding models.")
             if msa_a3m:
                 msa_a3m = normalize_msa_a3m_contents(msa_a3m, wt_aa_seq)
                 validate_msa_a3m_contents(msa_a3m, wt_aa_seq)
-            elif not has_stored_msa_context(fsm.storage_manager, fold.id):
+            elif not (stored_context_exists or stored_a3m_exists):
                 raise BadRequest("msa_a3m is required when use_msa_context=true.")
 
         homolog_id_to_seq_map = load_fasta_to_dict(homolog_fasta)
@@ -295,46 +336,102 @@ def get_esm_embeddings(
                 logging.debug("Could not read CUDA memory utilization: %s", exc)
                 return None
 
-        msa_a3m_storage_path = None
-        if use_msa_context and msa_a3m:
-            msa_a3m_storage_path = (
-                f"embed/{embed_id}_embeddings_{embedding_model}_{fold.id}_msa.a3m"
-            )
-            fsm.storage_manager.write_file(fold.id, msa_a3m_storage_path, msa_a3m)
-            embed_record.msa_a3m_path = msa_a3m_storage_path
-            embed_record.save()
+        def reset_cuda_peak_memory_stats() -> bool:
+            try:
+                import torch
+
+                if not torch.cuda.is_available():
+                    return False
+                torch.cuda.reset_peak_memory_stats()
+                return True
+            except Exception as exc:
+                logging.debug("Could not reset CUDA peak memory stats: %s", exc)
+                return False
+
+        def get_cuda_peak_memory_ratio() -> float | None:
+            try:
+                import torch
+
+                if not torch.cuda.is_available():
+                    return None
+                torch.cuda.synchronize()
+                total_bytes = torch.cuda.get_device_properties(
+                    torch.cuda.current_device()
+                ).total_memory
+                if total_bytes <= 0:
+                    return None
+                peak_reserved = torch.cuda.max_memory_reserved()
+                peak_allocated = torch.cuda.max_memory_allocated()
+                peak_bytes = max(peak_reserved, peak_allocated)
+                if peak_bytes <= 0:
+                    return None
+                return peak_bytes / total_bytes
+            except Exception as exc:
+                logging.debug("Could not read CUDA peak memory utilization: %s", exc)
+                return None
+
+        if use_msa_context:
+            if msa_a3m:
+                storage_manager.write_file(fold.id, MSA_A3M_STORAGE_PATH, msa_a3m)
+                embed_record.msa_a3m_path = MSA_A3M_STORAGE_PATH
+                embed_record.save()
+                stored_a3m_exists = True
+            elif stored_a3m_exists and embed_record.msa_a3m_path != MSA_A3M_STORAGE_PATH:
+                embed_record.msa_a3m_path = MSA_A3M_STORAGE_PATH
+                embed_record.save()
 
         dynamic_batching = gpu_available and foldy_esm_client.supports_batch_embedding()
         target_gpu_util = os.environ.get("FOLDY_EMBED_TARGET_GPU_UTIL", "0.4")
+        vram_limit_env = os.environ.get("FOLDY_EMBED_VRAM_LIMIT", "0.9")
         max_batch_size = os.environ.get("FOLDY_EMBED_MAX_BATCH", "1024")
         try:
             target_gpu_utilization = float(target_gpu_util)
         except ValueError:
             target_gpu_utilization = 0.9
         try:
+            vram_utilization_cap = float(vram_limit_env)
+        except ValueError:
+            vram_utilization_cap = 0.9
+        try:
             max_batch_size_int = int(max_batch_size)
         except ValueError:
             max_batch_size_int = 1024
         target_gpu_utilization = min(max(target_gpu_utilization, 0.1), 0.98)
+        vram_utilization_cap = min(max(vram_utilization_cap, 0.1), 0.98)
         max_batch_size_int = max(1, max_batch_size_int)
+        configured_max_batch_size = max_batch_size_int
         if not dynamic_batching:
             max_batch_size_int = 1
         if dynamic_batching:
+            if target_gpu_utilization > vram_utilization_cap:
+                logging.info(
+                    "Clamping target GPU utilization %.2f to VRAM limit %.2f",
+                    target_gpu_utilization,
+                    vram_utilization_cap,
+                )
+                target_gpu_utilization = vram_utilization_cap
             logging.info(
-                "Adaptive embedding batch size enabled (target_gpu_util=%.2f, max_batch=%d)",
+                "Adaptive embedding batch size enabled (target_gpu_util=%.2f, vram_limit=%.2f, max_batch=%d)",
                 target_gpu_utilization,
+                vram_utilization_cap,
                 max_batch_size_int,
             )
 
-        length_aware = (
-            dynamic_batching and os.environ.get("FOLDY_EMBED_LENGTH_AWARE", "1") != "0"
-        )
+        length_aware = dynamic_batching and os.environ.get("FOLDY_EMBED_LENGTH_AWARE", "1") != "0"
         length_bucket_env = os.environ.get("FOLDY_EMBED_LEN_BUCKET", "64")
         try:
             length_bucket_size = int(length_bucket_env)
         except ValueError:
             length_bucket_size = 64
         length_bucket_size = max(1, length_bucket_size)
+
+        def estimate_safe_batch_cap(current_batch_size: int, peak_ratio: float) -> int:
+            if current_batch_size <= 0 or peak_ratio <= 0:
+                return configured_max_batch_size
+            per_item_ratio = peak_ratio / current_batch_size
+            if per_item_ratio <= 0:
+                return configured_max_batch_size
+            return max(1, int(vram_utilization_cap / per_item_ratio))
 
         total_sequences = len(dms_seq_ids)
         sequence_order = list(range(total_sequences))
@@ -345,16 +442,20 @@ def get_esm_embeddings(
             sequence_order.sort(key=lambda idx: (seq_lengths[idx], idx))
             logging.info("Length-aware batching enabled (len_bucket=%d)", length_bucket_size)
 
-        embedding_dicts = [None] * total_sequences
+        embedding_dicts: list[dict[str, str] | None] = [None] * total_sequences
 
         temp_dir_context = tempfile.TemporaryDirectory() if use_msa_context else nullcontext()
         with temp_dir_context as temp_dir:
             msa_a3m_temp_path = None
             if use_msa_context:
-                if msa_a3m:
+                assert temp_dir is not None
+                msa_a3m_contents = msa_a3m
+                if msa_a3m_contents is None and not stored_context_exists and stored_a3m_exists:
+                    msa_a3m_contents = load_stored_msa_a3m(storage_manager, fold.id)
+                if msa_a3m_contents:
                     msa_a3m_temp_path = os.path.join(temp_dir, "msa.a3m")
                     with open(msa_a3m_temp_path, "w") as msa_file:
-                        msa_file.write(msa_a3m)
+                        msa_file.write(msa_a3m_contents)
 
                 import torch
 
@@ -373,9 +474,10 @@ def get_esm_embeddings(
             next_progress_log = 0
             next_memory_log = 0
             batch_size = 1
-            progress_log_interval = 10 if use_msa_context else 100
+            progress_log_interval = 100
             last_progress_log_time = None
             last_progress_log_count = None
+            recent_progress_samples: list[tuple[float, int]] = []
             current_bucket = None
             bucket_end = total_sequences
 
@@ -401,12 +503,15 @@ def get_esm_embeddings(
                 else:
                     bucket_end = total_sequences
 
-                current_batch_size = min(
-                    batch_size, max_batch_size_int, bucket_end - processed
-                )
+                current_batch_size = min(batch_size, max_batch_size_int, bucket_end - processed)
                 batch_indices = sequence_order[processed : processed + current_batch_size]
                 batch_seq_ids = [dms_seq_ids[idx] for idx in batch_indices]
                 batch_sequences = [resolve_sequence(seq_id) for seq_id in batch_seq_ids]
+
+                peak_memory_ratio = None
+                peak_stats_enabled = False
+                if dynamic_batching:
+                    peak_stats_enabled = reset_cuda_peak_memory_stats()
 
                 try:
                     batch_embeddings = foldy_esm_client.embed_batch(
@@ -426,15 +531,35 @@ def get_esm_embeddings(
                         )
                         clean_up_torch_memory()
                         batch_size = max(1, current_batch_size // 2)
+                        if batch_size < max_batch_size_int:
+                            max_batch_size_int = batch_size
+                            logging.info(
+                                "Capping embedding batch size to %d after OOM.",
+                                max_batch_size_int,
+                            )
                         continue
                     raise
+
+                if peak_stats_enabled:
+                    peak_memory_ratio = get_cuda_peak_memory_ratio()
+                    if peak_memory_ratio is not None:
+                        safe_batch_cap = min(
+                            max_batch_size_int,
+                            estimate_safe_batch_cap(current_batch_size, peak_memory_ratio),
+                        )
+                        if safe_batch_cap < max_batch_size_int:
+                            max_batch_size_int = safe_batch_cap
+                            logging.info(
+                                "Capping embedding batch size to %d based on peak_vram_ratio=%.2f (limit=%.2f).",
+                                max_batch_size_int,
+                                peak_memory_ratio,
+                                vram_utilization_cap,
+                            )
 
                 for idx, seq_id, sequence, embedding_list in zip(
                     batch_indices, batch_seq_ids, batch_sequences, batch_embeddings
                 ):
-                    embedding_dicts[idx] = build_embedding_dict(
-                        seq_id, sequence, embedding_list
-                    )
+                    embedding_dicts[idx] = build_embedding_dict(seq_id, sequence, embedding_list)
 
                 processed += current_batch_size
 
@@ -449,10 +574,19 @@ def get_esm_embeddings(
                     ):
                         elapsed = now - last_progress_log_time
                         delta_count = log_count - last_progress_log_count
-                        if elapsed > 0:
+                        if elapsed > 0 and delta_count > 0:
+                            recent_progress_samples.append((elapsed, delta_count))
+                            if len(recent_progress_samples) > 3:
+                                recent_progress_samples.pop(0)
+                            total_elapsed = sum(sample[0] for sample in recent_progress_samples)
+                            total_count = sum(sample[1] for sample in recent_progress_samples)
+                            avg_seconds_per_item = (
+                                total_elapsed / total_count if total_count > 0 else None
+                            )
                             remaining = total_sequences - log_count
-                            eta_seconds = remaining * (elapsed / delta_count)
-                            eta_text = str(timedelta(seconds=int(max(0, eta_seconds))))
+                            if avg_seconds_per_item is not None:
+                                eta_seconds = remaining * avg_seconds_per_item
+                                eta_text = str(timedelta(seconds=int(max(0, eta_seconds))))
                     if eta_text:
                         logging.info(
                             "Finished embedding %d/%d (ETA %s)",
@@ -472,27 +606,29 @@ def get_esm_embeddings(
                     next_memory_log += 2000
 
                 if dynamic_batching:
-                    memory_ratio = get_cuda_memory_ratio()
+                    memory_ratio_source = "peak"
+                    memory_ratio = peak_memory_ratio
+                    if memory_ratio is None:
+                        memory_ratio_source = "current"
+                        memory_ratio = get_cuda_memory_ratio()
                     if memory_ratio is not None:
                         next_batch_size = current_batch_size
                         if (
                             memory_ratio < target_gpu_utilization * 0.9
                             and current_batch_size < max_batch_size_int
                         ):
-                            next_batch_size = min(
-                                max_batch_size_int, current_batch_size * 2
-                            )
+                            next_batch_size = min(max_batch_size_int, current_batch_size * 2)
                         elif (
-                            memory_ratio > target_gpu_utilization * 1.05
-                            and current_batch_size > 1
+                            memory_ratio > target_gpu_utilization * 1.05 and current_batch_size > 1
                         ):
                             next_batch_size = max(1, current_batch_size // 2)
                         if next_batch_size != current_batch_size:
                             logging.info(
-                                "Adjusting embedding batch size %d -> %d (gpu_mem_ratio=%.2f)",
+                                "Adjusting embedding batch size %d -> %d (gpu_mem_ratio=%.2f, source=%s)",
                                 current_batch_size,
                                 next_batch_size,
                                 memory_ratio,
+                                memory_ratio_source,
                             )
                         batch_size = next_batch_size
                     else:
@@ -514,13 +650,13 @@ def get_esm_embeddings(
         embedding_path = f"embed/{padded_fold_id}_embeddings_{embedding_model}_{embed_name}.csv"
 
         logging.info(f"Saving output to {embedding_path}")
-        fsm.storage_manager.write_file(fold.id, embedding_path, embedding_csv_string)
+        storage_manager.write_file(fold.id, embedding_path, embedding_csv_string)
 
         # Try writing homolog_fasta to file.
         if homolog_fasta:
             try:
                 homolog_fasta_path = f"embed/{padded_fold_id}_embeddings_{embedding_model}_{embed_name}_homologs.fasta"
-                fsm.storage_manager.write_file(fold.id, homolog_fasta_path, homolog_fasta)
+                storage_manager.write_file(fold.id, homolog_fasta_path, homolog_fasta)
             except Exception as e:
                 logging.error(f"Error writing homolog fasta to file: {e}")
 
@@ -557,6 +693,10 @@ def get_esm_naturalness(naturalness_id: int, msa_a3m: str | None = None):
 
         fsm = FoldStorageManager()
         fsm.setup()
+        storage_manager = fsm.storage_manager
+        if storage_manager is None:
+            raise RuntimeError("Storage manager is not initialized.")
+        gpu_available = get_torch_cuda_is_available_and_add_logs(logging.info)
 
         # 3. Validate seq_ids.
         if not fold.yaml_config:
@@ -570,35 +710,43 @@ def get_esm_naturalness(naturalness_id: int, msa_a3m: str | None = None):
             )
         wt_aa_seq = boltz_yaml_helper.get_protein_sequences()[0][1]
 
+        stored_context_exists = False
+        stored_a3m_exists = False
         if use_msa_context:
+            stored_context_exists = has_stored_msa_context(storage_manager, fold.id)
+            stored_a3m_exists = has_stored_msa_a3m(storage_manager, fold.id)
             if not naturalness_model.startswith("e1_"):
                 raise BadRequest("MSA context is only supported for E1 naturalness models.")
             if msa_a3m:
                 msa_a3m = normalize_msa_a3m_contents(msa_a3m, wt_aa_seq)
                 validate_msa_a3m_contents(msa_a3m, wt_aa_seq)
-            elif not has_stored_msa_context(fsm.storage_manager, fold.id):
+            elif not (stored_context_exists or stored_a3m_exists):
                 raise BadRequest("msa_a3m is required when use_msa_context=true.")
 
         protein_input = wt_aa_seq
 
         get_depth_two_logits = naturalness_record.get_depth_two_logits or False
 
-        msa_a3m_storage_path = None
-        if use_msa_context and msa_a3m:
-            msa_a3m_storage_path = (
-                f"naturalness/{naturalness_id}_naturalness_{fold.id}_msa.a3m"
-            )
-            fsm.storage_manager.write_file(fold.id, msa_a3m_storage_path, msa_a3m)
-            naturalness_record.msa_a3m_path = msa_a3m_storage_path
-            naturalness_record.save()
+        if use_msa_context:
+            if msa_a3m:
+                storage_manager.write_file(fold.id, MSA_A3M_STORAGE_PATH, msa_a3m)
+                naturalness_record.msa_a3m_path = MSA_A3M_STORAGE_PATH
+                naturalness_record.save()
+                stored_a3m_exists = True
+            elif stored_a3m_exists and naturalness_record.msa_a3m_path != MSA_A3M_STORAGE_PATH:
+                naturalness_record.msa_a3m_path = MSA_A3M_STORAGE_PATH
+                naturalness_record.save()
 
         with tempfile.TemporaryDirectory() as temp_dir:
             msa_a3m_temp_path = None
             if use_msa_context:
-                if msa_a3m:
+                msa_a3m_contents = msa_a3m
+                if msa_a3m_contents is None and not stored_context_exists and stored_a3m_exists:
+                    msa_a3m_contents = load_stored_msa_a3m(storage_manager, fold.id)
+                if msa_a3m_contents:
                     msa_a3m_temp_path = os.path.join(temp_dir, "msa.a3m")
                     with open(msa_a3m_temp_path, "w") as msa_file:
-                        msa_file.write(msa_a3m)
+                        msa_file.write(msa_a3m_contents)
 
                 import torch
 
@@ -613,7 +761,7 @@ def get_esm_naturalness(naturalness_id: int, msa_a3m: str | None = None):
                     msa_file.write(msa_context_contents)
                 msa_a3m_temp_path = msa_context_temp_path
             if naturalness_record.use_structure:
-                pdb_binary = fsm.storage_manager.get_binary(fold.id, "ranked_0.cif")
+                pdb_binary = storage_manager.get_binary(fold.id, "ranked_0.cif")
                 with open(os.path.join(temp_dir, "ranked_0.cif"), "wb") as f:
                     f.write(pdb_binary)
                 cif_file_path = os.path.join(temp_dir, "ranked_0.cif")
@@ -656,8 +804,8 @@ def get_esm_naturalness(naturalness_id: int, msa_a3m: str | None = None):
         logits_path = f"naturalness/naturalness_{naturalness_name}.json"
         melted_path = f"naturalness/naturalness_{naturalness_name}_melted.csv"
 
-        fsm.storage_manager.write_file(fold.id, logits_path, logits_json)
-        fsm.storage_manager.write_file(fold.id, melted_path, melted_csv_string)
+        storage_manager.write_file(fold.id, logits_path, logits_json)
+        storage_manager.write_file(fold.id, melted_path, melted_csv_string)
 
         # Update the naturalness record with the output file path
         naturalness_record.output_fpath = melted_path
@@ -698,12 +846,15 @@ def finetune_esm_model(few_shot_id: int):
 
         fsm = FoldStorageManager()
         fsm.setup()
+        storage_manager = fsm.storage_manager
+        if storage_manager is None:
+            raise RuntimeError("Storage manager is not initialized.")
 
         # 1. Get the activity file.
         few_shot_directory = Path("few_shots") / few_shot.name
         activity_file_path = few_shot_directory / "activity.xlsx"
         logging.info(f"Getting the activity file {activity_file_path}")
-        activity_file = fsm.storage_manager.get_binary(few_shot.fold_id, str(activity_file_path))
+        activity_file = storage_manager.get_binary(few_shot.fold_id, str(activity_file_path))
         raw_activity_df = pd.read_excel(BytesIO(activity_file))
 
         # 3. Process the activity and embedding data.
@@ -794,11 +945,11 @@ def finetune_esm_model(few_shot_id: int):
             logging.info(f"Saving tokenizer and model to {model_dir}")
             tokenizer.save_pretrained(str(Path(temp_dir) / "tokenizer"))
             model.save_pretrained(str(Path(temp_dir) / "model"))
-            fsm.storage_manager.upload_folder(fold.id, temp_dir, model_dir)
+            storage_manager.upload_folder(fold.id, temp_dir, model_dir)
 
         # Save training history
         history_json = json.dumps(history)
-        fsm.storage_manager.write_file(fold.id, f"{model_dir}/history.json", history_json)
+        storage_manager.write_file(fold.id, f"{model_dir}/history.json", history_json)
 
         # Get all sequences to score
         logging.info(f"Getting all sequences to score")
@@ -810,6 +961,6 @@ def finetune_esm_model(few_shot_id: int):
         scores_fpath = f"few_shots/{few_shot.name}/scores.csv"
         logging.info(f"Saving scores to {scores_fpath}")
         scores_csv = scores_df.to_csv(index=False)
-        fsm.storage_manager.write_file(fold.id, scores_fpath, scores_csv)
+        storage_manager.write_file(fold.id, scores_fpath, scores_csv)
 
         logging.info(f"Finished finetuning and scoring.")

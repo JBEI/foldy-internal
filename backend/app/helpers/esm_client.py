@@ -49,9 +49,12 @@ def recursive_cleanup(obj):
 
     elif isinstance(obj, (list, tuple)):
         # For lists/tuples
-        new_obj = type(obj)(
-            recursive_cleanup(item) for item in obj if recursive_cleanup(item) is not None
-        )
+        cleaned_items = []
+        for item in obj:
+            cleaned = recursive_cleanup(item)
+            if cleaned is not None:
+                cleaned_items.append(cleaned)
+        new_obj = type(obj)(cleaned_items)
         return new_obj if new_obj else None
 
     return obj  # Return object with cleaned up components
@@ -935,6 +938,7 @@ class FoldyE1Client(FoldyPLMClient):
             model_name: Name of the E1 model to load (e1_150m, e1_300m, e1_600m)
         """
         import os
+
         import torch
         from E1.batch_preparer import E1BatchPreparer
         from E1.modeling import E1ForMaskedLM
@@ -978,10 +982,13 @@ class FoldyE1Client(FoldyPLMClient):
 
         disabled = False
         try:
-            import torch._dynamo
+            import torch._dynamo as torch_dynamo
 
-            torch._dynamo.config.disable = True
-            torch._dynamo.config.suppress_errors = True
+            config = getattr(torch_dynamo, "config", None)
+            if config is None:
+                raise AttributeError("torch._dynamo.config is not available")
+            config.disable = True
+            config.suppress_errors = True
             disabled = True
         except Exception as exc:
             logging.warning("E1: failed to disable torch.compile: %s", exc)
@@ -1129,7 +1136,9 @@ class FoldyE1Client(FoldyPLMClient):
 
             # Get embeddings for residues in the last sequence only (exclude boundary tokens)
             boundary_token_mask = self.batch_preparer.get_boundary_token_mask(batch["input_ids"])
-            last_sequence_mask = batch["sequence_ids"] == batch["sequence_ids"].max(dim=1).values[:, None]
+            last_sequence_mask = (
+                batch["sequence_ids"] == batch["sequence_ids"].max(dim=1).values[:, None]
+            )
             residue_selector = last_sequence_mask & ~boundary_token_mask
             residue_embeddings = outputs.embeddings[0, residue_selector[0]].detach().cpu()
 
@@ -1188,7 +1197,9 @@ class FoldyE1Client(FoldyPLMClient):
             outputs = self._run_model(batch)
 
             boundary_token_mask = self.batch_preparer.get_boundary_token_mask(batch["input_ids"])
-            last_sequence_mask = batch["sequence_ids"] == batch["sequence_ids"].max(dim=1).values[:, None]
+            last_sequence_mask = (
+                batch["sequence_ids"] == batch["sequence_ids"].max(dim=1).values[:, None]
+            )
             residue_selector = last_sequence_mask & ~boundary_token_mask
 
             for idx in range(batch["input_ids"].shape[0]):
@@ -1247,7 +1258,9 @@ class FoldyE1Client(FoldyPLMClient):
 
         # Get logits for residues in the last sequence only (exclude boundary tokens)
         boundary_token_mask = self.batch_preparer.get_boundary_token_mask(batch["input_ids"])
-        last_sequence_mask = batch["sequence_ids"] == batch["sequence_ids"].max(dim=1).values[:, None]
+        last_sequence_mask = (
+            batch["sequence_ids"] == batch["sequence_ids"].max(dim=1).values[:, None]
+        )
         residue_selector = last_sequence_mask & ~boundary_token_mask
         residue_logits = outputs.logits[0, residue_selector[0]]
 

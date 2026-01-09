@@ -15,6 +15,7 @@ from app.helpers.sequence_util import (
 )
 
 MSA_CONTEXT_STORAGE_PATH = "msa_context/e1_context.txt"
+MSA_A3M_STORAGE_PATH = "msa_context/e1_msa.a3m"
 
 
 def _extract_first_msa_sequence(msa_a3m: str) -> str:
@@ -95,9 +96,7 @@ def validate_msa_a3m_contents(msa_a3m: str, wt_aa_seq: str) -> str:
     if not cleaned_sequence:
         raise BadRequest("msa_a3m query sequence is empty after cleaning")
     if cleaned_sequence != wt_aa_seq:
-        raise BadRequest(
-            "msa_a3m query sequence does not match the WT sequence from the fold YAML"
-        )
+        raise BadRequest("msa_a3m query sequence does not match the WT sequence from the fold YAML")
 
     return cleaned_sequence
 

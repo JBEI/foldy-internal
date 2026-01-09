@@ -157,14 +157,10 @@ def test_get_naturalness_depth_two_aggregates_base_sequences():
 
 def test_get_naturalness_passes_msa_context_args():
     mock_client = Mock()
-    mock_client.get_logits.return_value = pd.DataFrame(
-        {"seq_id": ["A1A"], "probability": [0.9]}
-    )
+    mock_client.get_logits.return_value = pd.DataFrame({"seq_id": ["A1A"], "probability": [0.9]})
 
     with patch("app.helpers.esm_client.FoldyPLMClient.get_client", return_value=mock_client):
-        get_naturalness(
-            "A", "esmc_mock_model", use_msa_context=True, msa_a3m_path="msa.a3m"
-        )
+        get_naturalness("A", "esmc_mock_model", use_msa_context=True, msa_a3m_path="msa.a3m")
 
     mock_client.get_logits.assert_called_once_with(
         "A", None, use_msa_context=True, msa_a3m_path="msa.a3m"

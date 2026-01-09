@@ -18,5 +18,6 @@
     "editor.detectIndentation": false,
     "docker.enableDockerComposeLanguageService": false,
     "cursor.general.disableHttp2": true,
+    "containers.enableComposeLanguageService": false,
 }
 // BasedPyright settings in vscode are ignored when using pyrightconfig.json is provided.

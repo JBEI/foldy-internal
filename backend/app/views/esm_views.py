@@ -122,7 +122,10 @@ class CalculateEmbeddingsResource(Resource):
             if msa_a3m:
                 msa_a3m = normalize_msa_a3m_contents(msa_a3m, wt_aa_seq)
                 validate_msa_a3m_contents(msa_a3m, wt_aa_seq)
-            elif not esm_jobs.stored_msa_context_exists(fold_id):
+            elif not (
+                esm_jobs.stored_msa_context_exists(fold_id)
+                or esm_jobs.stored_msa_a3m_exists(fold_id)
+            ):
                 raise BadRequest("msa_a3m is required when use_msa_context=true.")
 
         homolog_id_to_seq_map = esm_jobs.load_fasta_to_dict(homolog_fasta)
@@ -215,7 +218,10 @@ class StartNaturalnessResource(Resource):
             if msa_a3m:
                 msa_a3m = normalize_msa_a3m_contents(msa_a3m, wt_aa_seq)
                 validate_msa_a3m_contents(msa_a3m, wt_aa_seq)
-            elif not esm_jobs.stored_msa_context_exists(fold_id):
+            elif not (
+                esm_jobs.stored_msa_context_exists(fold_id)
+                or esm_jobs.stored_msa_a3m_exists(fold_id)
+            ):
                 raise BadRequest("msa_a3m is required when use_msa_context=true.")
 
         existing_naturalness = Naturalness.query.filter(
