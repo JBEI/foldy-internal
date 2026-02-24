@@ -553,6 +553,7 @@ class TestSimulateCampaign:
             "test_dms",
             model_config.embedding_model_id,
             model_config.naturalness_model_id,
+            skip_embedding_loading=False,
         )
 
         # Verify simulation function was called with expected parameters

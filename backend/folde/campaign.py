@@ -127,6 +127,7 @@ def _run_single_simulation(
     config: FolDEModelConfig,
     random_seed: int,
     wt_aa_seq: str,
+    pretrain_naturalness_df: pd.DataFrame | None = None,
     max_rounds: int = 10,
 ) -> SimulationResult:
     """Run a single campaign simulation.
@@ -152,6 +153,9 @@ def _run_single_simulation(
 
     assert entire_naturalness_df.index.equals(entire_activity_series.index)
     assert entire_naturalness_df.index.equals(entire_embedding_series.index)
+    if pretrain_naturalness_df is None:
+        pretrain_naturalness_df = entire_naturalness_df
+    assert pretrain_naturalness_df.index.equals(entire_embedding_series.index)
 
     whole_world_activity_series = entire_activity_series.loc[available_seq_ids]
     whole_world_naturalness_df = entire_naturalness_df.loc[pd.Index(available_seq_ids)]
@@ -172,10 +176,10 @@ def _run_single_simulation(
         return len(get_loci_set(seq_id)) == 1
 
     single_mutant_seq_ids = [
-        seq_id for seq_id in entire_naturalness_df.index if is_single_mutant_id(seq_id)
+        seq_id for seq_id in pretrain_naturalness_df.index if is_single_mutant_id(seq_id)
     ]
 
-    pretraining_naturalness_df = entire_naturalness_df.loc[pd.Index(single_mutant_seq_ids)]
+    pretraining_naturalness_df = pretrain_naturalness_df.loc[pd.Index(single_mutant_seq_ids)]
     pretraining_embedding_series = entire_embedding_series.loc[single_mutant_seq_ids]
     assert (
         not pretraining_naturalness_df.isna()
@@ -451,6 +455,7 @@ def simulate_campaign(
     max_rounds: int = 10,
     random_seed: int = 42,
     num_workers: int = 10,
+    skip_embedding_loading: bool = False,
 ) -> CampaignResult:
     """Simulate protein engineering campaigns with different model configurations.
 
@@ -462,6 +467,9 @@ def simulate_campaign(
         activity_column: Column in the dataset containing activity values
         max_rounds: Maximum number of rounds to simulate
         random_seed: Random seed for reproducibility
+        num_workers: Number of workers for parallel simulation.
+        skip_embedding_loading: Benchmark-only option to skip embedding loading for
+            naturalness/random-only configs.
 
     Returns:
         Dictionary containing simulation results for each configuration
@@ -487,20 +495,19 @@ def simulate_campaign(
 
     df_cache = {}
 
-    # Run simulations for each configuration
-    for config_idx, model_config in enumerate(config_list):
-        # Set random seed for reproducibility
-        logger.info(f"Running simulations for configuration {config_idx+1}/{len(config_list)}")
-        logger.info(f"Config: {model_config}")
-
-        # Load dataset for this configuration
-        cache_key = (model_config.embedding_model_id, model_config.naturalness_model_id)
+    def get_cached_dataset(
+        embedding_model_id: str,
+        naturalness_model_id: str,
+        skip_embeddings: bool,
+    ) -> tuple[str, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        cache_key = (embedding_model_id, naturalness_model_id, skip_embeddings)
         if cache_key not in df_cache:
             try:
                 df_cache[cache_key] = get_proteingym_dataset(
                     dms_id,
-                    model_config.embedding_model_id,
-                    model_config.naturalness_model_id,
+                    embedding_model_id,
+                    naturalness_model_id,
+                    skip_embedding_loading=skip_embeddings,
                 )
             except Exception as e:
                 logger.error(f"Error loading dataset: {e}")
@@ -508,15 +515,69 @@ def simulate_campaign(
 
                 print(traceback.format_exc(), flush=True)
                 raise e
-        wt_aa_seq, entire_naturalness_df, embedding_df, activity_df, category_df = df_cache[
-            cache_key
-        ]
+        return df_cache[cache_key]
+
+    # Run simulations for each configuration
+    for config_idx, model_config in enumerate(config_list):
+        # Set random seed for reproducibility
+        logger.info(f"Running simulations for configuration {config_idx+1}/{len(config_list)}")
+        logger.info(f"Config: {model_config}")
+
+        skip_embeddings_for_config = False
+        if skip_embedding_loading:
+            allowed_zero_shot = {"NaturalnessZeroShotModel", "RandomZeroShotModel"}
+            allowed_few_shot = {"NaturalnessFewShotModel", "RandomFewShotModel"}
+            if (
+                model_config.zero_shot_model_name in allowed_zero_shot
+                and model_config.few_shot_model_name in allowed_few_shot
+            ):
+                skip_embeddings_for_config = True
+                logger.info(
+                    "skip_embedding_loading is enabled; embeddings will be replaced with placeholders."
+                )
+            else:
+                logger.info(
+                    "skip_embedding_loading requested but config uses embedding-dependent "
+                    "models; loading embeddings for this config."
+                )
+
+        wt_aa_seq, entire_naturalness_df, embedding_df, activity_df, category_df = (
+            get_cached_dataset(
+                model_config.embedding_model_id,
+                model_config.naturalness_model_id,
+                skip_embeddings_for_config,
+            )
+        )
         naturalness_ensemble_df = entire_naturalness_df[
             (
                 ["log_wt_marginal"]
                 if model_config.naturalness_columns is None
                 else model_config.naturalness_columns
             )
+        ]
+
+        pretrain_naturalness_model_id = (
+            model_config.few_shot_pretrain_naturalness_model_id or model_config.naturalness_model_id
+        )
+        pretrain_naturalness_columns = (
+            model_config.few_shot_pretrain_naturalness_columns
+            if model_config.few_shot_pretrain_naturalness_columns is not None
+            else model_config.naturalness_columns
+        )
+        if pretrain_naturalness_columns is None:
+            pretrain_naturalness_columns = ["log_wt_marginal"]
+
+        if pretrain_naturalness_model_id == model_config.naturalness_model_id:
+            pretrain_base_naturalness_df = entire_naturalness_df
+        else:
+            _, pretrain_base_naturalness_df, _, _, _ = get_cached_dataset(
+                model_config.embedding_model_id,
+                pretrain_naturalness_model_id,
+                skip_embeddings_for_config,
+            )
+
+        pretrain_naturalness_ensemble_df = pretrain_base_naturalness_df[
+            pretrain_naturalness_columns
         ]
         embedding_series = embedding_df[
             "embedding" if model_config.embedding_column is None else model_config.embedding_column
@@ -537,57 +598,81 @@ def simulate_campaign(
         assert not np.isnan(campaign_result.median_activity)
         assert not np.isnan(campaign_result.max_activity)
 
-        single_model_campaign_results = None
-        print(
-            f"NUMBER OF WORKERS: {num_workers} NUMBER OF WORKERS: {num_workers} NUMBER OF WORKERS: {num_workers} NUMBER OF WORKERS: {num_workers}"
-        )
-        with ProcessPoolExecutor(max_workers=num_workers) as executor:
-            # with ThreadPoolExecutor() as executor:
-            futures = []
-            for sim_idx in range(number_of_simulations):
-                if model_config.data_split_mode:
-                    if not model_config.data_split_mode in category_df.columns:
-                        raise ValueError(
-                            f"Data split mode {model_config.data_split_mode} not found in category_df.columns: {category_df.columns}"
-                        )
-                    full_seq_id_list = list(
-                        category_df[category_df[model_config.data_split_mode]].index.values
-                    )
-                else:
-                    full_seq_id_list = list(
-                        activity_df[activity_df[activity_column].notna()].index.values
-                    )
-
-                world_size = int(len(full_seq_id_list) * 0.5)
-
-                if world_size < max_rounds * round_size:
+        sim_inputs: list[tuple[int, list[str], int]] = []
+        for sim_idx in range(number_of_simulations):
+            if model_config.data_split_mode:
+                if not model_config.data_split_mode in category_df.columns:
                     raise ValueError(
-                        f"World size {world_size} is less than max_rounds * round_size {max_rounds * round_size}"
+                        f"Data split mode {model_config.data_split_mode} not found in category_df.columns: {category_df.columns}"
                     )
-
-                rng = np.random.RandomState(random_seed + 1000 * sim_idx)
-                bootstrapped_seq_ids = rng.choice(
-                    full_seq_id_list,
-                    size=world_size,
-                    replace=False,
+                full_seq_id_list = list(
+                    category_df[category_df[model_config.data_split_mode]].index.values
+                )
+            else:
+                full_seq_id_list = list(
+                    activity_df[activity_df[activity_column].notna()].index.values
                 )
 
-                futures.append(
+            world_size = int(len(full_seq_id_list) * 0.5)
+
+            if world_size < max_rounds * round_size:
+                raise ValueError(
+                    f"World size {world_size} is less than max_rounds * round_size {max_rounds * round_size}"
+                )
+
+            rng = np.random.RandomState(random_seed + 1000 * sim_idx)
+            bootstrapped_seq_ids = rng.choice(
+                full_seq_id_list,
+                size=world_size,
+                replace=False,
+            )
+            sim_inputs.append(
+                (
+                    sim_idx,
+                    bootstrapped_seq_ids.tolist(),  # type: ignore
+                    random_seed + sim_idx,
+                )
+            )
+
+        if num_workers <= 1:
+            logger.info(f"Running simulations in-process (num_workers={num_workers}).")
+            single_model_campaign_results = [
+                run_single_sim_parallel(
+                    sim_idx,
+                    bootstrapped_seq_ids,
+                    activity_series,
+                    naturalness_ensemble_df,
+                    embedding_series,
+                    sim_random_seed=sim_random_seed,
+                    round_size=round_size,
+                    config=model_config,
+                    max_rounds=max_rounds,
+                    wt_aa_seq=wt_aa_seq,
+                    pretrain_naturalness_df=pretrain_naturalness_ensemble_df,
+                )
+                for sim_idx, bootstrapped_seq_ids, sim_random_seed in sim_inputs
+            ]
+        else:
+            logger.info(f"Running simulations with {num_workers} workers.")
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                futures = [
                     executor.submit(
                         run_single_sim_parallel,
                         sim_idx,
-                        bootstrapped_seq_ids.tolist(),  # type: ignore
+                        bootstrapped_seq_ids,
                         activity_series,
                         naturalness_ensemble_df,
                         embedding_series,
-                        sim_random_seed=random_seed + sim_idx,
+                        sim_random_seed=sim_random_seed,
                         round_size=round_size,
                         config=model_config,
                         max_rounds=max_rounds,
                         wt_aa_seq=wt_aa_seq,
+                        pretrain_naturalness_df=pretrain_naturalness_ensemble_df,
                     )
-                )
-            single_model_campaign_results = [f.result() for f in futures]
+                    for sim_idx, bootstrapped_seq_ids, sim_random_seed in sim_inputs
+                ]
+                single_model_campaign_results = [f.result() for f in futures]
 
         campaign_result.config_results.append(
             SingleConfigCampaignResult(

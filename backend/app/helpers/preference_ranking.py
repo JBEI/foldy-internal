@@ -16,6 +16,7 @@ but contributes to multiple preference pairs.
 """
 
 import logging
+import os
 import random
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -53,10 +54,11 @@ class PreferenceDataset(Dataset):
             embeddings: Array of shape (n_samples, embedding_dim) with embeddings for all samples
             activity_labels: Array of shape (n_samples,) with activity measurements for all samples
         """
-        self.embeddings: torch.Tensor = torch.tensor(embeddings, dtype=torch.float32, device=device)
-        self.activity_labels: torch.Tensor = torch.tensor(
-            activity_labels, dtype=torch.float32, device=device
-        )
+        # Keep full datasets on CPU and move only active batches to the target
+        # device. This avoids large persistent GPU allocations.
+        _ = device
+        self.embeddings: torch.Tensor = torch.as_tensor(embeddings, dtype=torch.float32)
+        self.activity_labels: torch.Tensor = torch.as_tensor(activity_labels, dtype=torch.float32)
         self.n_samples: int = len(embeddings)
 
     def __len__(self) -> int:
@@ -260,7 +262,8 @@ class PreferenceTrainer:
         self.random_state = random_state
 
         self.model = model.to(self.device)
-        self.scaler = GradScaler()  # Add this line
+        self.use_amp = self.device.startswith("cuda") and os.environ.get("FOLDE_DISABLE_AMP") != "1"
+        self.scaler = GradScaler(enabled=self.use_amp)
 
     def train(
         self,
@@ -348,7 +351,8 @@ class PreferenceTrainer:
             shuffle=shuffle_train_batches,
             drop_last=False,
             generator=g,
-            # Irrelevant for GPU-loaded datasets.
+            pin_memory=self.device.startswith("cuda"),
+            # Optional tuning knobs kept off for deterministic behavior.
             # persistent_workers=True,
             # num_workers=4,
             # pin_memory=True,
@@ -395,13 +399,13 @@ class PreferenceTrainer:
             num_batches = 0
 
             for batch_number, (batch_embeddings, batch_activity_labels) in enumerate(train_loader):
-                batch_embeddings = batch_embeddings  # .to(self.device)
-                batch_activity_labels = batch_activity_labels  # .to(self.device)
+                batch_embeddings = batch_embeddings.to(self.device, non_blocking=True)
+                batch_activity_labels = batch_activity_labels.to(self.device, non_blocking=True)
 
                 optimizer.zero_grad()
 
                 # "Autocase" is the first part of automatic mixed precision training, which gives a speedup.
-                with autocast():
+                with autocast(enabled=self.use_amp):
                     scores = self.model(batch_embeddings)
 
                     if use_mse_loss:
@@ -516,14 +520,16 @@ class PreferenceTrainer:
                         "Cannot specify both a validation dataset and a validation mask"
                     )
 
-                train_and_val_embeddings = torch.cat(
-                    [train_dataset.embeddings, val_dataset.embeddings], dim=0
-                )
+                train_embeddings = train_dataset.embeddings.to(self.device, non_blocking=True)
+                val_embeddings = val_dataset.embeddings.to(self.device, non_blocking=True)
+                train_and_val_embeddings = torch.cat([train_embeddings, val_embeddings], dim=0)
                 train_and_val_scores = self.model(train_and_val_embeddings)
 
                 # Make a mask that ignores the block of training pairs in the loss calculation.
                 ignore_train_loss_mask = torch.ones(
-                    (train_and_val_scores.shape[0], train_and_val_scores.shape[0]), dtype=torch.int
+                    (train_and_val_scores.shape[0], train_and_val_scores.shape[0]),
+                    dtype=torch.int,
+                    device=self.device,
                 )
                 ignore_train_loss_mask[
                     : train_dataset.embeddings.shape[0], : train_dataset.embeddings.shape[0]
@@ -532,7 +538,7 @@ class PreferenceTrainer:
 
                 activity_labels = torch.cat(
                     [train_dataset.activity_labels, val_dataset.activity_labels], dim=0
-                )
+                ).to(self.device, non_blocking=True)
 
                 # Chunk the evaluation to avoid OOM with large datasets
                 total_samples = train_and_val_scores.shape[0]
@@ -560,6 +566,8 @@ class PreferenceTrainer:
                 val_loss = float(np.mean(chunk_losses))
 
                 del (
+                    train_embeddings,
+                    val_embeddings,
                     train_and_val_embeddings,
                     train_and_val_scores,
                     ignore_train_loss_mask,
@@ -567,48 +575,66 @@ class PreferenceTrainer:
                 )
                 torch.cuda.empty_cache()
             elif val_mask is not None:
-                train_scores = self.model(train_dataset.embeddings)
+                train_embeddings = train_dataset.embeddings.to(self.device, non_blocking=True)
+                train_activity_labels = train_dataset.activity_labels.to(
+                    self.device, non_blocking=True
+                )
+                val_mask = val_mask.to(self.device, non_blocking=True)
+                train_scores = self.model(train_embeddings)
                 val_loss_tensor = batch_bradley_terry_loss(
                     train_scores,
-                    train_dataset.activity_labels,
+                    train_activity_labels,
                     val_mask,
                     importance_sampling_reweighting_strat=importance_sampling_reweighting_strat,
                     importance_sampling_temperature=importance_sampling_temperature,
                 )
                 val_loss = float(val_loss_tensor.detach().cpu().item())
-                del train_scores, val_loss_tensor
+                del train_embeddings, train_activity_labels, train_scores, val_loss_tensor
                 torch.cuda.empty_cache()
 
             if test_dataset is not None:
-                # Move only the scores to CPU for metric computation; labels are already on CPU.
-                test_scores_cpu = self.model(test_dataset.embeddings).detach().cpu()
-
+                test_scores = self.predict_scores(
+                    test_dataset.embeddings.numpy(),
+                    batch_size=batch_test_size,
+                )
                 test_recall_1pct = get_top_percentile_recall_score(
-                    test_dataset.activity_labels.detach().cpu().numpy(),
-                    test_scores_cpu.numpy(),
+                    test_dataset.activity_labels.numpy(),
+                    test_scores,
                     1.0,
                 )
-                del test_scores_cpu
+                del test_scores
                 torch.cuda.empty_cache()
 
         return val_loss, test_recall_1pct
 
-    def predict_scores(self, embeddings: np.ndarray) -> np.ndarray:
+    def predict_scores(self, embeddings: np.ndarray, batch_size: int = 5000) -> np.ndarray:
         """Predict preference scores for embeddings.
 
         Args:
             embeddings: Array of shape (n_samples, embedding_dim) with embeddings
+            batch_size: Number of embeddings to score per forward pass
 
         Returns:
             Array of shape (n_samples,) with preference scores
         """
+        if batch_size <= 0:
+            raise ValueError(f"batch_size must be positive, got {batch_size}")
+        if embeddings.shape[0] == 0:
+            return np.array([], dtype=np.float32)
+
         self.model.eval()
-        embeddings_tensor = torch.tensor(embeddings, dtype=torch.float32).to(self.device)
 
+        score_batches: list[np.ndarray] = []
         with torch.no_grad():
-            scores: np.ndarray = self.model(embeddings_tensor).squeeze(-1).cpu().numpy()
+            for start_idx in range(0, embeddings.shape[0], batch_size):
+                end_idx = min(start_idx + batch_size, embeddings.shape[0])
+                embeddings_tensor = torch.as_tensor(
+                    embeddings[start_idx:end_idx], dtype=torch.float32, device=self.device
+                )
+                batch_scores = self.model(embeddings_tensor).squeeze(-1).detach().cpu().numpy()
+                score_batches.append(batch_scores)
 
-        return scores
+        return np.concatenate(score_batches, axis=0)
 
 
 def create_preference_model(

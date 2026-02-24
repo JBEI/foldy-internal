@@ -8,7 +8,9 @@ class FolDEModelConfig(BaseModel):
     data_split_mode: Optional[str] = None  # Can be "1-VS-REST" or "2-VS-REST" etc.
     one_mutation_at_a_time: bool = False
     naturalness_model_id: str
+    few_shot_pretrain_naturalness_model_id: Optional[str] = None
     naturalness_columns: Optional[List[str]] = None
+    few_shot_pretrain_naturalness_columns: Optional[List[str]] = None
     embedding_model_id: str
     embedding_column: Optional[str] = None
     zero_shot_model_name: str

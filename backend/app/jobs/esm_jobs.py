@@ -381,7 +381,7 @@ def get_esm_embeddings(
                 embed_record.save()
 
         dynamic_batching = gpu_available and foldy_esm_client.supports_batch_embedding()
-        target_gpu_util = os.environ.get("FOLDY_EMBED_TARGET_GPU_UTIL", "0.4")
+        target_gpu_util = os.environ.get("FOLDY_EMBED_TARGET_GPU_UTIL", "0.9")
         vram_limit_env = os.environ.get("FOLDY_EMBED_VRAM_LIMIT", "0.9")
         max_batch_size = os.environ.get("FOLDY_EMBED_MAX_BATCH", "1024")
         try:

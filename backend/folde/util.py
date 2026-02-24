@@ -592,11 +592,22 @@ class NaturalnessImputer(object):
         self.single_mutant_naturalness_df: Optional[pd.DataFrame] = None
         self.knns: Dict[str, KNeighborsRegressor] = {}
 
-    def pretrain(self, naturalness_df: pd.DataFrame, embedding_series: pd.Series):
+    def pretrain(self, naturalness_df: pd.DataFrame, embedding_series: Optional[pd.Series]):
         if self.is_pretrained:
             raise ValueError("Model is already pretrained.")
 
         self.knns = {}
+        if embedding_series is None or embedding_series.isna().all():
+            for naturalness_column in naturalness_df.columns:
+                naturalness_series = naturalness_df[naturalness_column]
+                assert not naturalness_series.isna().any(), "naturalness_series contains NANs"
+            self.single_mutant_naturalness_df = naturalness_df
+            self.is_pretrained = False
+            logging.info(
+                "Skipping NaturalnessImputer KNN pretraining because embeddings are not loaded."
+            )
+            return
+
         for naturalness_column in naturalness_df.columns:
             naturalness_series = naturalness_df[naturalness_column]
             assert naturalness_series.index.equals(embedding_series.index)
@@ -618,8 +629,9 @@ class NaturalnessImputer(object):
 
     def impute(self, naturalness_df: pd.DataFrame, embedding_series: pd.Series) -> List[pd.Series]:
         assert self.single_mutant_naturalness_df is not None
-        assert len(naturalness_df.columns) == len(self.knns)
         assert set(naturalness_df.columns) == set(self.single_mutant_naturalness_df.columns)
+        if self.knns:
+            assert set(naturalness_df.columns) == set(self.knns.keys())
 
         # Get the ensemble of naturalness scores with missing values imputed.
 
@@ -629,7 +641,8 @@ class NaturalnessImputer(object):
 
             naturalness_series = naturalness_df[naturalness_column]
             single_mutant_naturalness_series = self.single_mutant_naturalness_df[naturalness_column]
-            knn = self.knns[naturalness_column]
+            knn = self.knns.get(naturalness_column)
+            missing_single_mutants: set[str] = set()
 
             def get_naturalness(seq_id, direct_naturalness) -> float:
                 """Try computing naturalness for mutants even if none was provided by extrapolating for multimutants."""
@@ -643,7 +656,13 @@ class NaturalnessImputer(object):
                 seq_id_parts = seq_id.split("_")
 
                 # For multimutants, we compute naturalness as the product of the naturalness of the single mutants.
-                computed_naturalness = single_mutant_naturalness_series.loc[seq_id_parts].sum()
+                single_mutant_values = single_mutant_naturalness_series.reindex(seq_id_parts)
+                if single_mutant_values.isna().any():
+                    missing_single_mutants.update(
+                        single_mutant_values.index[single_mutant_values.isna()].tolist()
+                    )
+                    return np.nan
+                computed_naturalness = single_mutant_values.sum()
                 if pd.isna(computed_naturalness):
                     raise ValueError(
                         f"Computed naturalness is NAN for {seq_id} with parts {seq_id_parts}"
@@ -656,34 +675,62 @@ class NaturalnessImputer(object):
             )
             computed_naturalness_series.index = naturalness_series.index
 
+            if missing_single_mutants:
+                missing_examples = ", ".join(sorted(missing_single_mutants)[:5])
+                logging.warning(
+                    "Missing naturalness for %s single mutants (e.g., %s); "
+                    "affected variants will be imputed if embeddings are available.",
+                    len(missing_single_mutants),
+                    missing_examples,
+                )
+
             # Do KNN imputation to fill in NANs from homologs.
             if computed_naturalness_series.isna().any():
-                if not self.is_pretrained:
-                    raise ValueError(
-                        "Model is not pretrained, so cannot fill in NANs from homologs."
+                if not self.is_pretrained or knn is None:
+                    fallback_value = computed_naturalness_series.min(skipna=True)
+                    if pd.isna(fallback_value):
+                        raise ValueError(
+                            "Naturalness contains only NANs and embeddings are unavailable for "
+                            "imputation. Load embeddings or provide naturalness scores."
+                        )
+                    missing_note = ""
+                    if missing_single_mutants:
+                        missing_note = (
+                            " Missing single-mutant naturalness for "
+                            f"{len(missing_single_mutants)} alleles (e.g., {missing_examples})."
+                        )
+                    logging.warning(
+                        "Naturalness contains NANs but embeddings are unavailable; filling "
+                        "missing values with %.6f.%s",
+                        fallback_value,
+                        missing_note,
+                    )
+                    computed_naturalness_series = computed_naturalness_series.fillna(fallback_value)
+                else:
+                    logging.info(
+                        "Filling in NANs from homologs for %s/%s naturalness values.",
+                        computed_naturalness_series.isna().sum(),
+                        len(computed_naturalness_series),
                     )
 
-                logging.info(
-                    f"Filling in NANs from homologs for {computed_naturalness_series.isna().sum()}/{len(computed_naturalness_series)} naturalness values."
-                )
-                assert embedding_series is not None
-                embedding_array = np.array([np.array(emb) for emb in embedding_series.values])
-                naturalness_array = computed_naturalness_series.values
+                    assert embedding_series is not None
+                    embedding_array = np.array([np.array(emb) for emb in embedding_series.values])
+                    naturalness_array = computed_naturalness_series.values
 
-                # Find indices for known and missing
-                missing_mask = computed_naturalness_series.isna().to_numpy()
-                X_missing = embedding_array[missing_mask]
+                    # Find indices for known and missing
+                    missing_mask = computed_naturalness_series.isna().to_numpy()
+                    X_missing = embedding_array[missing_mask]
 
-                imputed_values = knn.predict(X_missing)
+                    imputed_values = knn.predict(X_missing)
 
-                # Fill in the missing values
-                imputed_naturalness = naturalness_array.copy()
-                imputed_naturalness[missing_mask] = imputed_values
+                    # Fill in the missing values
+                    imputed_naturalness = naturalness_array.copy()
+                    imputed_naturalness[missing_mask] = imputed_values
 
-                # Convert back to Series
-                computed_naturalness_series = pd.Series(
-                    imputed_naturalness, index=naturalness_series.index
-                )
+                    # Convert back to Series
+                    computed_naturalness_series = pd.Series(
+                        imputed_naturalness, index=naturalness_series.index
+                    )
 
             if computed_naturalness_series.isna().any():
                 raise ValueError(

@@ -121,48 +121,75 @@ def run_boltz(fold_id, invokation_id):
             ]
             logging.info(f"Running boltz with command: {boltz_command}")
 
-            process = subprocess.Popen(
-                boltz_command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
+            def upload_msa_outputs() -> None:
+                msa_dirs = sorted(Path(temp_dir).glob("boltz_results*/msa"))
+                if not msa_dirs:
+                    logging.info("No MSA outputs found to upload.")
+                    return
+                for msa_dir in msa_dirs:
+                    relative_path = f"boltz/{msa_dir.parent.name}/msa"
+                    logging.info(f"Uploading MSA outputs from {msa_dir} to {relative_path}")
+                    fsm.storage_manager.upload_folder(fold_id, str(msa_dir), relative_path)
+                input_path = Path(temp_dir) / "input.yml"
+                if input_path.exists():
+                    fsm.storage_manager.write_file(
+                        fold_id,
+                        "boltz/input.yml",
+                        input_path.read_text(),
+                    )
 
-            # Track MSA PENDING state to detect stuck jobs
-            pending_start_time = None
-            pending_pattern = re.compile(r"PENDING.*\d+/\d+")
+            try:
+                process = subprocess.Popen(
+                    boltz_command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
 
-            for line in iter(process.stdout.readline, ""):
-                logging.info(line.strip())
+                # Track MSA PENDING state to detect stuck jobs
+                pending_start_time = None
+                pending_pattern = re.compile(r"PENDING.*\d+/\d+")
 
-                # Check if this line indicates MSA jobs stuck in PENDING
-                if pending_pattern.search(line):
-                    if pending_start_time is None:
-                        pending_start_time = time.time()
-                        logging.info(
-                            f"MSA server jobs entered PENDING state. "
-                            f"Will timeout after {MSA_PENDING_TIMEOUT_SECONDS // 60} minutes."
-                        )
-                    elif time.time() - pending_start_time > MSA_PENDING_TIMEOUT_SECONDS:
-                        process.kill()
-                        process.wait()
-                        raise TimeoutError(
-                            f"MSA server jobs stuck in PENDING state for over "
-                            f"{MSA_PENDING_TIMEOUT_SECONDS // 60} minutes. "
-                            f"The ColabFold server may have dropped this job. "
-                            f"See: https://github.com/sokrypton/ColabFold/issues/606"
-                        )
-                elif "RUNNING" in line or "COMPLETE" in line:
-                    # Reset timer if jobs start making progress
-                    if pending_start_time is not None:
-                        logging.info("MSA server jobs progressing, resetting PENDING timer.")
-                        pending_start_time = None
+                for line in iter(process.stdout.readline, ""):
+                    logging.info(line.strip())
 
-            process.stdout.close()
-            process.wait()
+                    # Check if this line indicates MSA jobs stuck in PENDING
+                    if pending_pattern.search(line):
+                        if pending_start_time is None:
+                            pending_start_time = time.time()
+                            logging.info(
+                                f"MSA server jobs entered PENDING state. "
+                                f"Will timeout after {MSA_PENDING_TIMEOUT_SECONDS // 60} minutes."
+                            )
+                        elif time.time() - pending_start_time > MSA_PENDING_TIMEOUT_SECONDS:
+                            process.kill()
+                            process.wait()
+                            raise TimeoutError(
+                                f"MSA server jobs stuck in PENDING state for over "
+                                f"{MSA_PENDING_TIMEOUT_SECONDS // 60} minutes. "
+                                f"The ColabFold server may have dropped this job. "
+                                f"See: https://github.com/sokrypton/ColabFold/issues/606"
+                            )
+                    elif "RUNNING" in line or "COMPLETE" in line:
+                        # Reset timer if jobs start making progress
+                        if pending_start_time is not None:
+                            logging.info("MSA server jobs progressing, resetting PENDING timer.")
+                            pending_start_time = None
 
-            if process.returncode != 0:
-                raise subprocess.CalledProcessError(process.returncode, process.args)
+                process.stdout.close()
+                process.wait()
+
+                if process.returncode != 0:
+                    raise subprocess.CalledProcessError(process.returncode, process.args)
+            except Exception as e:
+                logging.error(f"Boltz failed; attempting to upload MSA outputs: {e}")
+                try:
+                    upload_msa_outputs()
+                except Exception as upload_error:
+                    logging.error(
+                        f"Failed to upload MSA outputs after boltz failure: {upload_error}"
+                    )
+                raise
 
             logging.info(f'Uploading files {list(Path(temp_dir).glob("*"))}')
             fsm.storage_manager.upload_folder(fold_id, temp_dir, "boltz")

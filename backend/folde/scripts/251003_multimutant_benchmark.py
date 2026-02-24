@@ -1,5 +1,6 @@
 # Configure logging
 import logging
+import os
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -17,11 +18,15 @@ dms_ids = [
 ]
 
 # Example configuration
-NAME = "251003-multimutant-benchmark"
+NAME = "250207-multimutant-benchmark"
+SKIP_EMBEDDING_LOADING = os.environ.get("FOLDE_BENCH_SKIP_EMBEDDINGS") == "1"
+if SKIP_EMBEDDING_LOADING:
+    NAME = f"{NAME}-skip-embeddings"
 
 random_config = FolDEModelConfig(
     name="Random",
     naturalness_model_id="600m",
+    few_shot_pretrain_naturalness_model_id="600m",
     embedding_model_id="300m",
     zero_shot_model_name="RandomZeroShotModel",
     zero_shot_model_params={},
@@ -32,7 +37,8 @@ random_config = FolDEModelConfig(
 random_forest_config = FolDEModelConfig(
     name="RandomToRandomForest",
     naturalness_model_id="600m",
-    embedding_model_id="15b",
+    few_shot_pretrain_naturalness_model_id="600m",
+    embedding_model_id="300m",
     zero_shot_model_name="RandomZeroShotModel",
     zero_shot_model_params={},
     few_shot_model_name="RandomForestFewShotModel",
@@ -59,6 +65,7 @@ random_forest_config = FolDEModelConfig(
 only_naturalness_config = FolDEModelConfig(
     name="OnlyNaturalness",
     naturalness_model_id="600m",
+    few_shot_pretrain_naturalness_model_id="600m",
     embedding_model_id="300m",
     zero_shot_model_name="NaturalnessZeroShotModel",
     zero_shot_model_params={},
@@ -70,6 +77,7 @@ folde_config = FolDEModelConfig(
     name="FolDE",
     # Required parameters
     naturalness_model_id="600m",  # ESM-2 650M model
+    few_shot_pretrain_naturalness_model_id="600m",
     embedding_model_id="300m",  # Same model for embeddings
     zero_shot_model_name="NaturalnessZeroShotModel",
     zero_shot_model_params={},
@@ -93,75 +101,141 @@ folde_config = FolDEModelConfig(
     },
 )
 
+foldydata_naturalness_diffs = [
+    ModelDiff(
+        name="E1Naturalness",
+        diffs={
+            "naturalness_model_id": "E1-600m_melted",
+            "few_shot_pretrain_naturalness_model_id": "E1-600m_melted",
+        },
+    ),
+    ModelDiff(
+        name="E1msaNaturalness",
+        diffs={
+            "naturalness_model_id": "E1-600m_MSA_melted",
+            "few_shot_pretrain_naturalness_model_id": "E1-600m_MSA_melted",
+        },
+    ),
+]
+
+foldydata_folde_diffs = [
+    ModelDiff(
+        name="E1FolDE",
+        diffs={
+            "naturalness_model_id": "E1-600m_melted",
+            "few_shot_pretrain_naturalness_model_id": "E1-600m_melted",
+        },
+    ),
+    ModelDiff(
+        name="E1msaFolDE",
+        diffs={
+            "naturalness_model_id": "E1-600m_MSA_melted",
+            "few_shot_pretrain_naturalness_model_id": "E1-600m_MSA_melted",
+        },
+    ),
+    ModelDiff(
+        name="E1zsEsmPre",
+        diffs={
+            "naturalness_model_id": "E1-600m_MSA_melted",
+            "few_shot_pretrain_naturalness_model_id": "600m",
+        },
+    ),
+    ModelDiff(
+        name="ESMzsE1Pre",
+        diffs={
+            "naturalness_model_id": "600m",
+            "few_shot_pretrain_naturalness_model_id": "E1-600m_MSA_melted",
+        },
+    ),
+    # ModelDiff(
+    #     name="E150emE600mFOLDE",
+    #     diffs={
+    #         "naturalness_model_id": "E1-600m_melted",
+    #         "few_shot_pretrain_naturalness_model_id": "E1-600m_melted",
+    #         "embedding_model_id": "E150m",
+    #     },
+    # ),
+]
+
 config_list = (
     [random_config]
-    + apply_diff_list_to_config(
-        random_forest_config,
-        [
-            ModelDiff(name="300m-embeddings", diffs={"embedding_model_id": "300m"}),
-        ],
-    )
+    # + apply_diff_list_to_config(
+    #     random_forest_config,
+    #     [
+    #         ModelDiff(name="300m-embeddings", diffs={"embedding_model_id": "300m"}),
+    #     ],
+    # )
     + [only_naturalness_config]
+    + apply_diff_list_to_config(
+        only_naturalness_config,
+        foldydata_naturalness_diffs,
+        exclude_base_config=True,
+    )
     + apply_diff_list_to_config(
         folde_config,
         [
-            ModelDiff(
-                name="no-constantliar", diffs={"few_shot_model_params.decision_mode": "mean"}
-            ),
-            ModelDiff(
-                name="no-naturalnessTraining", diffs={"few_shot_model_params.pretrain": False}
-            ),
-            ModelDiff(name="no-zeroShot", diffs={"zero_shot_model_name": "RandomZeroShotModel"}),
-            ModelDiff(name="no-BTLoss", diffs={"few_shot_model_params.use_mse_loss": True}),
-            ModelDiff(name="no-zeroShot", diffs={"zero_shot_model_name": "RandomZeroShotModel"}),
-            ModelDiff(
-                name="no-MLP",
-                diffs={
-                    "few_shot_model_name": "RandomForestFewShotModel",
-                    "few_shot_model_params": random_forest_config.few_shot_model_params.copy(),
-                },
-            ),
-            ModelDiff(
-                name="no-ensemble",
-                diffs={
-                    "few_shot_model_params.ensemble_size": 1,
-                    "few_shot_model_params.decision_mode": "mean",
-                },
-            ),
-            ModelDiff(
-                name="no-naturalnessTraining-or-ensemble",
-                diffs={
-                    "few_shot_model_params.train_epochs": 600,
-                    "few_shot_model_params.ensemble_size": 1,
-                    "few_shot_model_params.decision_mode": "mean",
-                },
-            ),
-            ModelDiff(
-                name="clS1",
-                diffs={
-                    "few_shot_model_params.lie_noise_stddev_multiplier": 1.0,
-                    "few_shot_model_params.lie_noise_stddev_multiplier_schedule": None,
-                },
-            ),
-            ModelDiff(
-                name="clS3",
-                diffs={
-                    "few_shot_model_params.lie_noise_stddev_multiplier": 3.0,
-                    "few_shot_model_params.lie_noise_stddev_multiplier_schedule": None,
-                },
-            ),
-            ModelDiff(
-                name="clS6",
-                diffs={
-                    "few_shot_model_params.lie_noise_stddev_multiplier": 6.0,
-                    "few_shot_model_params.lie_noise_stddev_multiplier_schedule": None,
-                },
-            ),
-            ModelDiff(
-                name="no-constantliar-ucb",
-                diffs={"few_shot_model_params.decision_mode": "ucb"},
-            ),
+            # ModelDiff(
+            #     name="no-constantliar", diffs={"few_shot_model_params.decision_mode": "mean"}
+            # ),
+            # ModelDiff(
+            #     name="no-naturalnessTraining", diffs={"few_shot_model_params.pretrain": False}
+            # ),
+            # ModelDiff(name="no-zeroShot", diffs={"zero_shot_model_name": "RandomZeroShotModel"}),
+            # ModelDiff(name="no-BTLoss", diffs={"few_shot_model_params.use_mse_loss": True}),
+            # ModelDiff(name="no-zeroShot", diffs={"zero_shot_model_name": "RandomZeroShotModel"}),
+            # ModelDiff(
+            #     name="no-MLP",
+            #     diffs={
+            #         "few_shot_model_name": "RandomForestFewShotModel",
+            #         "few_shot_model_params": random_forest_config.few_shot_model_params.copy(),
+            #     },
+            # ),
+            # ModelDiff(
+            #     name="no-ensemble",
+            #     diffs={
+            #         "few_shot_model_params.ensemble_size": 1,
+            #         "few_shot_model_params.decision_mode": "mean",
+            #     },
+            # ),
+            # ModelDiff(
+            #     name="no-naturalnessTraining-or-ensemble",
+            #     diffs={
+            #         "few_shot_model_params.train_epochs": 600,
+            #         "few_shot_model_params.ensemble_size": 1,
+            #         "few_shot_model_params.decision_mode": "mean",
+            #     },
+            # ),
+            # ModelDiff(
+            #     name="clS1",
+            #     diffs={
+            #         "few_shot_model_params.lie_noise_stddev_multiplier": 1.0,
+            #         "few_shot_model_params.lie_noise_stddev_multiplier_schedule": None,
+            #     },
+            # ),
+            # ModelDiff(
+            #     name="clS3",
+            #     diffs={
+            #         "few_shot_model_params.lie_noise_stddev_multiplier": 3.0,
+            #         "few_shot_model_params.lie_noise_stddev_multiplier_schedule": None,
+            #     },
+            # ),
+            # ModelDiff(
+            #     name="clS6",
+            #     diffs={
+            #         "few_shot_model_params.lie_noise_stddev_multiplier": 6.0,
+            #         "few_shot_model_params.lie_noise_stddev_multiplier_schedule": None,
+            #     },
+            # ),
+            # ModelDiff(
+            #     name="no-constantliar-ucb",
+            #     diffs={"few_shot_model_params.decision_mode": "ucb"},
+            # ),
         ],
+    )
+    + apply_diff_list_to_config(
+        folde_config,
+        foldydata_folde_diffs,
+        exclude_base_config=True,
     )
 )
 
@@ -176,7 +250,8 @@ results = simulate_campaigns_with_config_checkpoints(
     round_size=16,
     number_of_simulations=10,
     activity_column="DMS_score",
-    max_rounds=10,
+    max_rounds=5,
     random_seed=42,
     num_workers=1,
+    skip_embedding_loading=SKIP_EMBEDDING_LOADING,
 )
