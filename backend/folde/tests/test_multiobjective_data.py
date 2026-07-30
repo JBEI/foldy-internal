@@ -21,6 +21,8 @@ EXPECTED_SHARED_VARIANT_COUNTS = {
     "PTEN": 4839,
     "S22A1": 9715,
     "KCNE1": 2312,
+    "RASK": 23072,
+    "OXDA": 6387,
 }
 
 PENDING = sorted(set(MULTIOBJECTIVE_DATASETS) - set(EXPECTED_SHARED_VARIANT_COUNTS))
@@ -91,6 +93,38 @@ def test_restrict_to_shared_false_gives_union_with_nans(key):
     # The union set should have at least some missing values, since not every
     # embedding-covered variant is measured for every objective.
     assert union.activity_df.isna().any().any()
+
+
+def test_multi_mutants_are_retained_with_nan_naturalness():
+    """Multi-mutants must survive loading even though naturalness has no row for them.
+
+    Naturalness is a per-single-substitution table (L x 20). Intersecting against
+    it silently dropped 22,946 of RASK's 27,814 variants (89%), leaving a
+    singles-only dataset. Nothing scores higher-order variants additively, so the
+    correct behavior -- matching folde.data.get_proteingym_dataset -- is to keep
+    the variant with NaN naturalness, which pretrain masks out and predict
+    ignores entirely.
+    """
+    if "RASK" in PENDING:
+        pytest.skip("RASK: embeddings not yet generated (ESM job pending)")
+
+    dataset = load_multiobjective_dataset(MULTIOBJECTIVE_DATASETS["RASK"], restrict_to_shared=True)
+
+    multi_mutant_ids = [s for s in dataset.activity_df.index if "_" in s]
+    assert len(multi_mutant_ids) > 10000, (
+        f"expected RASK's double mutants to survive loading, got only "
+        f"{len(multi_mutant_ids)} multi-mutants out of {len(dataset.activity_df)}"
+    )
+
+    # Those multi-mutants are exactly the rows with no naturalness.
+    has_naturalness = dataset.naturalness_df.notna().any(axis=1)
+    assert not has_naturalness.loc[multi_mutant_ids].any()
+    # ...and singles still do have it, so the table resolved to the right protein.
+    single_ids = [s for s in dataset.activity_df.index if "_" not in s]
+    assert has_naturalness.loc[single_ids].all()
+
+    # Embeddings are per-sequence and must be present for every retained variant.
+    assert dataset.embedding_series.notna().all()
 
 
 def test_wrong_dimension_embedding_source_raises():

@@ -424,7 +424,20 @@ def load_multiobjective_dataset(
 
     seq_ids_with_embedding = set(embedding_df.index)
     seq_ids_with_naturalness = set(naturalness_df.index)
-    base_index = seq_ids_with_embedding & seq_ids_with_naturalness
+    # Naturalness is a per-single-substitution table (L x 20), so intersecting
+    # against it would drop every multi-mutant. That is not a hypothetical: it
+    # silently discarded 22,946 of RASK's 27,814 variants (89%), leaving only
+    # singles. Nothing is scored additively for higher-order variants -- there
+    # is no such expansion anywhere in the codebase -- so the correct behavior
+    # is the one `folde.data.get_proteingym_dataset` already uses: keep the
+    # variant and leave naturalness NaN.
+    #
+    # This is safe because naturalness is consumed in exactly one place.
+    # `TorchMLPFewShotModel.pretrain` masks NaN rows out explicitly
+    # (`has_naturalness_data = ~naturalness_series.isna()`), and `.predict`
+    # accepts a naturalness_df but never reads it -- predictions come from
+    # embeddings alone.
+    base_index = seq_ids_with_embedding
 
     if restrict_to_shared:
         final_ids = set(base_index)
@@ -464,7 +477,24 @@ def load_multiobjective_dataset(
         activity_df[name] = series.reindex(final_index)
 
     embedding_series = embedding_df.loc[final_index, "embedding"]
-    naturalness_df_final = naturalness_df.loc[final_index]
+    # reindex, not .loc: multi-mutants legitimately have no naturalness row and
+    # must come through as NaN rather than raising a KeyError.
+    naturalness_df_final = naturalness_df.reindex(final_index)
+
+    # Pretraining needs *some* naturalness signal per ensemble column. Total
+    # absence means the naturalness file didn't resolve to this protein at all,
+    # which is a silent-wrong-data bug rather than a legitimately sparse table.
+    naturalness_coverage = float(naturalness_df_final.notna().any(axis=1).mean())
+    if naturalness_coverage == 0.0:
+        raise ValueError(
+            f"No variant in multi-objective dataset {spec.protein} has naturalness data "
+            f"({spec.naturalness_model_id}). The naturalness file likely resolved to the "
+            f"wrong protein."
+        )
+    logger.info(
+        f"{spec.protein}: {len(final_index)} variants, naturalness coverage "
+        f"{naturalness_coverage:.1%} (multi-mutants carry NaN by design)"
+    )
 
     # Hard invariant: all three must share an identical, aligned index.
     assert activity_df.index.equals(embedding_series.index)
