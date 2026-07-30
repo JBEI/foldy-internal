@@ -85,6 +85,43 @@ def main():
         beats = int((summary[arm]["regret"] < p_worst).sum())
         print(f"  {arm:14s} sims beating parego's worst: {beats}/{len(summary[arm]['regret'])}")
 
+    # Paired Wilcoxon: this is the acceptance test, not the means above.
+    #
+    # The pairing is real, not assumed: every arm replays simulation i from the
+    # same seed and the same initial measured set, so sim i's regret is
+    # comparable across arms and the differences are matched. That is what buys
+    # the power to see effects far smaller than the +/- 0.005 between-sim spread.
+    #
+    # Note the floor: a two-sided signed-rank test on n pairs cannot produce
+    # p < 2/2^n. At n=10 the minimum is 0.002, fine; but a per-dataset test with
+    # n=5 sims could never reach 0.05, which is the same arithmetic that forces
+    # the >= 6 dataset requirement on the cross-dataset test.
+    print("\npaired Wilcoxon signed-rank vs parego (regret; positive median")
+    print("difference favors parego, since lower regret is better):")
+    try:
+        from scipy.stats import wilcoxon
+    except ImportError:
+        print("  scipy not available -- skipped")
+        return
+
+    p_regret = summary["parego"]["regret"]
+    for arm in arms:
+        if arm == "parego":
+            continue
+        other = summary[arm]["regret"]
+        diff = other - p_regret  # > 0 means parego had less regret on that sim
+        wins = int((diff > 0).sum())
+        if np.allclose(diff, 0):
+            print(f"  {arm:14s} identical to parego on every sim")
+            continue
+        stat, pval = wilcoxon(other, p_regret)
+        verdict = "parego better" if np.median(diff) > 0 else "baseline better"
+        flag = "" if pval < 0.05 else "   (not significant)"
+        print(
+            f"  {arm:14s} median diff={np.median(diff):+.5f}  "
+            f"wins={wins}/{len(diff)}  p={pval:.4f}  {verdict}{flag}"
+        )
+
 
 if __name__ == "__main__":
     main()
