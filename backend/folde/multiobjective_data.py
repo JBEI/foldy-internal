@@ -149,6 +149,62 @@ MULTIOBJECTIVE_DATASETS: Dict[str, MultiObjectiveDatasetSpec] = {
         ],
         embedding_dms_id="S22A1_HUMAN_Yee_2023_activity",
     ),
+    # The three below were added to lift the acceptance suite above the paired
+    # Wilcoxon signed-rank floor: at n=5 datasets the minimum achievable
+    # two-sided p is 0.0625, so a 5-dataset design cannot clear alpha=0.05 at
+    # ANY effect size. Six datasets reach 0.0312.
+    "KCNE1": MultiObjectiveDatasetSpec(
+        protein="KCNE1",
+        objectives=[
+            ObjectiveSpec(
+                name="function",
+                dms_id="KCNE1_HUMAN_Muhammad_2023_function",
+                goal="maximize",
+            ),
+            ObjectiveSpec(
+                name="expression",
+                dms_id="KCNE1_HUMAN_Muhammad_2023_expression",
+                goal="maximize",
+            ),
+        ],
+        embedding_dms_id="KCNE1_HUMAN_Muhammad_2023_function",
+    ),
+    # NOTE: RASK is the only registered dataset containing multi-mutants (up to
+    # doubles), so its seq_ids must be canonicalized through
+    # `allele_set_to_seq_id` on BOTH the activity and embedding sides or the
+    # join silently drops rows. See 260730_submit_new_dataset_jobs.py.
+    "RASK": MultiObjectiveDatasetSpec(
+        protein="RASK",
+        objectives=[
+            ObjectiveSpec(
+                name="abundance",
+                dms_id="RASK_HUMAN_Weng_2022_abundance",
+                goal="maximize",
+            ),
+            ObjectiveSpec(
+                name="binding",
+                dms_id="RASK_HUMAN_Weng_2022_binding-DARPin_K55",
+                goal="maximize",
+            ),
+        ],
+        embedding_dms_id="RASK_HUMAN_Weng_2022_abundance",
+    ),
+    "OXDA": MultiObjectiveDatasetSpec(
+        protein="OXDA",
+        objectives=[
+            ObjectiveSpec(
+                name="activity",
+                dms_id="OXDA_RHOTO_Vanella_2023_activity",
+                goal="maximize",
+            ),
+            ObjectiveSpec(
+                name="expression",
+                dms_id="OXDA_RHOTO_Vanella_2023_expression",
+                goal="maximize",
+            ),
+        ],
+        embedding_dms_id="OXDA_RHOTO_Vanella_2023_activity",
+    ),
 }
 
 
