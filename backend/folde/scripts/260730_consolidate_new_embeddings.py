@@ -72,10 +72,20 @@ def main() -> int:
     ap.add_argument(
         "--force", action="store_true", help="Copy even if coverage is below threshold."
     )
+    ap.add_argument(
+        "--only",
+        default="",
+        help="Comma-separated fold_ids to process (default: all). Avoids re-copying "
+        "multi-GB sources that have already landed.",
+    )
     args = ap.parse_args()
+
+    only = {int(s) for s in args.only.split(",") if s.strip()}
 
     exit_code = 0
     for fold_id, (embed_name, dms_ids) in SOURCES.items():
+        if only and fold_id not in only:
+            continue
         src = (
             FOLDYDATA
             / f"{fold_id:06d}"
@@ -88,14 +98,19 @@ def main() -> int:
             exit_code = 1
             continue
 
-        embedding_df = pd.read_csv(src)
-        if "seq_id" not in embedding_df.columns or "embedding" not in embedding_df.columns:
-            print(f"  ERROR: missing seq_id/embedding columns: {embedding_df.columns.tolist()}")
+        # Read only what the checks need. The SPG1_Wu source is 3.3 GB (149k rows
+        # x ~19 KB of embedding text each); a full read would materialize ~3 GB of
+        # Python strings to verify one dimension and one key set. `usecols` keeps
+        # this at a few MB regardless of source size.
+        header = pd.read_csv(src, nrows=1)
+        if "seq_id" not in header.columns or "embedding" not in header.columns:
+            print(f"  ERROR: missing seq_id/embedding columns: {header.columns.tolist()}")
             exit_code = 1
             continue
 
-        dim = len(str(embedding_df["embedding"].iloc[0]).split(","))
-        print(f"  rows={len(embedding_df)}  dim={dim}")
+        seq_id_col = pd.read_csv(src, usecols=["seq_id"])["seq_id"]
+        dim = len(str(header["embedding"].iloc[0]).split(","))
+        print(f"  rows={len(seq_id_col)}  dim={dim}")
         if dim != EXPECTED_DIM:
             print(
                 f"  ERROR: dimension {dim} != expected {EXPECTED_DIM}. This is the ESMC/E1 "
@@ -104,7 +119,7 @@ def main() -> int:
             exit_code = 1
             continue
 
-        embedded = set(embedding_df["seq_id"])
+        embedded = set(seq_id_col)
         for dms_id in dms_ids:
             wanted = activity_seq_ids(dms_id)
             covered = len(wanted & embedded) / max(len(wanted), 1)

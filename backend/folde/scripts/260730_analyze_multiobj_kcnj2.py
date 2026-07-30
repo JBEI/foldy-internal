@@ -26,7 +26,7 @@ from folde.multiobjective_metrics import (  # noqa: E402
     nondominated_mask,
 )
 
-RESULTS = "folde/model_evals/260730-multiobj-kcnj2.json"
+RESULTS = os.environ.get("MULTIOBJ_RESULTS", "folde/model_evals/260730-multiobj-kcnj2.json")
 
 
 def main():
