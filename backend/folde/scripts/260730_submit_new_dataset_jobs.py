@@ -102,6 +102,52 @@ JOBS: Dict[str, Dict] = {
         "needs_naturalness": False,
         "embedding_name": "wu2016-esmc-300m",
     },
+    # ── Long-range multi-mutant sets (see 260730_survey_multimutant_datasets.py) ──
+    #
+    # SPG1_Wu is a 4-site combinatorial library: 121k quadruples confined to four
+    # mutually contacting positions. It measures local epistasis and cannot show
+    # whether a model generalizes to mutations that are far apart. The sets below
+    # were selected on distinct-mutated-positions AND absolute sequence
+    # separation, which is the pair of statistics that distinguishes a
+    # distributed library from a fixed-site or segment-tiled one. (Ratio alone is
+    # misleading: SPG1_Wu tops span/window at 0.94 because its window is 16
+    # residues wide.)
+    #
+    # Sarkisyan is the canonical distributed case -- random mutagenesis, so 233 of
+    # 238 positions are hit and co-mutants sit a median 130 residues apart.
+    "GFP_AEQVI_Sarkisyan_2016": {
+        "dms_ids": ["GFP_AEQVI_Sarkisyan_2016"],
+        "tags": ["folde", "multimutant", "long-range", "gfp"],
+        "needs_naturalness": True,
+    },
+    # Three GFP homologs at 222-238 residues, each ~100% of positions mutated.
+    # Their value beyond spread is cross-homolog transfer: train on one, test on
+    # another, which measures long-range generalization ACROSS sequence identity.
+    # Q8WTC7 reaches mutation order 43.
+    "Q8WTC7_9CNID_Somermeyer_2022": {
+        "dms_ids": ["Q8WTC7_9CNID_Somermeyer_2022"],
+        "tags": ["folde", "multimutant", "long-range", "gfp-homolog"],
+        "needs_naturalness": True,
+    },
+    "D7PM05_CLYGR_Somermeyer_2022": {
+        "dms_ids": ["D7PM05_CLYGR_Somermeyer_2022"],
+        "tags": ["folde", "multimutant", "long-range", "gfp-homolog"],
+        "needs_naturalness": True,
+    },
+    "Q6WV12_9MAXI_Somermeyer_2022": {
+        "dms_ids": ["Q6WV12_9MAXI_Somermeyer_2022"],
+        "tags": ["folde", "multimutant", "long-range", "gfp-homolog"],
+        "needs_naturalness": True,
+    },
+    # Distance control: only 15 mutated positions, but spans of ~106 residues in a
+    # 118-residue LOV domain. Isolates "long-range" from "many-site" -- a model
+    # that handles Sarkisyan but fails here is limited by separation, not by the
+    # number of distinct sites.
+    "PHOT_CHLRE_Chen_2023": {
+        "dms_ids": ["PHOT_CHLRE_Chen_2023"],
+        "tags": ["folde", "multimutant", "long-range", "distance-control"],
+        "needs_naturalness": True,
+    },
 }
 
 

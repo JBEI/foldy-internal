@@ -53,6 +53,13 @@ SOURCES: Dict[int, Tuple[str, List[str]]] = {
         ["OXDA_RHOTO_Vanella_2023_activity", "OXDA_RHOTO_Vanella_2023_expression"],
     ),
     21: ("wu2016-esmc-300m", ["SPG1_STRSG_Wu_2016"]),
+    # Long-range multi-mutant sets. One DMS file each, so fold name == dms_id and
+    # the embed job name is the default.
+    182: ("esmc-300m", ["GFP_AEQVI_Sarkisyan_2016"]),
+    183: ("esmc-300m", ["Q8WTC7_9CNID_Somermeyer_2022"]),
+    184: ("esmc-300m", ["D7PM05_CLYGR_Somermeyer_2022"]),
+    185: ("esmc-300m", ["Q6WV12_9MAXI_Somermeyer_2022"]),
+    186: ("esmc-300m", ["PHOT_CHLRE_Chen_2023"]),
 }
 
 
