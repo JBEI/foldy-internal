@@ -1,0 +1,1323 @@
+{
+ "dataset": "S22A1",
+ "objectives": [
+  "activity",
+  "abundance"
+ ],
+ "config": {
+  "dataset": "S22A1",
+  "rounds": 5,
+  "batch_size": 16,
+  "init_size": 16,
+  "sims": 10,
+  "arms": "parego,fixed_weight,single_obj,random",
+  "out": "folde/model_evals/260730-multiobj-lowN-S22A1.json"
+ },
+ "ranker_params": {
+  "hidden_dims": [
+   100,
+   50
+  ],
+  "dropout": 0.2,
+  "learning_rate": 0.0003,
+  "weight_decay": 1e-05,
+  "ensemble_size": 8,
+  "pretrain": true,
+  "pretrain_epochs": 10,
+  "train_epochs": 200,
+  "train_patience": 40,
+  "val_frequency": 10,
+  "do_validation_with_pair_fraction": 0.2,
+  "device": "cpu"
+ },
+ "results": {
+  "parego": [
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9574757479572871,
+     "n_pareto": 4
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.989712614982482,
+     "n_pareto": 1
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.989712614982482,
+     "n_pareto": 1
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.989712614982482,
+     "n_pareto": 1
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.989712614982482,
+     "n_pareto": 1
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9621906157713042,
+     "n_pareto": 3
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9653664168906476,
+     "n_pareto": 5
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9691061437272086,
+     "n_pareto": 5
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.96806647720455,
+     "n_pareto": 5
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9879330131601917,
+     "n_pareto": 3
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9883013067482438,
+     "n_pareto": 4
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9884491115685351,
+     "n_pareto": 5
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9893339485686905,
+     "n_pareto": 6
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9475138725948938,
+     "n_pareto": 2
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.961354888114665,
+     "n_pareto": 4
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.989712614982482,
+     "n_pareto": 1
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9956388995798687,
+     "n_pareto": 3
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9958780996962054,
+     "n_pareto": 3
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9868062212585184,
+     "n_pareto": 6
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9894506031257807,
+     "n_pareto": 6
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9902225786961337,
+     "n_pareto": 6
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9902225786961337,
+     "n_pareto": 6
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9968703097464565,
+     "n_pareto": 3
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9709237615849974,
+     "n_pareto": 3
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9787484004366335,
+     "n_pareto": 2
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9842498335871355,
+     "n_pareto": 3
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9946948452936482,
+     "n_pareto": 6
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.994871702502272,
+     "n_pareto": 6
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.975269286873528,
+     "n_pareto": 4
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9814627644428222,
+     "n_pareto": 3
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9823715150974148,
+     "n_pareto": 5
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9958617087243782,
+     "n_pareto": 3
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9860077785597717,
+     "n_pareto": 4
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9923162896010302,
+     "n_pareto": 7
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9923162896010302,
+     "n_pareto": 7
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9928069062464489,
+     "n_pareto": 7
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9937349615879641,
+     "n_pareto": 7
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9756223231898081,
+     "n_pareto": 3
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9801028117615553,
+     "n_pareto": 3
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9824804350653427,
+     "n_pareto": 4
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9828503815245034,
+     "n_pareto": 5
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9906851601046713,
+     "n_pareto": 6
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9825159506035231,
+     "n_pareto": 4
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9978231051779631,
+     "n_pareto": 2
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9987079951547567,
+     "n_pareto": 3
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9987079951547567,
+     "n_pareto": 3
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9987079951547567,
+     "n_pareto": 3
+    }
+   ]
+  ],
+  "fixed_weight": [
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9546905859719451,
+     "n_pareto": 4
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9554740998540758,
+     "n_pareto": 5
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.960749174425316,
+     "n_pareto": 5
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9677293444750267,
+     "n_pareto": 7
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9743401614039233,
+     "n_pareto": 9
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.989712614982482,
+     "n_pareto": 1
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9946183364329081,
+     "n_pareto": 2
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9946183364329081,
+     "n_pareto": 2
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9946183364329081,
+     "n_pareto": 2
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9946183364329081,
+     "n_pareto": 2
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9848228395001231,
+     "n_pareto": 6
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9893303885386104,
+     "n_pareto": 5
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9893303885386104,
+     "n_pareto": 5
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9938832008166879,
+     "n_pareto": 6
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9986771733467117,
+     "n_pareto": 4
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.963621228692465,
+     "n_pareto": 2
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9651294735790937,
+     "n_pareto": 3
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9721906660991103,
+     "n_pareto": 4
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.986687235729352,
+     "n_pareto": 6
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9877425303602493,
+     "n_pareto": 8
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9774170127586286,
+     "n_pareto": 4
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9774170127586286,
+     "n_pareto": 4
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9850091477409835,
+     "n_pareto": 4
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9850091477409835,
+     "n_pareto": 4
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9871822282450773,
+     "n_pareto": 3
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9757843681304201,
+     "n_pareto": 5
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9757843681304201,
+     "n_pareto": 5
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9795417044014845,
+     "n_pareto": 4
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9835106929370752,
+     "n_pareto": 5
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9860077785597717,
+     "n_pareto": 4
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9866403831906185,
+     "n_pareto": 5
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9866403831906185,
+     "n_pareto": 5
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9897442208447708,
+     "n_pareto": 2
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9927856626145719,
+     "n_pareto": 5
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9756223231898081,
+     "n_pareto": 3
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9834852959367714,
+     "n_pareto": 3
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9921690463331029,
+     "n_pareto": 4
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9921690463331029,
+     "n_pareto": 4
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9921690463331029,
+     "n_pareto": 4
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9913062688050511,
+     "n_pareto": 6
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9919099481914969,
+     "n_pareto": 9
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9925285457992308,
+     "n_pareto": 11
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9925285457992308,
+     "n_pareto": 11
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9925285457992308,
+     "n_pareto": 11
+    }
+   ]
+  ],
+  "single_obj": [
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.989712614982482,
+     "n_pareto": 1
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.989712614982482,
+     "n_pareto": 1
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.989712614982482,
+     "n_pareto": 1
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.989712614982482,
+     "n_pareto": 1
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.989712614982482,
+     "n_pareto": 1
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9823623077577135,
+     "n_pareto": 3
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9823623077577135,
+     "n_pareto": 3
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9823623077577135,
+     "n_pareto": 3
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9823623077577135,
+     "n_pareto": 3
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.989398029110133,
+     "n_pareto": 2
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.978410271746314,
+     "n_pareto": 2
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9946183364329081,
+     "n_pareto": 2
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9946183364329081,
+     "n_pareto": 2
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9946183364329081,
+     "n_pareto": 2
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9946183364329081,
+     "n_pareto": 2
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9637950450420621,
+     "n_pareto": 3
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9637950450420621,
+     "n_pareto": 3
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9732739959668887,
+     "n_pareto": 3
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9732739959668887,
+     "n_pareto": 3
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9732739959668887,
+     "n_pareto": 3
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9865098911356576,
+     "n_pareto": 4
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9919711785898095,
+     "n_pareto": 1
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9961884156515239,
+     "n_pareto": 2
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9961884156515239,
+     "n_pareto": 2
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9972026004112576,
+     "n_pareto": 3
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9706877188762915,
+     "n_pareto": 3
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9783515418453194,
+     "n_pareto": 6
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9929778300716059,
+     "n_pareto": 2
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9670677616231406,
+     "n_pareto": 2
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9663396295184767,
+     "n_pareto": 3
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9786607452912378,
+     "n_pareto": 5
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9902289358927054,
+     "n_pareto": 6
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9902289358927054,
+     "n_pareto": 6
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9902289358927054,
+     "n_pareto": 6
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9716588548199072,
+     "n_pareto": 2
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9894561444821255,
+     "n_pareto": 3
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9894561444821255,
+     "n_pareto": 3
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9895001574730566,
+     "n_pareto": 4
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9909676315390057,
+     "n_pareto": 5
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9847373563968894,
+     "n_pareto": 6
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9847373563968894,
+     "n_pareto": 6
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9910860873017913,
+     "n_pareto": 2
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9921675312012532,
+     "n_pareto": 3
+    }
+   ]
+  ],
+  "random": [
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9260342191998462,
+     "n_pareto": 2
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9344294588251001,
+     "n_pareto": 3
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9781008669891709,
+     "n_pareto": 2
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9799241745378915,
+     "n_pareto": 3
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9799241745378915,
+     "n_pareto": 3
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.8981639091885065,
+     "n_pareto": 3
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9106492949206795,
+     "n_pareto": 4
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.935056214835101,
+     "n_pareto": 7
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9537567773675326,
+     "n_pareto": 5
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9537567773675326,
+     "n_pareto": 5
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9216257682605836,
+     "n_pareto": 2
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.981455390094799,
+     "n_pareto": 2
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.981455390094799,
+     "n_pareto": 2
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.981455390094799,
+     "n_pareto": 2
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.981455390094799,
+     "n_pareto": 2
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9736854549196623,
+     "n_pareto": 2
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9756220689019452,
+     "n_pareto": 3
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9756220689019452,
+     "n_pareto": 3
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9756220689019452,
+     "n_pareto": 3
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9756220689019452,
+     "n_pareto": 3
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9414023392894084,
+     "n_pareto": 2
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9847967326128688,
+     "n_pareto": 3
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9847967326128688,
+     "n_pareto": 3
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9847967326128688,
+     "n_pareto": 3
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9847967326128688,
+     "n_pareto": 3
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.8311363303453626,
+     "n_pareto": 7
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9363424558221193,
+     "n_pareto": 3
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9644922493854047,
+     "n_pareto": 3
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9890179217317852,
+     "n_pareto": 3
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9890179217317852,
+     "n_pareto": 3
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9299921038320916,
+     "n_pareto": 2
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9424833381851104,
+     "n_pareto": 2
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9628704861586614,
+     "n_pareto": 3
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9628704861586614,
+     "n_pareto": 3
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9628704861586614,
+     "n_pareto": 3
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9735568806190001,
+     "n_pareto": 2
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9735568806190001,
+     "n_pareto": 2
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9735568806190001,
+     "n_pareto": 2
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9735568806190001,
+     "n_pareto": 2
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.975417632055528,
+     "n_pareto": 3
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9518457511014505,
+     "n_pareto": 2
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9518457511014505,
+     "n_pareto": 2
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9597988794911276,
+     "n_pareto": 3
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9632407398823228,
+     "n_pareto": 5
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9632407398823228,
+     "n_pareto": 5
+    }
+   ],
+   [
+    {
+     "round": 0,
+     "n_measured": 32,
+     "hypervolume": 0.9723634864879112,
+     "n_pareto": 4
+    },
+    {
+     "round": 1,
+     "n_measured": 48,
+     "hypervolume": 0.9723634864879112,
+     "n_pareto": 4
+    },
+    {
+     "round": 2,
+     "n_measured": 64,
+     "hypervolume": 0.9723634864879112,
+     "n_pareto": 4
+    },
+    {
+     "round": 3,
+     "n_measured": 80,
+     "hypervolume": 0.9746178543455015,
+     "n_pareto": 3
+    },
+    {
+     "round": 4,
+     "n_measured": 96,
+     "hypervolume": 0.9746178543455015,
+     "n_pareto": 3
+    }
+   ]
+  ]
+ }
+}
