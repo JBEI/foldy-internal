@@ -124,7 +124,6 @@ class PaginatedFoldsResource(Resource):
     def get(self):
         start_time = time.time()
         args = get_folds_parser.parse_args()
-        print(args, flush=True)
 
         filter = args.get("filter", None)
         tag = args.get("tag", None)
@@ -137,11 +136,9 @@ class PaginatedFoldsResource(Resource):
         manager.setup()
 
         folds = manager.get_folds_with_pagination(filter, tag, only_public, page, per_page)
-        logging.error(
+        logging.info(
             f"Returning {len(folds['data'])} folds in {time.time() - start_time} seconds",
         )
-        for fold in folds["data"]:
-            fold._skip_embedded_fields = True
         return folds
 
 
