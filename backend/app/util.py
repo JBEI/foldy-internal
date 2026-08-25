@@ -66,7 +66,7 @@ def start_stage(fold_id: int, stage: str, email_on_completion: bool) -> None:
 
     Args:
         fold_id: ID of the fold to process
-        stage: Stage to start (email, both, write_fastas, annotate)
+        stage: Stage to start (boltz, both, write_fastas, annotate)
         email_on_completion: Whether to send an email when processing completes
 
     Raises:
@@ -100,9 +100,7 @@ def start_stage(fold_id: int, stage: str, email_on_completion: bool) -> None:
         logging.info(f"Wrote FASTA files for fold {fold_id}")
         email_dependent_jobs = []
 
-    elif stage == "both":
-        cpu_q = get_queue("cpu")
-        gpu_q = get_queue("biggpu")
+    elif stage in {"boltz", "both"}:
         boltz_q = get_queue("boltz")
 
         fold_jobs = []
@@ -125,15 +123,18 @@ def start_stage(fold_id: int, stage: str, email_on_completion: bool) -> None:
         add_meta_to_job(boltz_job, fold, "boltz", fold.id)
 
         fold_jobs.append(boltz_job)
-        annotate_job = cpu_q.enqueue(
-            other_jobs.run_annotate,
-            fold_id,
-            get_job_type_replacement(fold, "annotate"),
-            job_timeout="12h",
-            result_ttl=48 * 60 * 60,  # 2 days
-            # Note: no dependent other_jobs.
-        )
-        email_dependent_jobs = fold_jobs + [annotate_job]
+        email_dependent_jobs = fold_jobs
+        if stage == "both":
+            cpu_q = get_queue("cpu")
+            annotate_job = cpu_q.enqueue(
+                other_jobs.run_annotate,
+                fold_id,
+                get_job_type_replacement(fold, "annotate"),
+                job_timeout="12h",
+                result_ttl=48 * 60 * 60,  # 2 days
+                # Note: no dependent other_jobs.
+            )
+            email_dependent_jobs.append(annotate_job)
 
     else:
         raise BadRequest(f"Unsupported stage {stage}")

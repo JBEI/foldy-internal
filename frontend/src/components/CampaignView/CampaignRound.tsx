@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    Card,
     Typography,
-    Button,
     Modal,
     Spin,
 } from 'antd';
@@ -19,6 +17,7 @@ import { notify } from '../../services/NotificationService';
 import SlateBuilder from '../shared/SlateBuilder';
 import ZeroShotCampaignRoundView from './ZeroShotCampaignRoundView';
 import FewShotCampaignRoundView from './FewShotCampaignRoundView';
+import BulkBoltzDockCard from '../shared/BulkBoltzDockCard';
 
 const { Title, Text } = Typography;
 
@@ -316,6 +315,13 @@ const CampaignRoundComponent: React.FC<CampaignRoundComponentProps> = ({
             </div>
 
             {renderWorkflowContent()}
+
+            <BulkBoltzDockCard
+                campaign={campaign}
+                currentRound={currentRound}
+                fold={fold}
+                activityData={activityData}
+            />
 
             <SlateBuilder
                 open={showSlateBuilder}

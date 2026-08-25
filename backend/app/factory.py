@@ -307,6 +307,7 @@ def create_app(config_object: str = "settings") -> Flask:
     from app import api_fields
     from app.views.admin_views import messages_ns
     from app.views.admin_views import ns as admin_views_ns
+    from app.views.boltz_dock_views import ns as boltz_dock_views_ns
     from app.views.campaign_views import ns as campaign_views_ns
     from app.views.dna_build_views import ns as dna_build_views_ns
     from app.views.dock_views import ns as dock_views_ns
@@ -358,6 +359,7 @@ def create_app(config_object: str = "settings") -> Flask:
     api.add_namespace(login_views_ns, "/api")
     api.add_namespace(admin_views_ns, "/api")
     api.add_namespace(messages_ns, "/api")
+    api.add_namespace(boltz_dock_views_ns, "/api")
     api.add_namespace(campaign_views_ns, "/api")
     api.add_namespace(dna_build_views_ns, "/api")
     api.add_namespace(dock_views_ns, "/api")

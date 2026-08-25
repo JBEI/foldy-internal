@@ -6,7 +6,9 @@ import subprocess
 import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
 
+import yaml
 from Bio.PDB.MMCIFParser import (
     MMCIFParser,  # type: ignore[reportPrivateImportUsage] # Bio.PDB module structure quirk
 )
@@ -15,6 +17,7 @@ from Bio.PDB.PDBIO import (
 )
 from werkzeug.exceptions import BadRequest
 
+from app.helpers.boltz_msa import rewrite_msa_query_sequence
 from app.helpers.boltz_yaml_helper import BoltzYamlHelper
 from app.helpers.fold_storage_manager import FoldStorageManager
 from app.helpers.jobs_util import (
@@ -28,6 +31,46 @@ from app.models import Fold, Invokation
 # PENDING forever. Failing fast allows RQ retry to resubmit with a fresh job ID.
 # See: https://github.com/sokrypton/ColabFold/issues/606
 MSA_PENDING_TIMEOUT_SECONDS = 10 * 60  # 10 minutes
+FOLDY_MSA_PREFIX = "foldy://"
+
+
+def materialize_foldy_msa_paths(
+    yaml_config: str,
+    fold_id: int,
+    fsm: FoldStorageManager,
+    temp_dir: str,
+) -> str:
+    """Download Foldy-managed MSAs and replace their YAML URIs with local paths."""
+    document: Any = yaml.safe_load(yaml_config)
+    if not isinstance(document, dict):
+        raise BadRequest("Boltz YAML must be a dictionary.")
+    if fsm.storage_manager is None:
+        raise BadRequest("Storage manager not initialized.")
+
+    for index, sequence_entry in enumerate(document.get("sequences", [])):
+        if not isinstance(sequence_entry, dict) or "protein" not in sequence_entry:
+            continue
+        protein = sequence_entry["protein"]
+        msa_uri = protein.get("msa") if isinstance(protein, dict) else None
+        if not isinstance(msa_uri, str) or not msa_uri.startswith(FOLDY_MSA_PREFIX):
+            continue
+        relative_path = msa_uri.removeprefix(FOLDY_MSA_PREFIX).lstrip("/")
+        if not relative_path or ".." in Path(relative_path).parts:
+            raise BadRequest(f"Invalid Foldy MSA path: {msa_uri}")
+        path_parts = relative_path.split("/", 1)
+        msa_fold_id = fold_id
+        if len(path_parts) == 2 and path_parts[0].isdigit():
+            msa_fold_id = int(path_parts[0])
+            relative_path = path_parts[1]
+        msa_bytes = fsm.storage_manager.get_binary(msa_fold_id, relative_path)
+        protein_sequence = protein.get("sequence")
+        if not isinstance(protein_sequence, str):
+            raise BadRequest("Protein sequence is required when materializing an MSA.")
+        msa_bytes = rewrite_msa_query_sequence(msa_bytes, protein_sequence)
+        local_path = Path(temp_dir) / f"protein_{index}_msa.csv"
+        local_path.write_bytes(msa_bytes)
+        protein["msa"] = str(local_path)
+    return yaml.safe_dump(document, sort_keys=False)
 
 
 def try_check_smiles_string_validity(smiles_string):
@@ -78,7 +121,7 @@ def run_boltz(fold_id, invokation_id):
             # )
             # fasta_file_path = Path(temp_dir) / fasta_relative_path
             # fasta_file_path.write_bytes(binary_fasta_str)
-            yaml_file_str = fold.yaml_config
+            yaml_file_str = materialize_foldy_msa_paths(fold.yaml_config, fold_id, fsm, temp_dir)
             yaml_file_path = Path(temp_dir) / "input.yml"
             yaml_file_path.write_text(yaml_file_str)
             fsm.storage_manager.write_file(fold_id, "boltz_input.yaml", yaml_file_str)
