@@ -80,8 +80,12 @@ class MockZeroShotModel(ZeroShotModel):
         self.predict_called = False
         self.predict_inputs = []
 
-    def predict(self, naturalness_series, embedding_series=None):  # type: ignore[reportIncompatibleMethodOverride]
-        """Mock predict method - TODO(jacob): Fix signature mismatch in test refactor."""
+    def predict(
+        self,
+        naturalness_series: pd.Series | pd.DataFrame,
+        embedding_series: pd.Series | None = None,
+    ) -> List[pd.Series]:
+        """Return one prediction series proportional to naturalness."""
         self.predict_called = True
         self.predict_inputs.append((naturalness_series, embedding_series))
 
@@ -89,7 +93,12 @@ class MockZeroShotModel(ZeroShotModel):
             return self.return_values
 
         # By default, return values proportional to naturalness scores
-        return naturalness_series.values
+        values = (
+            naturalness_series.iloc[:, 0]
+            if isinstance(naturalness_series, pd.DataFrame)
+            else naturalness_series
+        )
+        return [pd.Series(values.to_numpy(), index=naturalness_series.index)]
 
 
 @register_few_shot_model

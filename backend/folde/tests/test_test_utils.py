@@ -74,14 +74,16 @@ def test_mock_zero_shot_model():
 
     # Test prediction
     predictions = model.predict(naturalness_series, embedding_series)
-    assert len(predictions) == len(naturalness_series)
-    assert np.array_equal(predictions, naturalness_series.values)  # type: ignore[reportArgumentType]
+    assert len(predictions) == 1
+    assert predictions[0].index.equals(naturalness_series.index)
+    assert np.array_equal(predictions[0].to_numpy(), naturalness_series.values)  # type: ignore[reportArgumentType]
 
     # Test get_top_n
     top_n = 5
     top_seq_ids, pred_series = model.get_top_n(top_n, naturalness_series, embedding_series)
     assert len(top_seq_ids) == top_n
-    assert len(pred_series) == len(naturalness_series)
+    assert len(pred_series) == 1
+    assert len(pred_series[0]) == len(naturalness_series)
 
     # With temperature=0, top_n should be deterministic
     model.temperature = 0.0

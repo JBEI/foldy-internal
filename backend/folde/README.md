@@ -91,6 +91,9 @@ config = FolDEModelConfig(
         "train_epochs": 200,
         "train_patience": 40,
         "val_frequency": 10,
+        # Optional loss ablations; defaults preserve pure, uniformly weighted BT.
+        "standardized_mse_weight": 0.0,
+        "bt_activity_difference_weighting": False,
         "do_validation_with_pair_fraction": 0.2,
         "decision_mode": "constantliar",
         "lie_noise_stddev_multiplier_schedule": [6.0] * 2 + [100.0] * 8,
@@ -139,6 +142,9 @@ The main entry point for running simulations is `simulate_campaigns_with_config_
   - `decision_mode`: "mean", "constantliar", or "ucb" for ensemble aggregation
   - `ensemble_size`: Number of models in ensemble
   - `pretrain`: Whether to pretrain on single-mutant naturalness
+  - `standardized_mse_weight`: Pointwise share in `(1-w) * BT + w * standardized MSE`, using statistics from the complete training split (default `0.0`; `0.2` matches RankReg's pointwise share); use point-level holdout validation, because pair-fraction validation is rejected when this is nonzero
+  - `bt_activity_difference_weighting`: Weight each BT pair by its absolute activity difference (default `False`)
+  - Held-out-sample BT validation evaluates every train-validation and validation-validation pair blockwise, with one global weight normalization; `batch_test_size` controls memory use without changing the objective
   - See [few_shot_models.py](backend/folde/few_shot_models.py) for all options
 
 ### Key Modules
@@ -191,3 +197,100 @@ backend/folde/data/
 - Embeddings & naturalness scores pre-computed using ESM models (ESM2-600M, 3B, 15B, etc; ESMC-300M, 600M)
 
 See the module documentation for more details on available functions and their usage.
+
+## Generative Multimutant Benchmark Phase 0
+
+The Phase 0 audit captures mutation-depth distributions, standard-shell coverage,
+component-single coverage, validation counts, and SHA-256 hashes for every local ProteinGym
+activity file and feature artifact. Regenerate both the audit manifest and the JSON
+configuration schema from `backend/`:
+
+```bash
+python -m folde.scripts.prepare_generative_multimutant_manifest
+```
+
+The generated artifacts are:
+
+- `folde/model_evals/260811-generative-multimutant-manifest.json`
+- `folde/benchmarks/generative_multimutant_config.schema.json`
+
+The full command hashes large feature files. Use `--skip-feature-hashes` only for a quick
+local dataset audit; that output does not satisfy the release provenance contract. Tier 1
+dataset contracts are marked slow and can be run explicitly with:
+
+```bash
+pytest folde/tests/test_generative_multimutant_dataset_contracts.py -m slow
+```
+
+## Generative Multimutant Benchmark Phase 1
+
+Candidate generation lives under `folde/candidate_generation/`. The shared protocol passes
+only the reference sequence, revealed measurements, mutation constraints, round number, and
+derived seed to generators. Version 1 baseline implementations include adjacent exploration,
+uniform mutation-shell sampling, measured top-single combinations, and deterministic mixing
+with fallback and source-channel provenance.
+
+`ProteinGymFitnessOracle` is the sole activity-reveal boundary for generated campaigns. The
+small synthetic runner in `folde/benchmarks/synthetic_multimutant.py` exercises the complete
+proposal, scoring, selection, measurement, checkpoint, and resume lifecycle without requiring
+large feature files. The production campaign loop accepts an optional `candidate_pool_strategy`;
+callers that omit it retain the previous `one_mutation_at_a_time` behavior.
+
+## Generative Multimutant Benchmark Phase 2
+
+The closed-world Olson Protocol A runner is available at
+`folde.scripts.run_generative_multimutant_benchmark`. It runs paired random-shell,
+adjacent, top-single, PLM-only, PLM-plus-FolDE, and full-universe upper-bound arms from a
+common fixed set of measured singles. Every round writes an atomic checkpoint and a
+compressed, typed proposal-pool artifact.
+
+Olson's 12 GB embedding CSV must first be converted once to the indexed float32 memory-map
+store. The converter verifies identifier uniqueness, vector shape and finiteness, sampled
+vector equality, and records source/output SHA-256 hashes:
+
+```bash
+python -m folde.scripts.run_generative_multimutant_benchmark --prepare-feature-store
+```
+
+Then run the protocol defaults (32 initial singles, five 16-variant rounds, 10,000
+proposals, and 20 common seeds):
+
+```bash
+python -m folde.scripts.run_generative_multimutant_benchmark
+```
+
+The initial library-constrained PLM arm uses the local 600m single-substitution marginal
+table and scores a double by the sum of its component log marginals. This is explicitly a
+closed-world naturalness scorer, not free-running sequence generation. The activity scorer
+uses only cached embeddings, naturalness, and activities already revealed through the
+oracle.
+
+## Multi-objective ALDE screening gates
+
+The multi-objective extension separates proposal quality from acquisition quality across
+KCNJ2, PTEN, S22A1, KCNE1, OXDA, and RASK. Its seven paired arms compare a heterogeneous
+512-candidate proposal pool (40% naturalness, 30% embedding-neighbor, 30% uniform) with
+random, naturalness-only, and full-library pools, and compare ParEGO with fixed-weight,
+naturalness-only, and random selection on the shared heterogeneous pool.
+
+Run the preregistered screening experiment from `backend/` with:
+
+```bash
+python -m folde.scripts.run_multiobjective_alde_gates
+```
+
+The 2026-08-11 run completed 420 campaigns and 2,100 proposal/selection rounds with no
+artifact-audit errors. The heterogeneous proposal pool beat random proposal, and was
+noninferior to full-library ParEGO, but ParEGO did not reliably beat naturalness-only
+selection and the end-to-end heterogeneous arm did not reliably beat random-pool ParEGO.
+Consequently the preregistered screen does not authorize the production Torch-MLP
+replication gate. See `folde/model_evals/260811-multiobjective-alde-gates/RESULTS.md` and
+the adjacent preregistration for the exact effect sizes and decision rules.
+
+The naturalness-aware follow-up adds a primary soft-prior selector and a diagnostic hard
+veto. The soft selector shrinks each predicted objective 25% toward within-pool
+naturalness rank; the veto removes the bottom naturalness quartile before ParEGO. In 540
+fresh matched campaigns, the soft selector split 3/3 against both ParEGO and
+naturalness-only selection and did not pass its gate. The hard veto beat ParEGO on five of
+six datasets but remained statistically inconclusive. Results are under
+`folde/model_evals/260811-multiobjective-alde-hybrid/`.
