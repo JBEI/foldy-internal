@@ -1,9 +1,12 @@
+import csv
 import json
 import logging
 import re
+from io import StringIO
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 import pandas as pd
+from werkzeug.exceptions import BadRequest
 
 from app.helpers.jobs_util import get_torch_cuda_is_available_and_add_logs
 from app.helpers.sequence_util import (
@@ -11,12 +14,100 @@ from app.helpers.sequence_util import (
     seq_id_to_seq,
 )
 
+MSA_CONTEXT_STORAGE_PATH = "msa_context/e1_context.txt"
+MSA_A3M_STORAGE_PATH = "msa_context/e1_msa.a3m"
+
+
+def _extract_first_msa_sequence(msa_a3m: str) -> str:
+    lines = [line.strip() for line in msa_a3m.splitlines() if line.strip()]
+    if not lines or not lines[0].startswith(">"):
+        raise BadRequest("msa_a3m must be FASTA-like content with a header line starting with '>'")
+
+    seq_lines: List[str] = []
+    for line in lines[1:]:
+        if line.startswith(">"):
+            break
+        seq_lines.append(line)
+
+    if not seq_lines:
+        raise BadRequest("msa_a3m must include a query sequence after the header line")
+
+    return "".join(seq_lines)
+
+
+def _clean_msa_query_sequence(sequence: str) -> str:
+    cleaned = sequence.replace("\x00", "").replace(".", "-")
+    cleaned = "".join(char for char in cleaned if not char.islower())
+    cleaned = cleaned.replace("-", "")
+    return cleaned
+
+
+def _boltz_msa_csv_to_a3m(msa_csv: str, wt_aa_seq: str) -> str:
+    reader = csv.DictReader(StringIO(msa_csv))
+    if not reader.fieldnames or "sequence" not in reader.fieldnames:
+        raise BadRequest("Boltz MSA CSV must include a 'sequence' column")
+
+    sequences: List[str] = []
+    for row in reader:
+        seq = (row.get("sequence") or "").strip()
+        if seq:
+            sequences.append(seq)
+
+    if not sequences:
+        raise BadRequest("Boltz MSA CSV contains no sequences")
+
+    query_index = None
+    for idx, seq in enumerate(sequences):
+        if _clean_msa_query_sequence(seq) == wt_aa_seq:
+            query_index = idx
+            break
+
+    if query_index is None:
+        raise BadRequest("Boltz MSA CSV does not contain the WT query sequence")
+
+    ordered = [sequences[query_index]] + [
+        seq for idx, seq in enumerate(sequences) if idx != query_index
+    ]
+
+    lines = [">query", ordered[0]]
+    for idx, seq in enumerate(ordered[1:], start=1):
+        lines.append(f">seq_{idx}")
+        lines.append(seq)
+
+    return "\n".join(lines) + "\n"
+
+
+def normalize_msa_a3m_contents(msa_contents: str, wt_aa_seq: str) -> str:
+    if not msa_contents:
+        raise BadRequest("msa_a3m must be non-empty .a3m content with a FASTA header")
+
+    if ">" not in msa_contents:
+        return _boltz_msa_csv_to_a3m(msa_contents, wt_aa_seq)
+
+    return msa_contents
+
+
+def validate_msa_a3m_contents(msa_a3m: str, wt_aa_seq: str) -> str:
+    if not msa_a3m or ">" not in msa_a3m:
+        raise BadRequest("msa_a3m must be non-empty .a3m content with a FASTA header")
+
+    first_sequence = _extract_first_msa_sequence(msa_a3m)
+    cleaned_sequence = _clean_msa_query_sequence(first_sequence)
+    if not cleaned_sequence:
+        raise BadRequest("msa_a3m query sequence is empty after cleaning")
+    if cleaned_sequence != wt_aa_seq:
+        raise BadRequest("msa_a3m query sequence does not match the WT sequence from the fold YAML")
+
+    return cleaned_sequence
+
 
 def get_naturalness(
     wt_aa_seq: str,
     logit_model: str,
     get_depth_two_logits: Optional[bool] = False,
     cif_file_path: Optional[str] = None,
+    use_msa_context: bool = False,
+    msa_a3m_path: Optional[str] = None,
 ) -> Tuple[str, pd.DataFrame]:
     """
     Compute naturalness scores for a given wild-type amino acid sequence.
@@ -26,6 +117,8 @@ def get_naturalness(
         logit_model: ESM model name to use for logit computation
         get_depth_two_logits: If True, compute logits for all second-order mutants
         cif_file_path: Optional path to CIF file for structure-aware models
+        use_msa_context: Whether to prepend E1 MSA context (E1-only)
+        msa_a3m_path: Path to a local .a3m file to sample context from
 
     Returns:
         Tuple containing:
@@ -71,7 +164,12 @@ def get_naturalness(
         melted_df_list: List[pd.DataFrame] = []
         for ii, base_seq_id in enumerate(base_seq_ids):
             base_seq = seq_id_to_seq(wt_aa_seq, base_seq_id)
-            melted_df = client.get_logits(base_seq, cif_file_path)
+            melted_df = client.get_logits(
+                base_seq,
+                cif_file_path,
+                use_msa_context=use_msa_context,
+                msa_a3m_path=msa_a3m_path,
+            )
             melted_df["base_seq_id"] = base_seq_id
             melted_df_list.append(melted_df)
 
@@ -80,7 +178,12 @@ def get_naturalness(
         melted_df = pd.concat(melted_df_list)
         return "", melted_df
     else:
-        melted_df = client.get_logits(wt_aa_seq, cif_file_path)
+        melted_df = client.get_logits(
+            wt_aa_seq,
+            cif_file_path,
+            use_msa_context=use_msa_context,
+            msa_a3m_path=msa_a3m_path,
+        )
 
         # Process the melted dataframe to add WT marginal scores
         logging.info("Processing logits and preparing to save")

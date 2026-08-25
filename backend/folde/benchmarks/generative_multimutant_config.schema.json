@@ -1,0 +1,469 @@
+{
+  "$defs": {
+    "BenchmarkProtocol": {
+      "enum": [
+        "single_to_double",
+        "shell_jump",
+        "double_mutant_replication",
+        "sparse_landscape_stress"
+      ],
+      "title": "BenchmarkProtocol",
+      "type": "string"
+    },
+    "CampaignBenchmarkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "initial_measurements": {
+          "default": 32,
+          "exclusiveMinimum": 0,
+          "title": "Initial Measurements",
+          "type": "integer"
+        },
+        "round_size": {
+          "default": 16,
+          "exclusiveMinimum": 0,
+          "title": "Round Size",
+          "type": "integer"
+        },
+        "rounds": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "title": "Rounds",
+          "type": "integer"
+        },
+        "simulations": {
+          "default": 20,
+          "exclusiveMinimum": 0,
+          "title": "Simulations",
+          "type": "integer"
+        },
+        "proposal_budget": {
+          "default": 10000,
+          "exclusiveMinimum": 0,
+          "title": "Proposal Budget",
+          "type": "integer"
+        }
+      },
+      "title": "CampaignBenchmarkConfig",
+      "type": "object"
+    },
+    "CoveragePolicy": {
+      "enum": [
+        "exhaustive",
+        "library_constrained",
+        "rejection_sampling"
+      ],
+      "title": "CoveragePolicy",
+      "type": "string"
+    },
+    "DatasetBenchmarkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "dms_id": {
+          "minLength": 1,
+          "title": "Dms Id",
+          "type": "string"
+        },
+        "protocol": {
+          "$ref": "#/$defs/BenchmarkProtocol"
+        },
+        "coverage_policy": {
+          "$ref": "#/$defs/CoveragePolicy"
+        },
+        "allowed_positions": {
+          "items": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "title": "Allowed Positions",
+          "type": "array"
+        },
+        "available_depths": {
+          "anyOf": [
+            {
+              "items": {
+                "exclusiveMinimum": 0,
+                "type": "integer"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Available Depths"
+        },
+        "target_depths": {
+          "default": [
+            2
+          ],
+          "items": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "title": "Target Depths",
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "dms_id",
+        "protocol",
+        "coverage_policy",
+        "allowed_positions"
+      ],
+      "title": "DatasetBenchmarkConfig",
+      "type": "object"
+    },
+    "FeatureBenchmarkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "embedding_model": {
+          "minLength": 1,
+          "title": "Embedding Model",
+          "type": "string"
+        },
+        "embedding_revision": {
+          "minLength": 1,
+          "title": "Embedding Revision",
+          "type": "string"
+        },
+        "embedding_column": {
+          "default": "embedding",
+          "title": "Embedding Column",
+          "type": "string"
+        },
+        "naturalness_model": {
+          "minLength": 1,
+          "title": "Naturalness Model",
+          "type": "string"
+        },
+        "naturalness_revision": {
+          "minLength": 1,
+          "title": "Naturalness Revision",
+          "type": "string"
+        },
+        "naturalness_columns": {
+          "default": [
+            "log_wt_marginal"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Naturalness Columns",
+          "type": "array"
+        }
+      },
+      "required": [
+        "embedding_model",
+        "embedding_revision",
+        "naturalness_model",
+        "naturalness_revision"
+      ],
+      "title": "FeatureBenchmarkConfig",
+      "type": "object"
+    },
+    "FolDEBenchmarkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "zero_shot_model_name": {
+          "title": "Zero Shot Model Name",
+          "type": "string"
+        },
+        "few_shot_model_name": {
+          "title": "Few Shot Model Name",
+          "type": "string"
+        },
+        "acquisition": {
+          "enum": [
+            "mean",
+            "ucb",
+            "constantliar",
+            "random"
+          ],
+          "title": "Acquisition",
+          "type": "string"
+        },
+        "ensemble_size": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "title": "Ensemble Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "zero_shot_model_name",
+        "few_shot_model_name",
+        "acquisition"
+      ],
+      "title": "FolDEBenchmarkConfig",
+      "type": "object"
+    },
+    "GeneratorBenchmarkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revision"
+        },
+        "temperature": {
+          "default": 1.0,
+          "exclusiveMinimum": 0,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "top_k": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Top K"
+        },
+        "refinement_sweeps": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Refinement Sweeps",
+          "type": "integer"
+        },
+        "raw_sampling_cap": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Sampling Cap"
+        },
+        "parent_policy": {
+          "default": "mixed_elite",
+          "title": "Parent Policy",
+          "type": "string"
+        },
+        "position_policy": {
+          "default": "uniform",
+          "title": "Position Policy",
+          "type": "string"
+        },
+        "min_mutation_depth": {
+          "default": 2,
+          "exclusiveMinimum": 0,
+          "title": "Min Mutation Depth",
+          "type": "integer"
+        },
+        "max_mutation_depth": {
+          "default": 2,
+          "exclusiveMinimum": 0,
+          "title": "Max Mutation Depth",
+          "type": "integer"
+        },
+        "allowed_alphabet": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Alphabet",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "proposal_mix": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proposal Mix"
+        },
+        "fallback_generator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fallback Generator"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "GeneratorBenchmarkConfig",
+      "type": "object"
+    },
+    "OutputBenchmarkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "checkpoint_dir": {
+          "minLength": 1,
+          "title": "Checkpoint Dir",
+          "type": "string"
+        },
+        "save_proposal_pools": {
+          "default": true,
+          "title": "Save Proposal Pools",
+          "type": "boolean"
+        },
+        "compression": {
+          "default": "zstd",
+          "enum": [
+            "zstd",
+            "gzip",
+            "none"
+          ],
+          "title": "Compression",
+          "type": "string"
+        }
+      },
+      "required": [
+        "checkpoint_dir"
+      ],
+      "title": "OutputBenchmarkConfig",
+      "type": "object"
+    },
+    "SelectionBenchmarkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "diversity_metric": {
+          "enum": [
+            "embedding",
+            "mutation_jaccard",
+            "hamming"
+          ],
+          "title": "Diversity Metric",
+          "type": "string"
+        },
+        "minimum_pairwise_distance": {
+          "default": 1,
+          "minimum": 0,
+          "title": "Minimum Pairwise Distance",
+          "type": "integer"
+        },
+        "max_per_parent": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Per Parent"
+        }
+      },
+      "required": [
+        "diversity_metric"
+      ],
+      "title": "SelectionBenchmarkConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Top-level, versioned configuration for benchmark execution.",
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "release_run": {
+      "default": false,
+      "title": "Release Run",
+      "type": "boolean"
+    },
+    "datasets": {
+      "items": {
+        "$ref": "#/$defs/DatasetBenchmarkConfig"
+      },
+      "title": "Datasets",
+      "type": "array"
+    },
+    "campaign": {
+      "$ref": "#/$defs/CampaignBenchmarkConfig"
+    },
+    "features": {
+      "$ref": "#/$defs/FeatureBenchmarkConfig"
+    },
+    "generator": {
+      "$ref": "#/$defs/GeneratorBenchmarkConfig"
+    },
+    "folde": {
+      "$ref": "#/$defs/FolDEBenchmarkConfig"
+    },
+    "selection": {
+      "$ref": "#/$defs/SelectionBenchmarkConfig"
+    },
+    "output": {
+      "$ref": "#/$defs/OutputBenchmarkConfig"
+    }
+  },
+  "required": [
+    "name",
+    "seed",
+    "datasets",
+    "campaign",
+    "features",
+    "generator",
+    "folde",
+    "selection",
+    "output"
+  ],
+  "title": "GenerativeMultimutantBenchmarkConfig",
+  "type": "object"
+}

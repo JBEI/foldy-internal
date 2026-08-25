@@ -1,5 +1,6 @@
 # Configure logging
 import logging
+import os
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -25,6 +26,9 @@ folde_train_dms_ids = [
 
 # Example configuration
 NAME = "250713-naturalness-param-scan"
+SKIP_EMBEDDING_LOADING = os.environ.get("FOLDE_BENCH_SKIP_EMBEDDINGS") == "1"
+if SKIP_EMBEDDING_LOADING:
+    NAME = f"{NAME}-skip-embeddings"
 
 base_config = FolDEModelConfig(
     name="FolDE",
@@ -94,4 +98,5 @@ results = simulate_campaigns_with_config_checkpoints(
     max_rounds=3,
     random_seed=42,
     num_workers=10,
+    skip_embedding_loading=SKIP_EMBEDDING_LOADING,
 )

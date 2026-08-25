@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
@@ -180,7 +181,9 @@ def constant_liar_sample(
             f"Calculating a good variance requires at least 3 models, got {ensemble_preds.shape[1]}"
         )
 
-    pred_tensor = torch.tensor(ensemble_preds.T, dtype=torch.float64)  # (S, N)
+    requested_device = os.environ.get("FOLDE_CONSTANT_LIAR_DEVICE")
+    device = requested_device or ("cuda" if torch.cuda.is_available() else "cpu")
+    pred_tensor = torch.as_tensor(ensemble_preds.T, dtype=torch.float64, device=device)  # (S, N)
 
     S, N = pred_tensor.shape
     lie_noise_variance = (lie_noise_stddev_multiplier * pred_tensor.std(dim=0).median().item()) ** 2
@@ -188,8 +191,10 @@ def constant_liar_sample(
     # ────────────────────── compute empirical prior mean/covariance ─────────────
     prior_mean = pred_tensor.mean(dim=0)  # μ₀, shape (N,)
     devs = pred_tensor - prior_mean  # centred matrix (S, N)
-    Cov = (devs.T @ devs) / S  # empirical covariance, rank ≤ S
-    Cov += lie_noise_variance * torch.eye(N)  # ← “nugget” ensures PSD & noise floor
+    # Keep the rank-S factorization instead of materializing an N x N matrix.
+    # At N=5,000 this avoids a 191 MiB float64 covariance and sixteen dense
+    # rank-one matrix updates for every selected slate.
+    covariance_factors = devs.T / np.sqrt(S)  # (N, S)
 
     if choice_of_baseline == "min":
         L = prior_mean.min().item()
@@ -201,8 +206,11 @@ def constant_liar_sample(
         raise ValueError(f"Invalid choice of baseline {choice_of_baseline}")
 
     # Diagonal variance and standard deviation (already ≥ SIGMA_N2)
-    vars = Cov.diag()
+    vars = covariance_factors.square().sum(dim=1) + lie_noise_variance
     sigmas = vars.sqrt()
+    posterior_updates = torch.empty(
+        (N, q_slate_size), dtype=pred_tensor.dtype, device=pred_tensor.device
+    )
 
     # ───────────────────────────── constant-liar loop ───────────────────────────
     selected = []  # indices of chosen items
@@ -217,24 +225,32 @@ def constant_liar_sample(
         idx = int(torch.argmax(ucb))
         selected.append(idx)
         # print(f"Picked {seq_ids[idx]}  with UCB={ucb[idx]:.3f}")
+        score = ucb[idx].item()
+        mean = prior_mean[idx].item()
+        sigma = sigmas[idx].item()
         logging.info(
-            f"Selecting {seq_ids[idx]} (original rank {idx+1}), score: {ucb[idx]} = {prior_mean[idx]} + {ucb_beta} * {sigmas[idx]}"
+            f"Selecting {seq_ids[idx]} (original rank {idx+1}), "
+            f"score: {score} = {mean} + {ucb_beta} * {sigma}"
         )
 
-        # 3) Single-point GP update with *fake* observation y=L at index idx
-        k_i = Cov[:, idx].clone()  # column vector k(·, x_i)
+        # 3) Single-point GP update with *fake* observation y=L at index idx.
+        # Reconstruct only the requested posterior covariance column:
+        # K_t[:, i] = K_0[:, i] - A_t @ A_t[i, :].
+        k_i = covariance_factors @ covariance_factors[idx]
+        k_i[idx] += lie_noise_variance
+        if len(selected) > 1:
+            previous_updates = posterior_updates[:, : len(selected) - 1]
+            k_i = k_i - previous_updates @ previous_updates[idx]
         v_i = vars[idx].item()  # marginal var at x_i  (≥ σ_n²)
 
         # Posterior mean:   μ ← μ + k_i (L − μ_i) / v_i
         delta = (L - prior_mean[idx]) / v_i
         prior_mean = prior_mean + k_i * delta
 
-        # Posterior covariance (rank-1 Downdate):  Σ ← Σ − k_i k_iᵀ / v_i
-        Cov = Cov - torch.outer(k_i, k_i) / v_i
-        Cov = 0.5 * (Cov + Cov.T)  # re-symmetrise to kill FP drift
-
-        # Refresh variance/std-dev
-        vars = Cov.diag()
+        # Retain the normalized update vector and update only the diagonal.
+        update = k_i / np.sqrt(v_i)
+        posterior_updates[:, len(selected) - 1] = update
+        vars = vars - update.square()
         sigmas = vars.sqrt()
 
     # ─────────────────────────── map indices back to IDs ────────────────────────
@@ -592,11 +608,22 @@ class NaturalnessImputer(object):
         self.single_mutant_naturalness_df: Optional[pd.DataFrame] = None
         self.knns: Dict[str, KNeighborsRegressor] = {}
 
-    def pretrain(self, naturalness_df: pd.DataFrame, embedding_series: pd.Series):
+    def pretrain(self, naturalness_df: pd.DataFrame, embedding_series: Optional[pd.Series]):
         if self.is_pretrained:
             raise ValueError("Model is already pretrained.")
 
         self.knns = {}
+        if embedding_series is None or embedding_series.isna().all():
+            for naturalness_column in naturalness_df.columns:
+                naturalness_series = naturalness_df[naturalness_column]
+                assert not naturalness_series.isna().any(), "naturalness_series contains NANs"
+            self.single_mutant_naturalness_df = naturalness_df
+            self.is_pretrained = False
+            logging.info(
+                "Skipping NaturalnessImputer KNN pretraining because embeddings are not loaded."
+            )
+            return
+
         for naturalness_column in naturalness_df.columns:
             naturalness_series = naturalness_df[naturalness_column]
             assert naturalness_series.index.equals(embedding_series.index)
@@ -618,8 +645,9 @@ class NaturalnessImputer(object):
 
     def impute(self, naturalness_df: pd.DataFrame, embedding_series: pd.Series) -> List[pd.Series]:
         assert self.single_mutant_naturalness_df is not None
-        assert len(naturalness_df.columns) == len(self.knns)
         assert set(naturalness_df.columns) == set(self.single_mutant_naturalness_df.columns)
+        if self.knns:
+            assert set(naturalness_df.columns) == set(self.knns.keys())
 
         # Get the ensemble of naturalness scores with missing values imputed.
 
@@ -629,7 +657,8 @@ class NaturalnessImputer(object):
 
             naturalness_series = naturalness_df[naturalness_column]
             single_mutant_naturalness_series = self.single_mutant_naturalness_df[naturalness_column]
-            knn = self.knns[naturalness_column]
+            knn = self.knns.get(naturalness_column)
+            missing_single_mutants: set[str] = set()
 
             def get_naturalness(seq_id, direct_naturalness) -> float:
                 """Try computing naturalness for mutants even if none was provided by extrapolating for multimutants."""
@@ -643,7 +672,13 @@ class NaturalnessImputer(object):
                 seq_id_parts = seq_id.split("_")
 
                 # For multimutants, we compute naturalness as the product of the naturalness of the single mutants.
-                computed_naturalness = single_mutant_naturalness_series.loc[seq_id_parts].sum()
+                single_mutant_values = single_mutant_naturalness_series.reindex(seq_id_parts)
+                if single_mutant_values.isna().any():
+                    missing_single_mutants.update(
+                        single_mutant_values.index[single_mutant_values.isna()].tolist()
+                    )
+                    return np.nan
+                computed_naturalness = single_mutant_values.sum()
                 if pd.isna(computed_naturalness):
                     raise ValueError(
                         f"Computed naturalness is NAN for {seq_id} with parts {seq_id_parts}"
@@ -656,34 +691,62 @@ class NaturalnessImputer(object):
             )
             computed_naturalness_series.index = naturalness_series.index
 
+            if missing_single_mutants:
+                missing_examples = ", ".join(sorted(missing_single_mutants)[:5])
+                logging.warning(
+                    "Missing naturalness for %s single mutants (e.g., %s); "
+                    "affected variants will be imputed if embeddings are available.",
+                    len(missing_single_mutants),
+                    missing_examples,
+                )
+
             # Do KNN imputation to fill in NANs from homologs.
             if computed_naturalness_series.isna().any():
-                if not self.is_pretrained:
-                    raise ValueError(
-                        "Model is not pretrained, so cannot fill in NANs from homologs."
+                if not self.is_pretrained or knn is None:
+                    fallback_value = computed_naturalness_series.min(skipna=True)
+                    if pd.isna(fallback_value):
+                        raise ValueError(
+                            "Naturalness contains only NANs and embeddings are unavailable for "
+                            "imputation. Load embeddings or provide naturalness scores."
+                        )
+                    missing_note = ""
+                    if missing_single_mutants:
+                        missing_note = (
+                            " Missing single-mutant naturalness for "
+                            f"{len(missing_single_mutants)} alleles (e.g., {missing_examples})."
+                        )
+                    logging.warning(
+                        "Naturalness contains NANs but embeddings are unavailable; filling "
+                        "missing values with %.6f.%s",
+                        fallback_value,
+                        missing_note,
+                    )
+                    computed_naturalness_series = computed_naturalness_series.fillna(fallback_value)
+                else:
+                    logging.info(
+                        "Filling in NANs from homologs for %s/%s naturalness values.",
+                        computed_naturalness_series.isna().sum(),
+                        len(computed_naturalness_series),
                     )
 
-                logging.info(
-                    f"Filling in NANs from homologs for {computed_naturalness_series.isna().sum()}/{len(computed_naturalness_series)} naturalness values."
-                )
-                assert embedding_series is not None
-                embedding_array = np.array([np.array(emb) for emb in embedding_series.values])
-                naturalness_array = computed_naturalness_series.values
+                    assert embedding_series is not None
+                    embedding_array = np.array([np.array(emb) for emb in embedding_series.values])
+                    naturalness_array = computed_naturalness_series.values
 
-                # Find indices for known and missing
-                missing_mask = computed_naturalness_series.isna().to_numpy()
-                X_missing = embedding_array[missing_mask]
+                    # Find indices for known and missing
+                    missing_mask = computed_naturalness_series.isna().to_numpy()
+                    X_missing = embedding_array[missing_mask]
 
-                imputed_values = knn.predict(X_missing)
+                    imputed_values = knn.predict(X_missing)
 
-                # Fill in the missing values
-                imputed_naturalness = naturalness_array.copy()
-                imputed_naturalness[missing_mask] = imputed_values
+                    # Fill in the missing values
+                    imputed_naturalness = naturalness_array.copy()
+                    imputed_naturalness[missing_mask] = imputed_values
 
-                # Convert back to Series
-                computed_naturalness_series = pd.Series(
-                    imputed_naturalness, index=naturalness_series.index
-                )
+                    # Convert back to Series
+                    computed_naturalness_series = pd.Series(
+                        imputed_naturalness, index=naturalness_series.index
+                    )
 
             if computed_naturalness_series.isna().any():
                 raise ValueError(

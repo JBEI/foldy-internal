@@ -12,8 +12,9 @@ import logging
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -23,6 +24,7 @@ from app.helpers.sequence_util import (
     get_loci_set,
     is_homolog_seq_id,
     maybe_get_allele_id_error_message,
+    maybe_get_seq_id_error_message,
     seq_id_to_seq,
     sort_seq_id_list,
 )
@@ -37,6 +39,161 @@ EMBEDDINGS_DIR = DATA_DIR / "embeddings"
 NATURALNESS_DIR = DATA_DIR / "naturalness"
 DMS_METADATA_FILE = DATA_DIR / "DMS_substitutions.csv"
 FLIP_AAV_DATA_FILE = DATA_DIR / "FLIP-AAV_multimutant_dataset.csv"
+
+
+def _get_foldydata_dir() -> Optional[Path]:
+    env_dir = os.environ.get("FOLDY_LOCAL_STORAGE_DIR", "").strip()
+    if env_dir:
+        path = Path(env_dir)
+        if path.exists():
+            return path
+    fallback = MODULE_DIR.parent / "foldydata"
+    if fallback.exists():
+        return fallback
+    return None
+
+
+@lru_cache(maxsize=1)
+def _get_foldydb_fold_name_map() -> Dict[str, int]:
+    db_url = os.environ.get("DATABASE_URL", "").strip()
+    if not db_url:
+        return {}
+    try:
+        from sqlalchemy import create_engine, text
+    except Exception as exc:
+        logger.debug(f"SQLAlchemy not available for foldydb lookup: {exc}")
+        return {}
+    engine = create_engine(db_url)
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(text("SELECT id, name FROM roles")).fetchall()
+        return {str(row[1]).lower(): int(row[0]) for row in rows if row[1]}
+    except Exception as exc:
+        logger.warning(f"Failed to load fold names from foldydb: {exc}")
+        return {}
+    finally:
+        engine.dispose()
+
+
+def _normalize_sequence(seq: str) -> str:
+    return "".join(seq.split()).upper()
+
+
+def _read_foldydata_sequence(fold_dir: Path) -> Optional[str]:
+    if not fold_dir.exists():
+        return None
+    preferred = None
+    if fold_dir.name.isdigit():
+        preferred = fold_dir / f"{int(fold_dir.name):06d}.fasta"
+    candidates = [preferred] if preferred and preferred.exists() else []
+    candidates.extend(sorted(fold_dir.glob("*.fasta")))
+    for candidate in candidates:
+        if "_dna" in candidate.name:
+            continue
+        lines = candidate.read_text().splitlines()
+        seq = "".join(line.strip() for line in lines if line and not line.startswith(">"))
+        if seq:
+            return seq
+    return None
+
+
+@lru_cache(maxsize=1)
+def _get_foldydata_sequence_map() -> Dict[str, Path]:
+    foldydata_dir = _get_foldydata_dir()
+    if not foldydata_dir:
+        return {}
+    sequence_map: Dict[str, Path] = {}
+    for fold_dir in foldydata_dir.iterdir():
+        if not fold_dir.is_dir() or not fold_dir.name.isdigit():
+            continue
+        seq = _read_foldydata_sequence(fold_dir)
+        if not seq:
+            continue
+        normalized = _normalize_sequence(seq)
+        if not normalized or normalized in sequence_map:
+            continue
+        sequence_map[normalized] = fold_dir
+    return sequence_map
+
+
+@lru_cache(maxsize=1)
+def _get_dms_target_sequence_map() -> Dict[str, str]:
+    try:
+        dms_metadata = get_dms_metadata()
+    except Exception as exc:
+        logger.debug(f"Failed to load DMS metadata for foldydata fallback: {exc}")
+        return {}
+    seq_map: Dict[str, str] = {}
+    for _, row in dms_metadata.iterrows():
+        dms_id = row.get("DMS_id")
+        seq = row.get("target_seq")
+        if isinstance(dms_id, str) and isinstance(seq, str) and seq:
+            seq_map[dms_id.lower()] = _normalize_sequence(seq)
+    return seq_map
+
+
+def _get_foldydata_fold_dir_by_sequence(dms_id: str) -> Optional[Path]:
+    target_seq = _get_dms_target_sequence_map().get(dms_id.lower())
+    if not target_seq:
+        return None
+    return _get_foldydata_sequence_map().get(target_seq)
+
+
+def _get_foldydata_fold_dir(dms_id: str) -> Optional[Path]:
+    foldydata_dir = _get_foldydata_dir()
+    if not foldydata_dir:
+        return None
+    fold_map = _get_foldydb_fold_name_map()
+    fold_id = fold_map.get(dms_id.lower())
+    if fold_id:
+        padded = f"{fold_id:06d}"
+        for candidate in (foldydata_dir / padded, foldydata_dir / str(fold_id)):
+            if candidate.exists():
+                return candidate
+    return _get_foldydata_fold_dir_by_sequence(dms_id)
+
+
+def _choose_preferred_file(paths: Iterable[Path]) -> Optional[Path]:
+    candidates = sorted(paths)
+    if not candidates:
+        return None
+    non_msa = [path for path in candidates if "msa" not in path.name.lower()]
+    return non_msa[0] if non_msa else candidates[0]
+
+
+def _find_foldydata_embedding_file(dms_id: str, embedding_model_id: str) -> Optional[Path]:
+    fold_dir = _get_foldydata_fold_dir(dms_id)
+    if not fold_dir:
+        return None
+    embed_dir = fold_dir / "embed"
+    if not embed_dir.exists():
+        return None
+    model_token = embedding_model_id.lower()
+    candidates = [path for path in embed_dir.glob("*.csv") if model_token in path.name.lower()]
+    return _choose_preferred_file(candidates)
+
+
+def _find_foldydata_naturalness_file(dms_id: str, naturalness_model_id: str) -> Optional[Path]:
+    fold_dir = _get_foldydata_fold_dir(dms_id)
+    if not fold_dir:
+        return None
+    naturalness_dir = fold_dir / "naturalness"
+    if not naturalness_dir.exists():
+        return None
+    model_token = naturalness_model_id.lower()
+    candidates = [
+        path for path in naturalness_dir.glob("*_melted.csv") if model_token in path.name.lower()
+    ]
+    return _choose_preferred_file(candidates)
+
+
+def _get_foldydata_paths(
+    dms_id: str, embedding_model_id: str, naturalness_model_id: str
+) -> Tuple[Optional[Path], Optional[Path]]:
+    return (
+        _find_foldydata_embedding_file(dms_id, embedding_model_id),
+        _find_foldydata_naturalness_file(dms_id, naturalness_model_id),
+    )
 
 
 def maybe_modify_seq_id(dms_id: str, seq_id: str) -> str:
@@ -81,7 +238,9 @@ def get_available_proteingym_datasets(
         naturalness_model_id: The specific naturalness model ID to search for
 
     Returns:
-        DataFrame containing metadata for datasets with the specified models
+        DataFrame containing metadata for datasets with the specified models.
+        Availability is determined by ProteinGym files on disk and, if configured,
+        foldydata outputs linked to folds with matching names.
     """
     # Check if metadata file exists
     if not os.path.exists(DMS_METADATA_FILE):
@@ -104,6 +263,13 @@ def get_available_proteingym_datasets(
         )
 
         if os.path.exists(embedding_file) and os.path.exists(naturalness_file):
+            available_datasets.append(known_dms_id)
+            continue
+
+        foldy_embedding, foldy_naturalness = _get_foldydata_paths(
+            known_dms_id, embedding_model_id, naturalness_model_id
+        )
+        if foldy_embedding and foldy_naturalness:
             available_datasets.append(known_dms_id)
 
     # Filter metadata to only include datasets with both required files
@@ -133,8 +299,45 @@ def _parse_embedding_columns_inplace(df: pd.DataFrame) -> pd.DataFrame:
                 for idx in df.index:
                     val = df.at[idx, col]
                     if isinstance(val, str):
-                        df.at[idx, col] = np.array(json.loads(val))
+                        # Models consume float32 tensors. Converting at the storage
+                        # boundary avoids retaining float64 copies of every embedding.
+                        df.at[idx, col] = np.asarray(json.loads(val), dtype=np.float32)
     return df
+
+
+def get_binary_embedding_paths(csv_path: Path) -> tuple[Path, Path]:
+    """Return binary matrix and sequence-ID cache paths for an embedding CSV."""
+    return (
+        csv_path.with_suffix(".float32.npy"),
+        csv_path.with_suffix(".seq_ids.txt"),
+    )
+
+
+def try_load_binary_embedding_cache(csv_path: Path) -> Optional[pd.DataFrame]:
+    """Load a fresh float32/memory-mapped cache for an embedding CSV when present."""
+    matrix_path, seq_ids_path = get_binary_embedding_paths(csv_path)
+    if not matrix_path.exists() or not seq_ids_path.exists():
+        return None
+    source_mtime = csv_path.stat().st_mtime
+    if matrix_path.stat().st_mtime < source_mtime or seq_ids_path.stat().st_mtime < source_mtime:
+        logger.warning(f"Ignoring stale binary embedding cache for {csv_path}")
+        return None
+
+    matrix = np.load(matrix_path, mmap_mode="r")
+    if matrix.ndim != 2 or matrix.dtype != np.float32:
+        raise ValueError(
+            f"Binary embedding cache must be a float32 matrix; got {matrix.dtype} {matrix.shape}"
+        )
+    seq_ids = seq_ids_path.read_text().splitlines()
+    if len(seq_ids) != matrix.shape[0]:
+        raise ValueError(
+            f"Binary embedding cache row mismatch: {len(seq_ids)} IDs vs {matrix.shape[0]} rows"
+        )
+
+    embeddings = np.empty(matrix.shape[0], dtype=object)
+    for row_index in range(matrix.shape[0]):
+        embeddings[row_index] = matrix[row_index]
+    return pd.DataFrame({"seq_id": seq_ids, "embedding": embeddings})
 
 
 def try_load_sharded_embedding_file(embeddings_dir: str, prefix: str) -> pd.DataFrame:
@@ -232,14 +435,21 @@ def try_load_sharded_embedding_file(embeddings_dir: str, prefix: str) -> pd.Data
 
 
 def get_proteingym_dataset(
-    dms_id: str, embedding_model_id: str, naturalness_model_id: str
+    dms_id: str,
+    embedding_model_id: str,
+    naturalness_model_id: str,
+    skip_embedding_loading: bool = False,
 ) -> Tuple[str, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Load ProteinGym activity data, embeddings, and naturalness scores.
+
+    Falls back to foldydata outputs (when a fold with matching name exists) if
+    ProteinGym embeddings or naturalness files are not present locally.
 
     Args:
         dms_id: Identifier for the DMS dataset (e.g., "BLAT_ECOLX_Stiffler_2015")
         embedding_model_id: Identifier for the embedding model (e.g., "300m")
         naturalness_model_id: Identifier for the naturalness model (e.g., "esm2")
+        skip_embedding_loading: If True, skip loading embeddings and use placeholder vectors.
 
     Returns:
         Tuple of (wt_aa_seq, naturalness_df, embedding_df, activity_df, category_df)
@@ -257,41 +467,70 @@ def get_proteingym_dataset(
 
     # #########################################################
     # LOAD EMBEDDING DATA ######################################
-    embedding_file_path = os.path.join(
-        EMBEDDINGS_DIR, f"{dms_id}_embedding_{embedding_model_id}.csv"
-    )
+    embedding_df: Optional[pd.DataFrame] = None
+    embedding_source: Optional[str] = None
+    if not skip_embedding_loading:
+        embedding_file_path = os.path.join(
+            EMBEDDINGS_DIR, f"{dms_id}_embedding_{embedding_model_id}.csv"
+        )
 
-    if os.path.exists(embedding_file_path):
-        # Single file case
-        embedding_df = pd.read_csv(embedding_file_path)
-        _parse_embedding_columns_inplace(embedding_df)
-    else:
-        # Try loading sharded files (parsing happens inside)
-        prefix = f"{dms_id}_embedding_{embedding_model_id}"
-        try:
-            embedding_df = try_load_sharded_embedding_file(str(EMBEDDINGS_DIR), prefix)
-        except FileNotFoundError:
-            raise FileNotFoundError(
-                f"Embedding file not found (neither single file nor shards): {embedding_file_path}"
-            )
+        embedding_source = embedding_file_path
+        if os.path.exists(embedding_file_path):
+            # Single file case
+            embedding_path = Path(embedding_file_path)
+            embedding_df = try_load_binary_embedding_cache(embedding_path)
+            if embedding_df is None:
+                embedding_df = pd.read_csv(embedding_file_path)
+                _parse_embedding_columns_inplace(embedding_df)
+            else:
+                embedding_source = str(get_binary_embedding_paths(embedding_path)[0])
+        else:
+            # Try loading sharded files (parsing happens inside)
+            prefix = f"{dms_id}_embedding_{embedding_model_id}"
+            try:
+                embedding_df = try_load_sharded_embedding_file(str(EMBEDDINGS_DIR), prefix)
+                embedding_source = f"sharded:{prefix}"
+            except FileNotFoundError:
+                foldy_embedding = _find_foldydata_embedding_file(dms_id, embedding_model_id)
+                if not foldy_embedding:
+                    raise FileNotFoundError(
+                        "Embedding file not found (neither single file nor shards): "
+                        f"{embedding_file_path}"
+                    )
+                embedding_df = try_load_binary_embedding_cache(foldy_embedding)
+                if embedding_df is None:
+                    embedding_df = pd.read_csv(foldy_embedding)
+                    _parse_embedding_columns_inplace(embedding_df)
+                    embedding_source = str(foldy_embedding)
+                else:
+                    embedding_source = str(get_binary_embedding_paths(foldy_embedding)[0])
 
     # Check that the naturalness file exists
     naturalness_file_path = os.path.join(
         NATURALNESS_DIR, f"{dms_id}_naturalness_{naturalness_model_id}.csv"
     )
+    naturalness_source = naturalness_file_path
     if not os.path.exists(naturalness_file_path):
-        raise FileNotFoundError(f"Naturalness file not found: {naturalness_file_path}")
-    logger.info(f"Loaded embeddings for {dms_id} with {len(embedding_df)} rows")
-    embedding_df["seq_id"] = embedding_df["seq_id"].apply(lambda x: maybe_modify_seq_id(dms_id, x))
-    embedding_df = embedding_df.set_index("seq_id", drop=False)
-    seq_ids_with_embeddings = set(embedding_df.index)
+        foldy_naturalness = _find_foldydata_naturalness_file(dms_id, naturalness_model_id)
+        if not foldy_naturalness:
+            raise FileNotFoundError(f"Naturalness file not found: {naturalness_file_path}")
+        naturalness_file_path = str(foldy_naturalness)
+        naturalness_source = naturalness_file_path
+    if embedding_df is not None:
+        logger.info(
+            f"Loaded embeddings for {dms_id} with {len(embedding_df)} rows from {embedding_source}"
+        )
+        embedding_df["seq_id"] = embedding_df["seq_id"].apply(
+            lambda x: maybe_modify_seq_id(dms_id, x)
+        )
+        embedding_df = embedding_df.set_index("seq_id", drop=False)
 
     # #########################################################
     # LOAD NATURALNESS DATA ######################################
     # AUGMENT SINGLE MUTANT NATURALNESS FOR MULTI MUTANTS ########
     incomplete_naturalness_df = pd.read_csv(naturalness_file_path)
     logger.info(
-        f"Loaded naturalness scores for {dms_id} with {len(incomplete_naturalness_df)} rows"
+        f"Loaded naturalness scores for {dms_id} with {len(incomplete_naturalness_df)} rows from {naturalness_source}"
     )
     assert (
         "seq_id" in incomplete_naturalness_df.columns
@@ -333,7 +572,6 @@ def get_proteingym_dataset(
         incomplete_naturalness_df.drop(columns=["wt_marginal"], inplace=True)
 
     seq_ids_with_naturalness = set(incomplete_naturalness_df.index)
-    naturalness_df = incomplete_naturalness_df.reindex(embedding_df.index)
 
     # #########################################################
     # LOAD ACTIVITY DATA ######################################
@@ -390,6 +628,20 @@ def get_proteingym_dataset(
     logger.info(f"Loaded activity data for {dms_id} with {len(incomplete_activity_df)} rows")
     incomplete_activity_df = incomplete_activity_df.set_index("seq_id", drop=False)
     seq_ids_with_activity = set(incomplete_activity_df.index)
+
+    if embedding_df is None:
+        placeholder_seq_ids = pd.Index(incomplete_activity_df.index).union(
+            incomplete_naturalness_df.index
+        )
+        embedding_df = pd.DataFrame({"seq_id": placeholder_seq_ids})
+        embedding_df["embedding"] = [None] * len(embedding_df)
+        embedding_df = embedding_df.set_index("seq_id", drop=False)
+        logger.info(
+            f"Skipping embeddings for {dms_id}; using {len(embedding_df)} placeholder vectors."
+        )
+
+    seq_ids_with_embeddings = set(embedding_df.index)
+    naturalness_df = incomplete_naturalness_df.reindex(embedding_df.index)
     activity_df = incomplete_activity_df.reindex(embedding_df.index)
 
     # #########################################################
@@ -450,7 +702,20 @@ def get_proteingym_dataset(
     common_seq_ids = list(
         seq_ids_with_embeddings & (seq_ids_with_naturalness | seq_ids_with_activity)
     )
-    common_seq_ids = sort_seq_id_list(wt_aa_seq, common_seq_ids)
+    invalid_seq_ids: List[str] = []
+    valid_seq_ids: List[str] = []
+    for seq_id in common_seq_ids:
+        error_msg = maybe_get_seq_id_error_message(wt_aa_seq, seq_id)
+        if error_msg:
+            invalid_seq_ids.append(seq_id)
+        else:
+            valid_seq_ids.append(seq_id)
+    if invalid_seq_ids:
+        example_invalid = ", ".join(sorted(invalid_seq_ids)[:5])
+        logging.warning(
+            f"Dropping {len(invalid_seq_ids)} invalid seq_ids (e.g., {example_invalid})."
+        )
+    common_seq_ids = sort_seq_id_list(wt_aa_seq, valid_seq_ids)
 
     logging.info(f"Going forward with {len(common_seq_ids)} common seq ids")
     if activity_df.shape[0] > len(common_seq_ids):

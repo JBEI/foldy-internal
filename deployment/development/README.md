@@ -20,6 +20,11 @@ For experienced developers, here's the minimal setup:
 python3.12 -m venv .venv
 source .venv/bin/activate
 cd backend && pip install -e ".[dev]"
+#
+# Or with uv:
+# uv venv .venv
+# source .venv/bin/activate
+# cd backend && uv pip install -e ".[dev]"
 
 # 2. Pre-commit hooks
 pre-commit install --install-hooks
@@ -49,6 +54,9 @@ From the project root directory:
 ```bash
 # Create virtual environment
 python3.12 -m venv .venv
+#
+# Or with uv:
+# uv venv .venv
 
 # Activate virtual environment
 # On Unix/macOS:
@@ -68,6 +76,20 @@ pip install -e ".[dev]"
 ```
 
 This installs the project in editable mode with all development dependencies defined in `pyproject.toml`.
+If you use uv, run `uv pip install -e ".[dev]"` instead of `pip`.
+
+If you see `error: externally-managed-environment` on Debian/Ubuntu, you are running pip against the system Python.
+Create/activate the virtualenv first and use `python -m pip`:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+cd backend
+python -m pip install -e ".[dev]"
+```
+
+If `python3.12 -m venv` fails, install the venv support package: `sudo apt install python3.12-venv` (or `python3-full`).
+If you already use uv, `uv venv .venv` plus `uv pip install -e ".[dev]"` avoids this error.
 
 ### 2. Node.js and npm Setup
 
@@ -119,6 +141,11 @@ pre-commit install -t pre-push
 
 # Test installation (optional)
 pre-commit run --all-files
+#
+# Or with uv:
+# uv run pre-commit install --install-hooks
+# uv run pre-commit install -t pre-push
+# uv run pre-commit run --all-files
 ```
 
 #### Configuration Files
@@ -145,6 +172,22 @@ This starts:
 
 **Note**: Initial startup takes several minutes for image building and frontend compilation.
 
+#### GPU Support (optional)
+
+To enable CUDA for GPU workers (e.g., `worker_boltz`), you need an NVIDIA GPU and the NVIDIA Container Toolkit installed. Start compose with GPU runtime enabled:
+
+```bash
+FOLDY_GPU_RUNTIME=nvidia \
+NVIDIA_VISIBLE_DEVICES=all \
+NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+  DOCKER_BUILDKIT=1 docker compose --file deployment/development/docker-compose.yml --project-directory . up
+```
+
+Verify GPU access:
+```bash
+docker compose --file deployment/development/docker-compose.yml --project-directory . exec worker_boltz nvidia-smi
+```
+
 #### Initialize Database
 
 ```bash
@@ -155,7 +198,7 @@ docker compose --file deployment/development/docker-compose.yml --project-direct
 #### Access the Application
 
 - **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:5000
+- **Backend API**: http://localhost:8080
 
 ### 5. Development Workflow
 
@@ -166,9 +209,15 @@ Run type checking manually:
 ```bash
 # Check specific file
 /Users/jacobroberts/git/foldy/.venv/bin/pre-commit run pyright backend/app/models.py
+#
+# Or with uv:
+# uv run pre-commit run pyright backend/app/models.py
 
 # Check all files
 /Users/jacobroberts/git/foldy/.venv/bin/pre-commit run pyright --all-files
+#
+# Or with uv:
+# uv run pre-commit run pyright --all-files
 ```
 
 #### Database Migrations
@@ -307,6 +356,9 @@ pre-commit install --install-hooks
 
 # Verify Python version in virtual environment
 python --version
+#
+# Or with uv:
+# uv run python --version
 ```
 
 ### Docker Issues

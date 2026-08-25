@@ -1,16 +1,22 @@
 import logging
 import os
 import signal
+import threading
 import time
 import traceback
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 import pytz
+from flask import current_app
 
 from app.models import Invokation
 
 PSQL_CHAR_LIMIT: int = 100 * 1000 * 1000
+HEARTBEAT_INTERVAL_ENV_VAR = "FOLDY_JOB_HEARTBEAT_INTERVAL_SECONDS"
+DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 60
+HEARTBEAT_TIMEOUT_ENV_VAR = "FOLDY_JOB_HEARTBEAT_TIMEOUT_SECONDS"
+DEFAULT_HEARTBEAT_TIMEOUT_SECONDS = 1800
 
 
 def _tail(stdout: str, max_char: int = 5000) -> str:
@@ -90,6 +96,140 @@ def get_torch_cuda_is_available_and_add_logs(add_log: Callable[[str], Any]) -> b
     return torch.cuda.is_available()
 
 
+def get_heartbeat_interval_seconds() -> int:
+    """Return the heartbeat interval in seconds for long-running jobs."""
+    raw_interval = os.environ.get(
+        HEARTBEAT_INTERVAL_ENV_VAR, str(DEFAULT_HEARTBEAT_INTERVAL_SECONDS)
+    )
+    try:
+        interval_seconds = int(raw_interval)
+    except ValueError:
+        logging.warning(
+            f"Invalid {HEARTBEAT_INTERVAL_ENV_VAR}={raw_interval}; "
+            f"defaulting to {DEFAULT_HEARTBEAT_INTERVAL_SECONDS}s."
+        )
+        interval_seconds = DEFAULT_HEARTBEAT_INTERVAL_SECONDS
+    return max(0, interval_seconds)
+
+
+def get_heartbeat_timeout_seconds() -> int:
+    """Return the heartbeat timeout in seconds for dead job detection."""
+    raw_timeout = os.environ.get(HEARTBEAT_TIMEOUT_ENV_VAR, str(DEFAULT_HEARTBEAT_TIMEOUT_SECONDS))
+    try:
+        timeout_seconds = int(raw_timeout)
+    except ValueError:
+        logging.warning(
+            f"Invalid {HEARTBEAT_TIMEOUT_ENV_VAR}={raw_timeout}; "
+            f"defaulting to {DEFAULT_HEARTBEAT_TIMEOUT_SECONDS}s."
+        )
+        timeout_seconds = DEFAULT_HEARTBEAT_TIMEOUT_SECONDS
+    return max(0, timeout_seconds)
+
+
+def _mark_invokation_failed_if_stale(invokation: Invokation, stale_before: datetime) -> bool:
+    state = (invokation.state or "").lower()
+    if state not in {"pending", "running", "queued"}:
+        return False
+    if state == "queued" and not invokation.starttime:
+        return False
+    last_heartbeat = invokation.last_heartbeat or invokation.starttime
+    if not last_heartbeat or last_heartbeat >= stale_before:
+        return False
+    invokation.state = "failed"
+    if invokation.starttime:
+        invokation.timedelta = last_heartbeat - invokation.starttime
+    return True
+
+
+def mark_invokations_failed_if_stale(
+    invokations: Iterable[Invokation],
+    now: datetime | None = None,
+) -> int:
+    """Mark invokations as failed when their heartbeat is stale.
+
+    Args:
+        invokations: Iterable of invokations to check.
+        now: Optional current time (useful for testing).
+
+    Returns:
+        Number of invokations updated to failed.
+    """
+    now = now or datetime.now(timezone.utc)
+    stale_before = now - timedelta(seconds=get_heartbeat_timeout_seconds())
+    updated = 0
+    for invokation in invokations:
+        if _mark_invokation_failed_if_stale(invokation, stale_before):
+            updated += 1
+    return updated
+
+
+def mark_invokation_failed_if_stale(invokation: Invokation, now: datetime | None = None) -> bool:
+    """Mark a single invokation as failed if its heartbeat is stale."""
+    return mark_invokations_failed_if_stale([invokation], now) > 0
+
+
+class InvokationHeartbeat:
+    """Background heartbeat that updates the last_heartbeat timestamp."""
+
+    def __init__(self, invokation_id: int, interval_seconds: int | None = None) -> None:
+        """
+        Initialize a heartbeat for a specific invokation.
+
+        Args:
+            invokation_id: ID of the invokation to touch.
+            interval_seconds: Optional override for heartbeat interval.
+        """
+        self.invokation_id: int = invokation_id
+        if interval_seconds is None:
+            self.interval_seconds: int = get_heartbeat_interval_seconds()
+        else:
+            self.interval_seconds = max(0, interval_seconds)
+        self._stop_event: threading.Event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._app: Any | None = None
+
+    def start(self) -> None:
+        """Start the heartbeat thread if enabled."""
+        if self.interval_seconds <= 0:
+            return
+        try:
+            self._app = current_app._get_current_object()
+            if self._app.config.get("TESTING"):
+                return
+        except Exception as exc:
+            logging.debug(f"Skipping heartbeat; no app context available: {exc}")
+            return
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"invokation-heartbeat-{self.invokation_id}",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        """Stop the heartbeat thread."""
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=self.interval_seconds + 1)
+
+    def _run(self) -> None:
+        if self._app is None:
+            return
+        with self._app.app_context():
+            self._safe_touch()
+            while not self._stop_event.wait(self.interval_seconds):
+                self._safe_touch()
+
+    def _safe_touch(self) -> None:
+        try:
+            invokation = Invokation.get_by_id(self.invokation_id)
+            if not invokation:
+                return
+            invokation.update(last_heartbeat=datetime.now(timezone.utc))
+        except Exception as exc:
+            logging.debug(f"Failed to update heartbeat for invokation {self.invokation_id}: {exc}")
+
+
 class LoggingRecorder(logging.Handler):
     """A logging handler that records logs to an Invokation."""
 
@@ -109,6 +249,7 @@ class LoggingRecorder(logging.Handler):
         self._previous_level: int = logging.INFO
         self._previous_handlers: list[logging.Handler] = []
         self._sigterm_stack: list[str] = []
+        self._heartbeat: InvokationHeartbeat | None = None
         # ---------- install graceful-term handler ----------
         self._old_sigterm = signal.getsignal(signal.SIGTERM)
 
@@ -119,11 +260,15 @@ class LoggingRecorder(logging.Handler):
 
         signal.signal(signal.SIGTERM, _graceful_term)
 
+        start_time_dt = datetime.fromtimestamp(self.starttime, timezone.utc)
         try:
             self.invokation.update(
                 state="running",
-                starttime=datetime.fromtimestamp(self.starttime, timezone.utc),
+                starttime=start_time_dt,
+                last_heartbeat=start_time_dt,
             )
+            self._heartbeat = InvokationHeartbeat(self.invokation.id)
+            self._heartbeat.start()
         except Exception as e:
             logging.error(f"Failed to update invokation: {e}")
 
@@ -148,6 +293,7 @@ class LoggingRecorder(logging.Handler):
         self.invokation.update(
             log=_live_update_tail("\n".join(self.logs)),
             timedelta=timedelta(seconds=time.time() - self.starttime),
+            last_heartbeat=datetime.now(timezone.utc),
         )
 
     def __enter__(self) -> "LoggingRecorder":
@@ -190,6 +336,8 @@ class LoggingRecorder(logging.Handler):
         logger = logging.getLogger()
 
         try:
+            if self._heartbeat is not None:
+                self._heartbeat.stop()
             if exc_type is not None:
                 if exc_type is SystemExit and str(exc_val) != "0":
                     # Treat non-zero SystemExit (SIGTERM path) as failure
@@ -219,6 +367,7 @@ class LoggingRecorder(logging.Handler):
                 log=_psql_tail("\n".join(self.logs)),
                 timedelta=timedelta(seconds=time.time() - self.starttime),
                 state=self.final_state,
+                last_heartbeat=datetime.now(timezone.utc),
             )
 
             # Restore previous logging state

@@ -1,5 +1,3 @@
-version: "3.6"
-
 x-common-env: &common-env
   SECRET_KEY: superrandomandveryhardtoguessstring
   ENV: development
@@ -16,6 +14,7 @@ x-common-env: &common-env
 
 x-worker-base: &worker-base
   platform: linux/amd64
+  runtime: ${FOLDY_GPU_RUNTIME:-}
   depends_on:
     - db
     - redis
@@ -28,6 +27,8 @@ x-worker-base: &worker-base
     - RQ_REDIS_URL=redis://redis:6379/0
     - FOLDY_STORAGE_TYPE=Local
     - FOLDY_LOCAL_STORAGE_DIR=/backend/foldydata
+    - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-}
+    - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-}
     # Teselagen integration (optional) - uncomment to enable
     - TESELAGEN_BACKEND=https://jbei.teselagen.com
   networks:

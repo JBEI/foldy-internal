@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Modal, Alert, Button as AntButton, Typography, Upload } from 'antd';
 import { QuestionCircleOutlined, UploadOutlined } from '@ant-design/icons';
 import { startEmbeddings } from '../../api/embedApi';
+import { getFile, getFileList } from '../../api/fileApi';
 import { notify } from '../../services/NotificationService';
 import { ESMModelPicker } from '../FoldView/ESMModelPicker';
 import { FormRow, FormField } from '../../util/tabComponents';
-import { TextInputControl, TextAreaControl } from '../../util/controlComponents';
-import { Embedding } from '../../types/types';
+import { CheckboxControl, TextInputControl, TextAreaControl } from '../../util/controlComponents';
+import { Embedding, FileInfo } from '../../types/types';
+import { findPreexistingMsaPath } from '../../util/msaContext';
 
 const { Text, Paragraph, Title } = Typography;
 
@@ -14,6 +16,7 @@ interface EmbeddingModalProps {
     open: boolean;
     onClose: () => void;
     foldIds: number[];
+    files?: FileInfo[];
     title?: string;
     templateEmbedding?: Embedding;
     disableSequenceFields?: boolean;
@@ -25,6 +28,7 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
     open,
     onClose,
     foldIds,
+    files,
     title = "New Embedding Run",
     templateEmbedding,
     disableSequenceFields = false
@@ -37,12 +41,111 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
     const [extraLayers, setExtraLayers] = useState<string>(templateEmbedding?.extra_layers || '');
     const [domainBoundaries, setDomainBoundaries] = useState<string>(templateEmbedding?.domain_boundaries || '');
     const [model, setModel] = useState<string>(templateEmbedding?.embedding_model || 'esmc_300m');
+    const [useMsaContext, setUseMsaContext] = useState<boolean>(templateEmbedding?.use_msa_context || false);
+    const [msaA3m, setMsaA3m] = useState<string | null>(null);
+    const [msaFile, setMsaFile] = useState<File | null>(null);
+    const [autoMsaPath, setAutoMsaPath] = useState<string | null>(null);
+    const [autoMsaLoading, setAutoMsaLoading] = useState<boolean>(false);
     const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
     const [isLoading, setIsLoading] = useState<boolean>(false);
+
+    const autoMsaAttemptedRef = useRef<string | null>(null);
+    const isE1Model = model.startsWith('e1_');
+    const isBulkRun = foldIds.length > 1;
+    const preexistingMsaPath = templateEmbedding?.msa_a3m_path || findPreexistingMsaPath(files);
+
+    type BulkRunResult = {
+        foldId: number;
+        status: 'started' | 'skipped' | 'failed';
+        error?: string;
+    };
+
+    useEffect(() => {
+        if (!isE1Model && useMsaContext) {
+            setUseMsaContext(false);
+            setMsaA3m(null);
+            setMsaFile(null);
+            setAutoMsaPath(null);
+            setAutoMsaLoading(false);
+            autoMsaAttemptedRef.current = null;
+        }
+    }, [isE1Model, useMsaContext]);
+
+    useEffect(() => {
+        if (!useMsaContext) {
+            setAutoMsaPath(null);
+            setAutoMsaLoading(false);
+            autoMsaAttemptedRef.current = null;
+        }
+    }, [useMsaContext]);
+
+    useEffect(() => {
+        if (!open || !useMsaContext || !isE1Model) {
+            return;
+        }
+        if (!preexistingMsaPath || foldIds.length !== 1) {
+            return;
+        }
+        if (msaA3m || msaFile) {
+            return;
+        }
+        if (autoMsaAttemptedRef.current === preexistingMsaPath) {
+            return;
+        }
+
+        autoMsaAttemptedRef.current = preexistingMsaPath;
+        setAutoMsaPath(preexistingMsaPath);
+        setAutoMsaLoading(true);
+        let cancelled = false;
+
+        const filePath = preexistingMsaPath.startsWith('/') ? preexistingMsaPath.slice(1) : preexistingMsaPath;
+        getFile(foldIds[0], filePath)
+            .then((fileBlob) => fileBlob.text())
+            .then((content) => {
+                if (cancelled) return;
+                setMsaA3m(content);
+                setAutoMsaLoading(false);
+            })
+            .catch((error) => {
+                if (cancelled) return;
+                setAutoMsaLoading(false);
+                notify.error(`Failed to load existing MSA: ${error}`);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [open, useMsaContext, isE1Model, msaA3m, msaFile, preexistingMsaPath, foldIds]);
+
+    const getErrorMessage = (error: unknown): string => {
+        if (error instanceof Error) {
+            return error.message;
+        }
+        return String(error);
+    };
+
+    const resolveMsaA3mForFold = async (foldId: number): Promise<string | null> => {
+        const fileList = await getFileList(foldId);
+        const preexistingPath = findPreexistingMsaPath(fileList);
+        if (!preexistingPath) {
+            return null;
+        }
+        const filePath = preexistingPath.startsWith('/') ? preexistingPath.slice(1) : preexistingPath;
+        const fileBlob = await getFile(foldId, filePath);
+        return fileBlob.text();
+    };
 
     const handleStartEmbeddings = async () => {
         if (!batchName.trim()) {
             notify.error('Batch name is required.');
+            return;
+        }
+        if (useMsaContext && !isE1Model) {
+            notify.error('MSA context is only supported for E1 models.');
+            return;
+        }
+        if (useMsaContext && !msaA3m && !isBulkRun) {
+            notify.error(autoMsaLoading ? 'Loading existing MSA, please wait.' : 'Please upload a .a3m MSA file.');
             return;
         }
 
@@ -66,25 +169,92 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
         setIsLoading(true);
 
         try {
-            const promises = foldIds.map(foldId =>
-                startEmbeddings(foldId, batchName, dmsStartingSeqIdsArray, extraIDsArray, extraLayersArray, model, homologFasta, domainBoundariesArray)
+            const results: BulkRunResult[] = await Promise.all(
+                foldIds.map(async (foldId) => {
+                    const startRun = async (msaContents: string | null) => {
+                        await startEmbeddings(
+                            foldId,
+                            batchName,
+                            dmsStartingSeqIdsArray,
+                            extraIDsArray,
+                            extraLayersArray,
+                            model,
+                            homologFasta,
+                            domainBoundariesArray,
+                            useMsaContext,
+                            msaContents
+                        );
+                    };
+
+                    if (!useMsaContext || !isBulkRun || msaA3m) {
+                        try {
+                            await startRun(msaA3m);
+                            return { foldId, status: 'started' };
+                        } catch (error) {
+                            return { foldId, status: 'failed', error: getErrorMessage(error) };
+                        }
+                    }
+
+                    try {
+                        await startRun(null);
+                        return { foldId, status: 'started' };
+                    } catch (error) {
+                        const message = getErrorMessage(error);
+                        const missingMsa = message.toLowerCase().includes('msa_a3m is required');
+                        if (!missingMsa) {
+                            return { foldId, status: 'failed', error: message };
+                        }
+
+                        try {
+                            const resolvedMsa = await resolveMsaA3mForFold(foldId);
+                            if (!resolvedMsa) {
+                                return { foldId, status: 'skipped' };
+                            }
+                            await startRun(resolvedMsa);
+                            return { foldId, status: 'started' };
+                        } catch (retryError) {
+                            return { foldId, status: 'failed', error: getErrorMessage(retryError) };
+                        }
+                    }
+                })
             );
 
-            await Promise.all(promises);
+            const started = results.filter(result => result.status === 'started');
+            const skipped = results.filter(result => result.status === 'skipped');
+            const failed = results.filter(result => result.status === 'failed');
 
-            notify.success(`Started embedding runs for ${foldIds.length} fold(s)`);
+            if (started.length > 0) {
+                notify.success(`Started embedding runs for ${started.length} fold(s)`);
+            }
+            if (skipped.length > 0) {
+                notify.warning(`Skipped ${skipped.length} fold(s) without available MSA files.`);
+            }
+            if (failed.length > 0) {
+                notify.error(`Failed to start ${failed.length} fold(s): ${failed[0].error ?? 'Unknown error'}`);
+            }
+            if (started.length === 0 && skipped.length > 0 && failed.length === 0) {
+                notify.warning('No embedding runs started. Provide MSA files or disable MSA context.');
+            }
 
-            // Reset form
-            setBatchName('');
-            setDmsStartingSeqIds('WT');
-            setExtraSequenceIDs('');
-            setExtraLayers('');
-            setDomainBoundaries('');
-            setModel('esmc_300m');
-            setHomologFasta(null);
-            setHomologFile(null);
+            if (started.length > 0) {
+                // Reset form
+                setBatchName('');
+                setDmsStartingSeqIds('WT');
+                setExtraSequenceIDs('');
+                setExtraLayers('');
+                setDomainBoundaries('');
+                setModel('esmc_300m');
+                setHomologFasta(null);
+                setHomologFile(null);
+                setUseMsaContext(false);
+                setMsaA3m(null);
+                setMsaFile(null);
+                setAutoMsaPath(null);
+                setAutoMsaLoading(false);
+                autoMsaAttemptedRef.current = null;
 
-            onClose();
+                onClose();
+            }
         } catch (error) {
             notify.error(`Failed to start embedding runs: ${error}`);
         } finally {
@@ -103,6 +273,23 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
             reader.readAsText(file);
         } else {
             setHomologFasta(null);
+        }
+    };
+
+    const handleMsaFileChange = (file: File | null) => {
+        setMsaFile(file);
+        setAutoMsaLoading(false);
+        if (file) {
+            setAutoMsaPath(null);
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const content = e.target?.result as string;
+                setMsaA3m(content);
+            };
+            reader.readAsText(file);
+        } else {
+            setMsaA3m(null);
+            autoMsaAttemptedRef.current = null;
         }
     };
 
@@ -191,6 +378,73 @@ export const EmbeddingModal: React.FC<EmbeddingModalProps> = ({
                 />
 
                 <div style={{ marginBottom: '24px' }}></div>
+
+                {isE1Model && (
+                    <div style={{ marginBottom: '16px' }}>
+                        <CheckboxControl
+                            label="Use E1 MSA context (.a3m)"
+                            checked={useMsaContext}
+                            onChange={setUseMsaContext}
+                        />
+                        {useMsaContext && (
+                            <div style={{ marginTop: '12px' }}>
+                                <Typography.Text strong style={{ marginBottom: '8px', display: 'block' }}>
+                                    MSA (.a3m) File
+                                </Typography.Text>
+                                <Upload
+                                    beforeUpload={(file) => {
+                                        handleMsaFileChange(file);
+                                        return false;
+                                    }}
+                                    accept=".a3m"
+                                    maxCount={1}
+                                    fileList={msaFile ? [{
+                                        uid: '1',
+                                        name: msaFile.name,
+                                        status: 'done'
+                                    }] : []}
+                                    onRemove={() => handleMsaFileChange(null)}
+                                >
+                                    <AntButton icon={<UploadOutlined />}>
+                                        Select .a3m File
+                                    </AntButton>
+                                </Upload>
+                                {isBulkRun && (
+                                    <Typography.Text type="secondary" style={{ display: 'block', marginTop: '8px' }}>
+                                        Batch mode: leave blank to use each fold's stored or existing MSA file, or upload once to apply to all folds.
+                                    </Typography.Text>
+                                )}
+                                {autoMsaPath && !msaFile && (
+                                    <Typography.Text type="secondary" style={{ display: 'block', marginTop: '8px' }}>
+                                        Using existing MSA from {autoMsaPath}{autoMsaLoading ? ' (loading...)' : ''}. Upload a file to override.
+                                    </Typography.Text>
+                                )}
+                                {msaA3m && (
+                                    <div style={{
+                                        marginTop: '8px',
+                                        padding: '8px',
+                                        backgroundColor: '#f5f5f5',
+                                        border: '1px solid #d9d9d9',
+                                        borderRadius: '4px',
+                                        fontSize: '11px',
+                                        fontFamily: 'monospace',
+                                        color: '#666',
+                                        maxHeight: '120px',
+                                        overflow: 'hidden'
+                                    }}>
+                                        <div style={{ marginBottom: '4px', fontSize: '10px', fontWeight: 500, textTransform: 'uppercase' }}>
+                                            MSA Preview (first 5 lines)
+                                        </div>
+                                        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                            {msaA3m.split('\n').slice(0, 5).join('\n')}
+                                            {msaA3m.split('\n').length > 5 && '\n...'}
+                                        </pre>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 <div style={{ marginBottom: '16px' }}>
                     <Typography.Text strong style={{ marginBottom: '8px', display: 'block' }}>

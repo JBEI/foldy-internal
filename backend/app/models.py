@@ -6,7 +6,7 @@ Copied from https://github.com/cookiecutter-flask/cookiecutter-flask
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional, Union
 
-from sqlalchemy import Index, func
+from sqlalchemy import Index, UniqueConstraint, func
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.orm import deferred
 
@@ -17,6 +17,7 @@ class Invokation(PkModel):
     """A single invokation of a command and its results."""
 
     __tablename__ = "invokation"
+    __table_args__ = (Index("ix_invokation_fold_id", "fold_id"),)
 
     fold_id = Column(db.Integer, db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE"))
     fold = relationship("Fold", back_populates="jobs")
@@ -25,6 +26,7 @@ class Invokation(PkModel):
     state = Column(db.String(80), nullable=True)
     starttime = Column(db.DateTime(timezone=True), nullable=True)
     timedelta = Column(db.Interval, nullable=True)
+    last_heartbeat = Column(db.DateTime(timezone=True), nullable=True)
 
     command = Column(db.Text, nullable=True)
     log = deferred(Column(db.Text, nullable=True))
@@ -45,7 +47,7 @@ class User(PkModel):
 
     email = Column(db.String(80), unique=True, nullable=False)
     name = Column(db.String(80), nullable=True)
-    created_at = Column(db.DateTime, nullable=False, default=datetime.now(UTC))
+    created_at = Column(db.DateTime, nullable=False, default=lambda: datetime.now(UTC))
     access_type = Column(db.String(80), nullable=True)
     attributes = Column(db.JSON, nullable=True, default=dict)  # Add this line
 
@@ -151,6 +153,10 @@ class Dock(PkModel):
     """A docking run."""
 
     __tablename__ = "docking"
+    __table_args__ = (
+        Index("ix_docking_receptor_fold_id_ligand_name", "receptor_fold_id", "ligand_name"),
+        Index("ix_docking_invokation_id", "invokation_id"),
+    )
 
     # Id is created automatically.
 
@@ -202,6 +208,10 @@ class Naturalness(PkModel):
     """A naturalness run."""
 
     __tablename__ = "logits"
+    __table_args__ = (
+        UniqueConstraint("fold_id", "name", name="uq_logits_fold_id_name"),
+        Index("ix_logits_invokation_id", "invokation_id"),
+    )
 
     name = Column(db.String, nullable=False)
 
@@ -211,6 +221,8 @@ class Naturalness(PkModel):
     logit_model = Column(db.String, nullable=False)
     use_structure = Column(db.Boolean, nullable=True)
     get_depth_two_logits = Column(db.Boolean, nullable=True)
+    use_msa_context = Column(db.Boolean, nullable=True, default=False)
+    msa_a3m_path = Column(db.String, nullable=True)
     output_fpath = Column(db.String, nullable=True)
     date_created = Column(db.DateTime(timezone=True), nullable=True, default=datetime.now(UTC))
 
@@ -231,6 +243,10 @@ class Embedding(PkModel):
     """An embedding run."""
 
     __tablename__ = "embeddings"
+    __table_args__ = (
+        Index("ix_embeddings_fold_id", "fold_id"),
+        Index("ix_embeddings_invokation_id", "invokation_id"),
+    )
 
     name = Column(db.String, nullable=False)
 
@@ -243,6 +259,8 @@ class Embedding(PkModel):
     homolog_fasta = Column(db.String, nullable=True)
     extra_layers = Column(db.String, nullable=True)
     domain_boundaries = Column(db.String, nullable=True)
+    use_msa_context = Column(db.Boolean, nullable=True, default=False)
+    msa_a3m_path = Column(db.String, nullable=True)
     output_fpath = Column(db.String, nullable=True)
     date_created = Column(db.DateTime(timezone=True), nullable=True, default=datetime.now(UTC))
 
@@ -264,6 +282,10 @@ class FewShot(PkModel):
     """A single slate build for a fold."""
 
     __tablename__ = "fold_evolution"
+    __table_args__ = (
+        UniqueConstraint("fold_id", "name", name="uq_fold_evolution_fold_id_name"),
+        Index("ix_fold_evolution_invokation_id", "invokation_id"),
+    )
 
     # Id is created automatically.
 
@@ -299,10 +321,15 @@ class FewShot(PkModel):
         return f"few_shots/{self.name}/predicted_activity.csv"
 
 
+# Backward-compatible alias for older imports/tests.
+Evolution = FewShot
+
+
 class Campaign(PkModel):
     """A directed evolution campaign."""
 
     __tablename__ = "campaigns"
+    __table_args__ = (UniqueConstraint("fold_id", "name", name="uq_campaigns_fold_id_name"),)
 
     # Id is created automatically.
 
@@ -347,6 +374,13 @@ class CampaignRound(PkModel):
     """A round within a directed evolution campaign."""
 
     __tablename__ = "campaign_rounds"
+    __table_args__ = (
+        UniqueConstraint(
+            "campaign_id", "round_number", name="uq_campaign_rounds_campaign_id_round_number"
+        ),
+        Index("ix_campaign_rounds_naturalness_run_id", "naturalness_run_id"),
+        Index("ix_campaign_rounds_few_shot_run_id", "few_shot_run_id"),
+    )
 
     # Id is created automatically.
 
@@ -389,3 +423,113 @@ class CampaignRound(PkModel):
         self.mode = mode
         if date_started:
             self.date_started = date_started
+
+
+class BoltzDockBatch(PkModel):
+    """A matrix of Boltz complex predictions across variants and docking states."""
+
+    __tablename__ = "boltz_dock_batches"
+    __table_args__ = (
+        Index("ix_boltz_dock_batches_source_fold_id", "source_fold_id"),
+        Index("ix_boltz_dock_batches_campaign_round_id", "campaign_round_id"),
+        Index("ix_boltz_dock_batches_user_id", "user_id"),
+    )
+
+    name = Column(db.String(120), nullable=False)
+    source_fold_id = Column(
+        db.Integer,
+        db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+    )
+    source_fold = relationship("Fold", foreign_keys=[source_fold_id])
+    campaign_round_id = Column(
+        db.Integer,
+        db.ForeignKey("campaign_rounds.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+    )
+    campaign_round = relationship("CampaignRound")
+    user_id = Column(
+        db.Integer,
+        db.ForeignKey("users.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+    )
+    user = relationship("User")
+    config = Column(db.JSON, nullable=False, default=dict)
+    comparison_data = Column(db.JSON, nullable=True)
+    created_at = Column(db.DateTime, nullable=False, default=lambda: datetime.now(UTC))
+
+    entries = relationship(
+        "BoltzDockResult",
+        back_populates="batch",
+        passive_deletes=True,
+        cascade="all,delete-orphan",
+        order_by="BoltzDockResult.id",
+    )
+
+    def __init__(
+        self,
+        name: str,
+        source_fold_id: int,
+        user_id: int,
+        config: Dict[str, Any],
+        campaign_round_id: Optional[int] = None,
+    ) -> None:
+        super().__init__()
+        self.name = name
+        self.source_fold_id = source_fold_id
+        self.user_id = user_id
+        self.config = config
+        self.campaign_round_id = campaign_round_id
+
+
+class BoltzDockResult(PkModel):
+    """One variant-state prediction belonging to a Boltz docking batch."""
+
+    __tablename__ = "boltz_dock_results"
+    __table_args__ = (
+        UniqueConstraint(
+            "batch_id", "seq_id", "ligand_name", name="uq_boltz_dock_result_matrix_cell"
+        ),
+        UniqueConstraint("fold_id", name="uq_boltz_dock_results_fold_id"),
+        Index("ix_boltz_dock_results_batch_id", "batch_id"),
+    )
+
+    batch_id = Column(
+        db.Integer,
+        db.ForeignKey("boltz_dock_batches.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+    )
+    batch = relationship("BoltzDockBatch", back_populates="entries")
+    fold_id = Column(
+        db.Integer,
+        db.ForeignKey("roles.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+    )
+    fold = relationship("Fold", foreign_keys=[fold_id])
+    seq_id = Column(db.Text, nullable=False)
+    sequence = Column(db.Text, nullable=False)
+    ligand_name = Column(db.String(120), nullable=False)
+    ligand_smiles = Column(db.Text, nullable=False)
+    state_data = Column(db.JSON, nullable=True)
+    score_data = Column(db.JSON, nullable=True)
+    graded_at = Column(db.DateTime, nullable=True)
+    setup_error = Column(db.Text, nullable=True)
+
+    def __init__(
+        self,
+        batch_id: int,
+        fold_id: int,
+        seq_id: str,
+        sequence: str,
+        ligand_name: str,
+        ligand_smiles: str,
+        state_data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        super().__init__()
+        self.batch_id = batch_id
+        self.fold_id = fold_id
+        self.seq_id = seq_id
+        self.sequence = sequence
+        self.ligand_name = ligand_name
+        self.ligand_smiles = ligand_smiles
+        self.state_data = state_data

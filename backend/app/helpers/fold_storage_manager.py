@@ -20,7 +20,7 @@ from google.cloud.storage import Blob
 from google.cloud.storage.client import Client
 from redis import Redis
 from rq.job import Retry
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import joinedload, raiseload, selectinload
 from sqlalchemy.sql.elements import or_
 from werkzeug.exceptions import BadRequest
 
@@ -63,7 +63,8 @@ class LocalBlob:
         """
         return os.path.exists(self.file_path)
 
-    def size(self):
+    @property
+    def size(self) -> int:
         """
         Returns the size of the file in bytes.
 
@@ -482,8 +483,9 @@ class FoldStorageManager:
             db.session.query(Fold)
             .join(Fold.user)  # type: ignore[reportArgumentType] # SQLAlchemy relationship property typing issue
             .options(
-                joinedload(Fold.jobs),  # type: ignore[reportArgumentType] # SQLAlchemy joinedload expects QueryableAttribute
-                joinedload(Fold.docks),  # type: ignore[reportArgumentType] # SQLAlchemy joinedload expects QueryableAttribute
+                joinedload(Fold.user),  # type: ignore[reportArgumentType] # SQLAlchemy relationship typing
+                selectinload(Fold.jobs),  # type: ignore[reportArgumentType] # SQLAlchemy relationship typing
+                raiseload("*"),
             )
         )
 
@@ -510,9 +512,6 @@ class FoldStorageManager:
 
         # Use pagination if page and per_page are provided
         if page and per_page:
-            logging.error(
-                f"DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page} DOING PAGINATION {page} {per_page}"
-            )
             pagination = query.paginate(page=page, per_page=per_page, error_out=True, count=True)  # type: ignore[reportAttributeAccessIssue]
             folds = [fold for fold in pagination.items if fold is not None]
 
@@ -528,9 +527,6 @@ class FoldStorageManager:
                 },
             }
         else:
-            logging.error(
-                f"NOT DOING PAGINATION {page} {per_page} NOT DOING PAGINATION {page} {per_page} NOT DOING PAGINATION {page} {per_page} NOT DOING PAGINATION {page} {per_page}"
-            )
             # If no pagination requested, return all results with basic pagination info
             all_folds = [fold for fold in query.all() if fold is not None]
             return {

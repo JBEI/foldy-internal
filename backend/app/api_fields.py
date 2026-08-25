@@ -107,10 +107,20 @@ naturalness_fields = type_ns.model(
         "logit_model": fields.String(required=True),
         "use_structure": fields.Boolean(required=False),
         "get_depth_two_logits": fields.Boolean(required=False),
+        "use_msa_context": fields.Boolean(required=False),
+        "msa_a3m_path": fields.String(required=False),
         "output_fpath": fields.String(required=False),
         "output_fpath_computed": fields.String(required=False),
         "invokation_id": fields.Integer(required=False),
         "date_created": fields.DateTime(required=False),
+    },
+)
+
+naturalness_input_fields = type_ns.inherit(
+    "NaturalnessInputFields",
+    naturalness_fields,
+    {
+        "msa_a3m": fields.String(required=False),
     },
 )
 
@@ -126,10 +136,20 @@ embedding_fields = type_ns.model(
         "homolog_fasta": fields.String(required=False),
         "extra_layers": fields.String(required=False),
         "domain_boundaries": fields.String(required=False),
+        "use_msa_context": fields.Boolean(required=False),
+        "msa_a3m_path": fields.String(required=False),
         "output_fpath": fields.String(required=False),
         "output_fpath_computed": fields.String(required=False),
         "invokation_id": fields.Integer(required=False),
         "date_created": fields.DateTime(required=False),
+    },
+)
+
+embedding_input_fields = type_ns.inherit(
+    "EmbeddingInputFields",
+    embedding_fields,
+    {
+        "msa_a3m": fields.String(required=False),
     },
 )
 
@@ -224,6 +244,27 @@ fold_fields = type_ns.model(
     },
 )
 
+# Keep collection responses small and predictable. Fold detail endpoints use
+# fold_fields above, while list views only need metadata and job state.
+fold_summary_fields = type_ns.model(
+    "FoldSummary",
+    {
+        "id": fields.Integer(readonly=True),
+        "name": fields.String(),
+        "owner": fields.String(attribute="user.email"),
+        "tags": fields.List(fields.String()),
+        "create_date": fields.DateTime(format="iso8601Z", dt_format="iso8601", readonly=True),
+        "public": fields.Boolean(),
+        "yaml_config": fields.String(),
+        "diffusion_samples": fields.Integer(),
+        "disable_relaxation": fields.Boolean(),
+        "jobs": fields.List(fields.Nested(simple_invokation_fields)),
+        # Retained for old AlphaFold records whose length cannot be derived from YAML.
+        "sequence": fields.String(),
+        "af2_model_preset": fields.String(),
+    },
+)
+
 new_folds_fields = type_ns.model(
     "NewFolds",
     {
@@ -255,7 +296,7 @@ pagination_fields = type_ns.model(
 paginated_folds_fields = type_ns.model(
     "PaginatedFolds",
     {
-        "data": fields.List(fields.Nested(fold_fields, skip_none=True)),
+        "data": fields.List(fields.Nested(fold_summary_fields, skip_none=True)),
         "pagination": fields.Nested(pagination_fields),
     },
 )

@@ -6,8 +6,11 @@ protein properties from embeddings. Models are thin wrappers around
 scikit-learn implementations with additional protein-specific functionality.
 """
 
+import copy
+import hashlib
 import logging
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Type, Union, cast
 
@@ -39,12 +42,63 @@ from folde.util import (
 _FEW_SHOT_MODELS = {}
 
 
+_TORCH_MLP_PRETRAIN_CACHE: OrderedDict[
+    tuple[Any, ...], tuple[list[dict[str, Any]], list[dict[str, torch.Tensor]]]
+] = OrderedDict()
+_TORCH_MLP_PRETRAIN_CACHE_MAX_ENTRIES = 64
+
+
+def _stack_embeddings(embedding_series: pd.Series) -> np.ndarray:
+    """Return model-ready embeddings without an intermediate float64 matrix."""
+    return np.stack(embedding_series.to_numpy()).astype(np.float32, copy=False)
+
+
+def _hash_numpy_array(hasher: Any, array: np.ndarray) -> None:
+    contiguous_array = np.ascontiguousarray(array)
+    hasher.update(str(contiguous_array.dtype).encode("utf-8"))
+    hasher.update(np.asarray(contiguous_array.shape, dtype=np.int64).tobytes())
+    hasher.update(contiguous_array.view(np.uint8))
+
+
+def _hash_string_iterable(hasher: Any, values: pd.Index | list[Any]) -> None:
+    for value in values:
+        hasher.update(str(value).encode("utf-8"))
+        hasher.update(b"\0")
+
+
+def _hash_pretraining_inputs(
+    naturalness_df: pd.DataFrame,
+    embedding_series: pd.Series,
+) -> str:
+    hasher = hashlib.blake2b(digest_size=16)
+    _hash_string_iterable(hasher, naturalness_df.index)
+    _hash_string_iterable(hasher, naturalness_df.columns)
+    _hash_numpy_array(hasher, naturalness_df.to_numpy(dtype=np.float64, copy=False))
+    _hash_string_iterable(hasher, embedding_series.index)
+    embedding_array = _stack_embeddings(embedding_series)
+    _hash_numpy_array(hasher, embedding_array)
+    return hasher.hexdigest()
+
+
+def _clone_state_dict_to_cpu(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    return {key: value.detach().cpu().clone() for key, value in state_dict.items()}
+
+
+def _clone_cached_state_dicts(
+    state_dicts: list[dict[str, torch.Tensor]],
+) -> list[dict[str, torch.Tensor]]:
+    return [
+        {key: value.detach().cpu().clone() for key, value in state_dict.items()}
+        for state_dict in state_dicts
+    ]
+
+
 class FewShotModel(ABC):
     """Abstract base class for few-shot protein property prediction models."""
 
     def __init__(
         self,
-        wt_aa_seq: str,
+        wt_aa_seq: str = "",
         lie_noise_stddev_multiplier: float | None = None,
         lie_noise_stddev_multiplier_schedule: list[float] | None = None,
         decision_mode: str = "median",
@@ -588,6 +642,11 @@ class TorchMLPFewShotModel(FewShotModel):
         use_exponential_learning_rate_decay: bool = False,
         use_plateau_learning_rate_decay: bool = False,
         embedding_dim: int | None = None,  # DEPRECATED
+        standardized_mse_weight: float = 0.0,
+        bt_activity_difference_weighting: bool = False,
+        bt_soft_target_temperature: float | None = None,
+        bt_soft_target_confidence_floor: float | None = None,
+        track_test_metrics_during_training: bool = True,
         **kwargs,
     ):
         super().__init__(wt_aa_seq, **kwargs)
@@ -610,6 +669,36 @@ class TorchMLPFewShotModel(FewShotModel):
         self.train_patience = train_patience
         self.val_frequency = val_frequency
         self.use_mse_loss = use_mse_loss
+        if use_mse_loss and standardized_mse_weight > 0.0:
+            raise ValueError("use_mse_loss cannot be combined with standardized_mse_weight")
+        if use_mse_loss and bt_soft_target_temperature is not None:
+            raise ValueError("use_mse_loss cannot be combined with bt_soft_target_temperature")
+        if not 0.0 <= standardized_mse_weight <= 1.0:
+            raise ValueError("standardized_mse_weight must be between 0 and 1")
+        if bt_soft_target_temperature is not None and (
+            not np.isfinite(bt_soft_target_temperature) or bt_soft_target_temperature <= 0.0
+        ):
+            raise ValueError("bt_soft_target_temperature must be finite and positive")
+        if bt_soft_target_confidence_floor is not None and bt_soft_target_temperature is None:
+            raise ValueError("bt_soft_target_confidence_floor requires bt_soft_target_temperature")
+        if bt_soft_target_confidence_floor is not None and not (
+            0.0 <= bt_soft_target_confidence_floor <= 1.0
+        ):
+            raise ValueError("bt_soft_target_confidence_floor must be between 0 and 1")
+        if bt_activity_difference_weighting and bt_soft_target_temperature is not None:
+            raise ValueError(
+                "bt_activity_difference_weighting cannot be combined with soft-target BT"
+            )
+        if standardized_mse_weight > 0.0 and do_validation_with_pair_fraction is not None:
+            raise ValueError(
+                "standardized_mse_weight requires point-level holdout validation; "
+                "it cannot be combined with do_validation_with_pair_fraction"
+            )
+        self.standardized_mse_weight = standardized_mse_weight
+        self.bt_activity_difference_weighting = bt_activity_difference_weighting
+        self.bt_soft_target_temperature = bt_soft_target_temperature
+        self.bt_soft_target_confidence_floor = bt_soft_target_confidence_floor
+        self.track_test_metrics_during_training = track_test_metrics_during_training
         self.do_holdout_validation = do_holdout_validation
         self.do_validation_with_pair_fraction = do_validation_with_pair_fraction
         self.importance_sampling_reweighting_strat = importance_sampling_reweighting_strat
@@ -622,7 +711,7 @@ class TorchMLPFewShotModel(FewShotModel):
         self.finetuned_model_and_trainer_list = []
 
         if embedding_dim is not None:
-            logging.warning("embedding_dim is deprecated and ignored.")
+            logging.debug("Ignoring deprecated embedding_dim parameter.")
 
         self.is_pretrained = False
         self.pretrain_metrics: list[dict[str, Any]] = []
@@ -658,6 +747,35 @@ class TorchMLPFewShotModel(FewShotModel):
             raise ValueError("Model is already pretrained.")
 
         embedding_dim = embedding_series.iloc[0].shape[0]
+        pretraining_cache_key = (
+            _hash_pretraining_inputs(naturalness_df, embedding_series),
+            self.base_random_state,
+            tuple(self.hidden_dims),
+            float(self.dropout),
+            self.ensemble_size,
+            self.pretrain_epochs,
+            self.pretrain_patience,
+            self.pretrain_val_frequency,
+            self.use_mse_loss,
+            self.standardized_mse_weight,
+            self.bt_activity_difference_weighting,
+            self.bt_soft_target_temperature,
+            self.bt_soft_target_confidence_floor,
+            self.device,
+            embedding_dim,
+        )
+        cached_pretraining = _TORCH_MLP_PRETRAIN_CACHE.get(pretraining_cache_key)
+        if cached_pretraining is not None:
+            _TORCH_MLP_PRETRAIN_CACHE.move_to_end(pretraining_cache_key)
+            cached_metrics, cached_state_dicts = cached_pretraining
+            self.pretrain_metrics = copy.deepcopy(cached_metrics)
+            self.pretrained_model_state_dicts = _clone_cached_state_dicts(cached_state_dicts)
+            self.is_pretrained = True
+            logging.info(
+                f"Using cached TorchMLP pretraining for random_state={self.base_random_state}, "
+                f"ensemble_size={self.ensemble_size}, pretrain_epochs={self.pretrain_epochs}."
+            )
+            return self
 
         # Create pretrained version of each model.
         for ii, (model, trainer) in enumerate(self._create_model_ensemble(embedding_dim)):
@@ -682,12 +800,8 @@ class TorchMLPFewShotModel(FewShotModel):
             )
             train_seqids = np.setdiff1d(embedding_series_with_data.index, validation_seqids)
 
-            X_train = np.array(
-                [np.array(emb) for emb in embedding_series_with_data[train_seqids].values]
-            )
-            X_val = np.array(
-                [np.array(emb) for emb in embedding_series_with_data[validation_seqids].values]
-            )
+            X_train = _stack_embeddings(embedding_series_with_data[train_seqids])
+            X_val = _stack_embeddings(embedding_series_with_data[validation_seqids])
             y_train = naturalness_series_with_data[train_seqids].to_numpy()
             y_val = naturalness_series_with_data[validation_seqids].to_numpy()
 
@@ -701,6 +815,10 @@ class TorchMLPFewShotModel(FewShotModel):
                     epochs=self.pretrain_epochs,
                     patience=self.pretrain_patience,
                     use_mse_loss=self.use_mse_loss,
+                    standardized_mse_weight=self.standardized_mse_weight,
+                    activity_difference_weighting=self.bt_activity_difference_weighting,
+                    soft_target_temperature=self.bt_soft_target_temperature,
+                    soft_target_confidence_floor=self.bt_soft_target_confidence_floor,
                     val_frequency=self.pretrain_val_frequency,
                     learning_rate=1e-4 * 8,  # Increased LR to compensate for larger batches.
                     weight_decay=1e-5,
@@ -710,16 +828,24 @@ class TorchMLPFewShotModel(FewShotModel):
                     use_plateau_learning_rate_decay=False,
                 )
             )
-            self.pretrained_model_state_dicts.append(model.state_dict())
+            self.pretrained_model_state_dicts.append(_clone_state_dict_to_cpu(model.state_dict()))
 
         self.is_pretrained = True
+        _TORCH_MLP_PRETRAIN_CACHE[pretraining_cache_key] = (
+            copy.deepcopy(self.pretrain_metrics),
+            _clone_cached_state_dicts(self.pretrained_model_state_dicts),
+        )
+        while len(_TORCH_MLP_PRETRAIN_CACHE) > _TORCH_MLP_PRETRAIN_CACHE_MAX_ENTRIES:
+            _TORCH_MLP_PRETRAIN_CACHE.popitem(last=False)
 
         train_loss_start = np.mean([m["train_loss"][0] for m in self.pretrain_metrics])
         train_loss_end = np.mean([m["train_loss"][-1] for m in self.pretrain_metrics])
         val_loss_start = np.mean([m["val_loss"][0] for m in self.pretrain_metrics])
         val_loss_end = np.mean([m["val_loss"][-1] for m in self.pretrain_metrics])
         logging.info(
-            f"Pretrain loss: train {train_loss_start:.4f} -> {train_loss_end:.4f}, val {val_loss_start:.4f} -> {val_loss_end:.4f} after {len(self.pretrain_metrics[0]['train_loss']) * self.val_frequency} epochs"
+            f"Pretrain loss: train {train_loss_start:.4f} -> {train_loss_end:.4f}, "
+            f"val {val_loss_start:.4f} -> {val_loss_end:.4f} after "
+            f"{len(self.pretrain_metrics[0]['train_loss']) * self.pretrain_val_frequency} epochs"
         )
 
         return self
@@ -791,30 +917,21 @@ class TorchMLPFewShotModel(FewShotModel):
                 train_seqids = measured_activity_series.index[train_indices]
                 val_seqids = measured_activity_series.index[val_indices]
 
-                X_train = np.array([np.array(emb) for emb in embedding_series[train_seqids].values])
+                X_train = _stack_embeddings(embedding_series[train_seqids])
                 y_train = measured_activity_series[train_seqids].to_numpy()
-                X_val = np.array([np.array(emb) for emb in embedding_series[val_seqids].values])
+                X_val = _stack_embeddings(embedding_series[val_seqids])
                 y_val = measured_activity_series[val_seqids].to_numpy()
             else:
-                X_train = np.array(
-                    [
-                        np.array(emb)
-                        for emb in embedding_series[measured_activity_series.index].values
-                    ]
-                )
+                X_train = _stack_embeddings(embedding_series[measured_activity_series.index])
                 y_train = measured_activity_series.to_numpy()
 
             if (
-                test_activity_series is not None
+                self.track_test_metrics_during_training
+                and test_activity_series is not None
                 and test_embedding_series is not None
                 and test_naturalness_df is not None
             ):
-                X_test = np.array(
-                    [
-                        np.array(emb)
-                        for emb in test_embedding_series[test_activity_series.index].values
-                    ]
-                )
+                X_test = _stack_embeddings(test_embedding_series[test_activity_series.index])
                 y_test = test_activity_series.to_numpy()
 
             self.finetune_metrics.append(
@@ -829,6 +946,10 @@ class TorchMLPFewShotModel(FewShotModel):
                     epochs=self.train_epochs,
                     patience=self.train_patience,
                     use_mse_loss=self.use_mse_loss,
+                    standardized_mse_weight=self.standardized_mse_weight,
+                    activity_difference_weighting=self.bt_activity_difference_weighting,
+                    soft_target_temperature=self.bt_soft_target_temperature,
+                    soft_target_confidence_floor=self.bt_soft_target_confidence_floor,
                     learning_rate=self.learning_rate,
                     weight_decay=self.weight_decay,
                     val_frequency=self.val_frequency,
@@ -860,7 +981,7 @@ class TorchMLPFewShotModel(FewShotModel):
         """Make predictions using the trained Random Forest."""
         if not self.is_fitted:
             raise ValueError("Model has not been trained yet. Call fit() first.")
-        X = np.array([np.array(emb) for emb in embedding_series.values])
+        X = _stack_embeddings(embedding_series)
         pred_series_list = []
         for _, t in self.finetuned_model_and_trainer_list:
             score_array = t.predict_scores(X)

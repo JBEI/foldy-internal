@@ -8,7 +8,7 @@ import reactSwc from '@vitejs/plugin-react-swc';
 export default defineConfig({
   plugins: [reactSwc(),
     visualizer({
-      open: true,
+      open: false,
       gzipSize: true,
     }) as Plugin,
   ],

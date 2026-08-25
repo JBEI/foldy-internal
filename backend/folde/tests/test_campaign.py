@@ -94,7 +94,12 @@ class MockZeroShotModel(ZeroShotModel):
             return self.return_values
 
         # By default, return a list with a single series
-        return [pd.Series(naturalness_series.values, index=naturalness_series.index)]
+        values = (
+            naturalness_series.iloc[:, 0]
+            if isinstance(naturalness_series, pd.DataFrame)
+            else naturalness_series
+        )
+        return [pd.Series(values.to_numpy(), index=naturalness_series.index)]
 
 
 class MockFewShotModel(FewShotModel):
@@ -537,6 +542,7 @@ class TestSimulateCampaign:
                 number_of_simulations=2,
                 config_list=[model_config],
                 max_rounds=3,
+                num_workers=1,
             )
 
         # Verify campaign results
@@ -553,6 +559,7 @@ class TestSimulateCampaign:
             "test_dms",
             model_config.embedding_model_id,
             model_config.naturalness_model_id,
+            skip_embedding_loading=False,
         )
 
         # Verify simulation function was called with expected parameters

@@ -14,24 +14,29 @@ from flask import current_app
 from app import email_to
 from app.database import db
 from app.helpers.fold_storage_manager import FoldStorageManager
-from app.helpers.jobs_util import _live_update_tail, _psql_tail, _tail
+from app.helpers.jobs_util import InvokationHeartbeat, _live_update_tail, _psql_tail, _tail
 from app.models import Dock, Fold, Invokation
 
 
-def start_generic_script(invokation_id, process_args):
+def start_generic_script(invokation_id: int, process_args: list[str]) -> bool:
     """Run some script, and track its results in the given PkModel."""
     final_state = "failed"
     stdout = []
     start_time = time.time()
+    heartbeat: InvokationHeartbeat | None = None
     try:
         invokation = Invokation.get_by_id(invokation_id)
+        start_time_dt = datetime.fromtimestamp(start_time, timezone.utc)
 
         invokation.update(
             state="running",
             log="Ongoing...",
-            starttime=datetime.fromtimestamp(start_time, timezone.utc),
+            starttime=start_time_dt,
+            last_heartbeat=start_time_dt,
             command=f"{process_args}",
         )
+        heartbeat = InvokationHeartbeat(invokation_id)
+        heartbeat.start()
 
         def handle_sigterm(signum, frame):
             # This function will be called when SIGTERM is received.
@@ -91,6 +96,8 @@ def start_generic_script(invokation_id, process_args):
         print(f"Invokation ending with final state {final_state}", flush=True)
         # This will get executed regardless of the exceptions raised in try
         # or except statements.
+        if heartbeat is not None:
+            heartbeat.stop()
         invokation.update(
             state=final_state,
             log=_psql_tail("".join(stdout)),

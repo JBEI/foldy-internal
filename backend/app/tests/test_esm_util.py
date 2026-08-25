@@ -5,8 +5,13 @@ import numpy as np
 import pandas as pd
 import pytest
 import torch
+from werkzeug.exceptions import BadRequest
 
-from app.helpers.esm_util import get_naturalness
+from app.helpers.esm_util import (
+    get_naturalness,
+    normalize_msa_a3m_contents,
+    validate_msa_a3m_contents,
+)
 
 
 @pytest.fixture
@@ -125,3 +130,81 @@ def test_add_pdb_file_path_works_for_esm3(mock_esm_setup):
     )
     assert logits_json is not None
     assert melted_df is not None
+
+
+def test_get_naturalness_depth_two_aggregates_base_sequences():
+    mock_client = Mock()
+    mock_client.get_logits.side_effect = [
+        pd.DataFrame({"seq_id": ["A1A"], "probability": [0.1]}),
+        pd.DataFrame({"seq_id": ["B1B"], "probability": [0.2]}),
+    ]
+
+    with (
+        patch(
+            "app.helpers.esm_util.get_seq_ids_for_deep_mutational_scan",
+            return_value=["A1C", "B2D"],
+        ),
+        patch("app.helpers.esm_util.seq_id_to_seq", side_effect=["AC", "BD"]),
+        patch("app.helpers.esm_client.FoldyPLMClient.get_client", return_value=mock_client),
+    ):
+        logits_json, melted_df = get_naturalness("AB", "esmc_mock_model", get_depth_two_logits=True)
+
+    assert logits_json == ""
+    assert "base_seq_id" in melted_df.columns
+    assert set(melted_df["base_seq_id"]) == {"A1C", "B2D"}
+    assert mock_client.get_logits.call_count == 2
+
+
+def test_get_naturalness_passes_msa_context_args():
+    mock_client = Mock()
+    mock_client.get_logits.return_value = pd.DataFrame({"seq_id": ["A1A"], "probability": [0.9]})
+
+    with patch("app.helpers.esm_client.FoldyPLMClient.get_client", return_value=mock_client):
+        get_naturalness("A", "esmc_mock_model", use_msa_context=True, msa_a3m_path="msa.a3m")
+
+    mock_client.get_logits.assert_called_once_with(
+        "A", None, use_msa_context=True, msa_a3m_path="msa.a3m"
+    )
+
+
+def test_validate_msa_a3m_contents_accepts_matching_query():
+    msa_a3m = ">query\nACD.\n>other\nACD\n"
+    cleaned = validate_msa_a3m_contents(msa_a3m, "ACD")
+    assert cleaned == "ACD"
+
+
+def test_validate_msa_a3m_contents_rejects_mismatch():
+    msa_a3m = ">query\nACE\n"
+    with pytest.raises(Exception, match="does not match"):
+        validate_msa_a3m_contents(msa_a3m, "ACD")
+
+
+def test_validate_msa_a3m_contents_requires_header():
+    with pytest.raises(Exception, match="FASTA"):
+        validate_msa_a3m_contents("ACD", "ACD")
+
+
+def test_validate_msa_a3m_contents_requires_query_sequence():
+    msa_a3m = ">query\n>other\nACD\n"
+    with pytest.raises(BadRequest, match="query sequence after the header"):
+        validate_msa_a3m_contents(msa_a3m, "ACD")
+
+
+def test_validate_msa_a3m_contents_rejects_empty_after_cleaning():
+    msa_a3m = ">query\nacde.-\n"
+    with pytest.raises(BadRequest, match="query sequence is empty"):
+        validate_msa_a3m_contents(msa_a3m, "ACD")
+
+
+def test_normalize_msa_a3m_contents_converts_boltz_csv():
+    msa_csv = "key,sequence\n-1,ACD\n-1,ACd-\n"
+    normalized = normalize_msa_a3m_contents(msa_csv, "ACD")
+    assert normalized.startswith(">query\n")
+    cleaned = validate_msa_a3m_contents(normalized, "ACD")
+    assert cleaned == "ACD"
+
+
+def test_normalize_msa_a3m_contents_rejects_boltz_csv_without_query():
+    msa_csv = "key,sequence\n-1,ACE\n-1,ACd-\n"
+    with pytest.raises(BadRequest, match="does not contain the WT query sequence"):
+        normalize_msa_a3m_contents(msa_csv, "ACD")

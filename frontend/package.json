@@ -35,7 +35,6 @@
     "js-file-download": "^0.4.12",
     "lodash": "^4.17.21",
     "moment": "^2.29.4",
-    "node-sass": "^7.0.3",
     "npm": "^11.0.0",
     "papaparse": "^5.5.2",
     "parse-pdb": "^1.0.0",

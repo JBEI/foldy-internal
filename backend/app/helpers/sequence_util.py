@@ -8,7 +8,6 @@ from typing import Any, DefaultDict, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from dnachisel import biotools
 from sklearn.ensemble import RandomForestRegressor  # type: ignore
 from sklearn.neural_network import MLPRegressor  # type: ignore
 from werkzeug.exceptions import BadRequest
@@ -716,6 +715,8 @@ def back_translate(aa_seq: str) -> str:
     Returns:
         Corresponding DNA sequence using preferred bacterial codons
     """
+    from dnachisel import biotools
+
     # Ignore selenocysteine...
     # https://www.frontiersin.org/articles/10.3389/fmolb.2020.00002/full
     aa_without_u = aa_seq.replace("U", "C")
