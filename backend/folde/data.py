@@ -299,8 +299,45 @@ def _parse_embedding_columns_inplace(df: pd.DataFrame) -> pd.DataFrame:
                 for idx in df.index:
                     val = df.at[idx, col]
                     if isinstance(val, str):
-                        df.at[idx, col] = np.array(json.loads(val))
+                        # Models consume float32 tensors. Converting at the storage
+                        # boundary avoids retaining float64 copies of every embedding.
+                        df.at[idx, col] = np.asarray(json.loads(val), dtype=np.float32)
     return df
+
+
+def get_binary_embedding_paths(csv_path: Path) -> tuple[Path, Path]:
+    """Return binary matrix and sequence-ID cache paths for an embedding CSV."""
+    return (
+        csv_path.with_suffix(".float32.npy"),
+        csv_path.with_suffix(".seq_ids.txt"),
+    )
+
+
+def try_load_binary_embedding_cache(csv_path: Path) -> Optional[pd.DataFrame]:
+    """Load a fresh float32/memory-mapped cache for an embedding CSV when present."""
+    matrix_path, seq_ids_path = get_binary_embedding_paths(csv_path)
+    if not matrix_path.exists() or not seq_ids_path.exists():
+        return None
+    source_mtime = csv_path.stat().st_mtime
+    if matrix_path.stat().st_mtime < source_mtime or seq_ids_path.stat().st_mtime < source_mtime:
+        logger.warning(f"Ignoring stale binary embedding cache for {csv_path}")
+        return None
+
+    matrix = np.load(matrix_path, mmap_mode="r")
+    if matrix.ndim != 2 or matrix.dtype != np.float32:
+        raise ValueError(
+            f"Binary embedding cache must be a float32 matrix; got {matrix.dtype} {matrix.shape}"
+        )
+    seq_ids = seq_ids_path.read_text().splitlines()
+    if len(seq_ids) != matrix.shape[0]:
+        raise ValueError(
+            f"Binary embedding cache row mismatch: {len(seq_ids)} IDs vs {matrix.shape[0]} rows"
+        )
+
+    embeddings = np.empty(matrix.shape[0], dtype=object)
+    for row_index in range(matrix.shape[0]):
+        embeddings[row_index] = matrix[row_index]
+    return pd.DataFrame({"seq_id": seq_ids, "embedding": embeddings})
 
 
 def try_load_sharded_embedding_file(embeddings_dir: str, prefix: str) -> pd.DataFrame:
@@ -440,8 +477,13 @@ def get_proteingym_dataset(
         embedding_source = embedding_file_path
         if os.path.exists(embedding_file_path):
             # Single file case
-            embedding_df = pd.read_csv(embedding_file_path)
-            _parse_embedding_columns_inplace(embedding_df)
+            embedding_path = Path(embedding_file_path)
+            embedding_df = try_load_binary_embedding_cache(embedding_path)
+            if embedding_df is None:
+                embedding_df = pd.read_csv(embedding_file_path)
+                _parse_embedding_columns_inplace(embedding_df)
+            else:
+                embedding_source = str(get_binary_embedding_paths(embedding_path)[0])
         else:
             # Try loading sharded files (parsing happens inside)
             prefix = f"{dms_id}_embedding_{embedding_model_id}"
@@ -455,9 +497,13 @@ def get_proteingym_dataset(
                         "Embedding file not found (neither single file nor shards): "
                         f"{embedding_file_path}"
                     )
-                embedding_df = pd.read_csv(foldy_embedding)
-                _parse_embedding_columns_inplace(embedding_df)
-                embedding_source = str(foldy_embedding)
+                embedding_df = try_load_binary_embedding_cache(foldy_embedding)
+                if embedding_df is None:
+                    embedding_df = pd.read_csv(foldy_embedding)
+                    _parse_embedding_columns_inplace(embedding_df)
+                    embedding_source = str(foldy_embedding)
+                else:
+                    embedding_source = str(get_binary_embedding_paths(foldy_embedding)[0])
 
     # Check that the naturalness file exists
     naturalness_file_path = os.path.join(

@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
@@ -180,7 +181,9 @@ def constant_liar_sample(
             f"Calculating a good variance requires at least 3 models, got {ensemble_preds.shape[1]}"
         )
 
-    pred_tensor = torch.tensor(ensemble_preds.T, dtype=torch.float64)  # (S, N)
+    requested_device = os.environ.get("FOLDE_CONSTANT_LIAR_DEVICE")
+    device = requested_device or ("cuda" if torch.cuda.is_available() else "cpu")
+    pred_tensor = torch.as_tensor(ensemble_preds.T, dtype=torch.float64, device=device)  # (S, N)
 
     S, N = pred_tensor.shape
     lie_noise_variance = (lie_noise_stddev_multiplier * pred_tensor.std(dim=0).median().item()) ** 2
@@ -188,8 +191,10 @@ def constant_liar_sample(
     # ────────────────────── compute empirical prior mean/covariance ─────────────
     prior_mean = pred_tensor.mean(dim=0)  # μ₀, shape (N,)
     devs = pred_tensor - prior_mean  # centred matrix (S, N)
-    Cov = (devs.T @ devs) / S  # empirical covariance, rank ≤ S
-    Cov += lie_noise_variance * torch.eye(N)  # ← “nugget” ensures PSD & noise floor
+    # Keep the rank-S factorization instead of materializing an N x N matrix.
+    # At N=5,000 this avoids a 191 MiB float64 covariance and sixteen dense
+    # rank-one matrix updates for every selected slate.
+    covariance_factors = devs.T / np.sqrt(S)  # (N, S)
 
     if choice_of_baseline == "min":
         L = prior_mean.min().item()
@@ -201,8 +206,11 @@ def constant_liar_sample(
         raise ValueError(f"Invalid choice of baseline {choice_of_baseline}")
 
     # Diagonal variance and standard deviation (already ≥ SIGMA_N2)
-    vars = Cov.diag()
+    vars = covariance_factors.square().sum(dim=1) + lie_noise_variance
     sigmas = vars.sqrt()
+    posterior_updates = torch.empty(
+        (N, q_slate_size), dtype=pred_tensor.dtype, device=pred_tensor.device
+    )
 
     # ───────────────────────────── constant-liar loop ───────────────────────────
     selected = []  # indices of chosen items
@@ -217,24 +225,32 @@ def constant_liar_sample(
         idx = int(torch.argmax(ucb))
         selected.append(idx)
         # print(f"Picked {seq_ids[idx]}  with UCB={ucb[idx]:.3f}")
+        score = ucb[idx].item()
+        mean = prior_mean[idx].item()
+        sigma = sigmas[idx].item()
         logging.info(
-            f"Selecting {seq_ids[idx]} (original rank {idx+1}), score: {ucb[idx]} = {prior_mean[idx]} + {ucb_beta} * {sigmas[idx]}"
+            f"Selecting {seq_ids[idx]} (original rank {idx+1}), "
+            f"score: {score} = {mean} + {ucb_beta} * {sigma}"
         )
 
-        # 3) Single-point GP update with *fake* observation y=L at index idx
-        k_i = Cov[:, idx].clone()  # column vector k(·, x_i)
+        # 3) Single-point GP update with *fake* observation y=L at index idx.
+        # Reconstruct only the requested posterior covariance column:
+        # K_t[:, i] = K_0[:, i] - A_t @ A_t[i, :].
+        k_i = covariance_factors @ covariance_factors[idx]
+        k_i[idx] += lie_noise_variance
+        if len(selected) > 1:
+            previous_updates = posterior_updates[:, : len(selected) - 1]
+            k_i = k_i - previous_updates @ previous_updates[idx]
         v_i = vars[idx].item()  # marginal var at x_i  (≥ σ_n²)
 
         # Posterior mean:   μ ← μ + k_i (L − μ_i) / v_i
         delta = (L - prior_mean[idx]) / v_i
         prior_mean = prior_mean + k_i * delta
 
-        # Posterior covariance (rank-1 Downdate):  Σ ← Σ − k_i k_iᵀ / v_i
-        Cov = Cov - torch.outer(k_i, k_i) / v_i
-        Cov = 0.5 * (Cov + Cov.T)  # re-symmetrise to kill FP drift
-
-        # Refresh variance/std-dev
-        vars = Cov.diag()
+        # Retain the normalized update vector and update only the diagonal.
+        update = k_i / np.sqrt(v_i)
+        posterior_updates[:, len(selected) - 1] = update
+        vars = vars - update.square()
         sigmas = vars.sqrt()
 
     # ─────────────────────────── map indices back to IDs ────────────────────────
