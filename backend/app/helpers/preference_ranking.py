@@ -27,12 +27,20 @@ import torch.nn.functional as F
 from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
-from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from folde.util import get_top_percentile_recall_score
 
 logger = logging.getLogger(__name__)
+
+
+def _create_grad_scaler(enabled: bool) -> Any:
+    """Create a CUDA gradient scaler across supported PyTorch AMP APIs."""
+    grad_scaler = getattr(torch.amp, "GradScaler", None)
+    if grad_scaler is not None:
+        return grad_scaler("cuda", enabled=enabled)
+    # PyTorch 2.2 does not yet expose torch.amp.GradScaler.
+    return torch.cuda.amp.GradScaler(enabled=enabled)
 
 
 class PreferenceDataset(Dataset):
@@ -130,45 +138,278 @@ class BradleyTerryMLP(nn.Module):
         return self.mlp(x)
 
 
+def _validate_soft_target_bt_options(
+    temperature: float | None,
+    label_std: float | torch.Tensor | None,
+    confidence_floor: float | None,
+    activity_difference_weighting: bool,
+) -> None:
+    """Validate the gap-calibrated Bradley-Terry loss options."""
+    if temperature is None:
+        if confidence_floor is not None:
+            raise ValueError("soft_target_confidence_floor requires soft_target_temperature")
+        return
+    if not np.isfinite(temperature) or temperature <= 0.0:
+        raise ValueError("soft_target_temperature must be finite and positive")
+    if label_std is None:
+        raise ValueError("soft_target_label_std is required for soft-target BT")
+    if confidence_floor is not None and not 0.0 <= confidence_floor <= 1.0:
+        raise ValueError("soft_target_confidence_floor must be between 0 and 1")
+    if activity_difference_weighting:
+        raise ValueError("activity_difference_weighting cannot be combined with soft-target BT")
+
+
 def batch_bradley_terry_loss(
     scores: torch.Tensor,
     labels: torch.Tensor,
     pair_mask: torch.Tensor | None,
     importance_sampling_reweighting_strat: str | None,
     importance_sampling_temperature: float | None,
-):
-    B = scores.size(0)
+    activity_difference_weighting: bool = False,
+    soft_target_temperature: float | None = None,
+    soft_target_label_std: float | torch.Tensor | None = None,
+    soft_target_confidence_floor: float | None = None,
+) -> torch.Tensor:
+    _validate_soft_target_bt_options(
+        soft_target_temperature,
+        soft_target_label_std,
+        soft_target_confidence_floor,
+        activity_difference_weighting,
+    )
+    scores = scores.view(-1)
+    labels = labels.view(-1)
+    if pair_mask is None:
+        pair_mask = torch.ones(
+            (scores.shape[0], scores.shape[0]), dtype=torch.bool, device=scores.device
+        ).triu(diagonal=1)
+    weighted_loss_sum, weight_sum = _bradley_terry_loss_components(
+        scores,
+        labels,
+        scores,
+        labels,
+        pair_mask,
+        importance_sampling_reweighting_strat,
+        importance_sampling_temperature,
+        activity_difference_weighting,
+        soft_target_temperature,
+        soft_target_label_std,
+        soft_target_confidence_floor,
+    )
+    if weight_sum <= 0:
+        return weighted_loss_sum
+    return weighted_loss_sum / weight_sum
 
-    # compute pairwise logits & targets
-    diff = scores.view(-1, 1) - scores.view(1, -1)  # (B, B)
-    Y = (labels.view(-1, 1) > labels.view(1, -1)).float()  # (B, B)
 
-    # get scores and weights
-    s = scores.view(-1, 1)  # (B,1)
-    s_i = s.expand(B, B).t()  # (B,B)
-    s_j = s.expand(B, B)  # (B,B)
+def _bradley_terry_loss_components(
+    left_scores: torch.Tensor,
+    left_labels: torch.Tensor,
+    right_scores: torch.Tensor,
+    right_labels: torch.Tensor,
+    pair_mask: torch.Tensor,
+    importance_sampling_reweighting_strat: str | None,
+    importance_sampling_temperature: float | None,
+    activity_difference_weighting: bool,
+    soft_target_temperature: float | None,
+    soft_target_label_std: float | torch.Tensor | None,
+    soft_target_confidence_floor: float | None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return the weighted-loss numerator and weight denominator for a pair block."""
+    left_scores = left_scores.view(-1)
+    right_scores = right_scores.view(-1)
+    left_labels = left_labels.view(-1)
+    right_labels = right_labels.view(-1)
+    score_diff = left_scores[:, None] - right_scores[None, :]
+    label_diff = left_labels[:, None] - right_labels[None, :]
+    if soft_target_temperature is None:
+        targets = (label_diff > 0).float()
+    else:
+        assert soft_target_label_std is not None
+        label_std = torch.as_tensor(
+            soft_target_label_std,
+            dtype=label_diff.dtype,
+            device=label_diff.device,
+        )
+        safe_label_std = label_std.abs().clamp_min(torch.finfo(label_diff.dtype).eps)
+        targets = torch.sigmoid(label_diff / safe_label_std / soft_target_temperature)
 
     if importance_sampling_reweighting_strat == "min":
-        w_full = torch.exp(torch.min(s_i, s_j) / importance_sampling_temperature)
+        if importance_sampling_temperature is None:
+            raise ValueError("importance_sampling_temperature is required for min reweighting")
+        weights = torch.exp(
+            torch.minimum(left_scores[:, None], right_scores[None, :])
+            / importance_sampling_temperature
+        )
     elif importance_sampling_reweighting_strat == "max":
-        w_full = torch.exp(torch.max(s_i, s_j) / importance_sampling_temperature)
+        if importance_sampling_temperature is None:
+            raise ValueError("importance_sampling_temperature is required for max reweighting")
+        weights = torch.exp(
+            torch.maximum(left_scores[:, None], right_scores[None, :])
+            / importance_sampling_temperature
+        )
     else:
-        w_full = torch.ones_like(diff)  # uniform
+        weights = torch.ones_like(score_diff)
 
-    if pair_mask is None:
-        pair_mask = torch.ones_like(diff, dtype=torch.int).triu(diagonal=1)
-    pair_mask_bool = pair_mask.bool()
+    if activity_difference_weighting:
+        weights = weights * label_diff.abs()
+    if soft_target_confidence_floor is not None:
+        target_confidence = 2.0 * (targets - 0.5).abs()
+        weights = weights * (
+            soft_target_confidence_floor + (1.0 - soft_target_confidence_floor) * target_confidence
+        )
 
-    # compute weighted BCE for a given mask
-    logits = diff[pair_mask_bool]
-    targets = Y[pair_mask_bool]
-    w = w_full[pair_mask_bool]
-    w = w / w.sum()  # normalize within this split
-    w = w.detach()
-    losses = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
-    loss = (w * losses).sum()
+    pair_mask = pair_mask.bool()
+    logits = score_diff[pair_mask]
+    selected_targets = targets[pair_mask]
+    selected_weights = weights[pair_mask].detach()
+    if logits.numel() == 0:
+        zero = (left_scores.sum() + right_scores.sum()) * 0.0
+        return zero, zero.detach()
 
-    return loss
+    losses = F.binary_cross_entropy_with_logits(logits, selected_targets, reduction="none")
+    return (selected_weights * losses).sum(), selected_weights.sum()
+
+
+def held_out_sample_bradley_terry_loss(
+    scores: torch.Tensor,
+    labels: torch.Tensor,
+    n_train: int,
+    block_size: int,
+    importance_sampling_reweighting_strat: str | None,
+    importance_sampling_temperature: float | None,
+    activity_difference_weighting: bool = False,
+    soft_target_temperature: float | None = None,
+    soft_target_label_std: float | torch.Tensor | None = None,
+    soft_target_confidence_floor: float | None = None,
+) -> torch.Tensor:
+    """Evaluate all pairs touching held-out samples with global weight normalization."""
+    _validate_soft_target_bt_options(
+        soft_target_temperature,
+        soft_target_label_std,
+        soft_target_confidence_floor,
+        activity_difference_weighting,
+    )
+    scores = scores.view(-1)
+    labels = labels.view(-1)
+    n_samples = scores.shape[0]
+    if not 0 <= n_train <= n_samples:
+        raise ValueError(f"n_train must be between 0 and {n_samples}")
+    if block_size <= 0:
+        raise ValueError("block_size must be positive")
+
+    weighted_loss_sum = scores.sum() * 0.0
+    weight_sum = scores.new_zeros(())
+    for row_start in range(0, n_samples, block_size):
+        row_end = min(row_start + block_size, n_samples)
+        row_indices = torch.arange(row_start, row_end, device=scores.device)
+        for col_start in range(row_start, n_samples, block_size):
+            col_end = min(col_start + block_size, n_samples)
+            col_indices = torch.arange(col_start, col_end, device=scores.device)
+            pair_mask = (row_indices[:, None] < col_indices[None, :]) & (
+                (row_indices[:, None] >= n_train) | (col_indices[None, :] >= n_train)
+            )
+            block_loss_sum, block_weight_sum = _bradley_terry_loss_components(
+                scores[row_start:row_end],
+                labels[row_start:row_end],
+                scores[col_start:col_end],
+                labels[col_start:col_end],
+                pair_mask,
+                importance_sampling_reweighting_strat,
+                importance_sampling_temperature,
+                activity_difference_weighting,
+                soft_target_temperature,
+                soft_target_label_std,
+                soft_target_confidence_floor,
+            )
+            weighted_loss_sum = weighted_loss_sum + block_loss_sum
+            weight_sum = weight_sum + block_weight_sum
+
+    if weight_sum <= 0:
+        return weighted_loss_sum
+    return weighted_loss_sum / weight_sum
+
+
+def batch_preference_loss(
+    scores: torch.Tensor,
+    labels: torch.Tensor,
+    pair_mask: torch.Tensor | None,
+    importance_sampling_reweighting_strat: str | None,
+    importance_sampling_temperature: float | None,
+    standardized_mse_weight: float = 0.0,
+    standardized_target_mean: float | torch.Tensor | None = None,
+    standardized_target_std: float | torch.Tensor | None = None,
+    activity_difference_weighting: bool = False,
+    soft_target_temperature: float | None = None,
+    soft_target_confidence_floor: float | None = None,
+) -> torch.Tensor:
+    """Combine Bradley-Terry ranking with MSE against standardized activity labels.
+
+    ``standardized_mse_weight`` is the pointwise share of a convex combination; zero
+    preserves the original Bradley-Terry objective. Target statistics must come from
+    the complete training split so that standardization does not change by mini-batch.
+    """
+    if not 0.0 <= standardized_mse_weight <= 1.0:
+        raise ValueError("standardized_mse_weight must be between 0 and 1")
+
+    if standardized_mse_weight > 0.0 and (
+        standardized_target_mean is None or standardized_target_std is None
+    ):
+        raise ValueError(
+            "standardized_target_mean and standardized_target_std are required when "
+            "standardized MSE is enabled"
+        )
+    _validate_soft_target_bt_options(
+        soft_target_temperature,
+        standardized_target_std,
+        soft_target_confidence_floor,
+        activity_difference_weighting,
+    )
+    if standardized_mse_weight == 1.0:
+        assert standardized_target_mean is not None
+        assert standardized_target_std is not None
+        return standardized_mse_loss(
+            scores,
+            labels,
+            standardized_target_mean,
+            standardized_target_std,
+        )
+
+    bt_loss = batch_bradley_terry_loss(
+        scores,
+        labels,
+        pair_mask,
+        importance_sampling_reweighting_strat,
+        importance_sampling_temperature,
+        activity_difference_weighting=activity_difference_weighting,
+        soft_target_temperature=soft_target_temperature,
+        soft_target_label_std=standardized_target_std,
+        soft_target_confidence_floor=soft_target_confidence_floor,
+    )
+    if standardized_mse_weight == 0.0:
+        return bt_loss
+
+    assert standardized_target_mean is not None
+    assert standardized_target_std is not None
+    mse_loss = standardized_mse_loss(
+        scores,
+        labels,
+        standardized_target_mean,
+        standardized_target_std,
+    )
+    return (1.0 - standardized_mse_weight) * bt_loss + standardized_mse_weight * mse_loss
+
+
+def standardized_mse_loss(
+    scores: torch.Tensor,
+    labels: torch.Tensor,
+    target_mean: float | torch.Tensor,
+    target_std: float | torch.Tensor,
+) -> torch.Tensor:
+    """Calculate MSE against labels standardized by training-split statistics."""
+    target_mean_tensor = torch.as_tensor(target_mean, dtype=labels.dtype, device=labels.device)
+    target_std_tensor = torch.as_tensor(target_std, dtype=labels.dtype, device=labels.device)
+    safe_target_std = target_std_tensor.abs().clamp_min(torch.finfo(labels.dtype).eps)
+    standardized_labels = (labels - target_mean_tensor) / safe_target_std
+    return F.mse_loss(scores.view(-1), standardized_labels.view(-1))
 
 
 def get_random_pair_split(
@@ -263,7 +504,8 @@ class PreferenceTrainer:
 
         self.model = model.to(self.device)
         self.use_amp = self.device.startswith("cuda") and os.environ.get("FOLDE_DISABLE_AMP") != "1"
-        self.scaler = GradScaler(enabled=self.use_amp)
+        self.amp_device_type = torch.device(self.device).type
+        self.scaler = _create_grad_scaler(enabled=self.use_amp)
 
     def train(
         self,
@@ -286,6 +528,10 @@ class PreferenceTrainer:
         test_embeddings: np.ndarray | None = None,
         test_activity_labels: np.ndarray | None = None,
         batch_test_size: int = 5000,
+        standardized_mse_weight: float = 0.0,
+        activity_difference_weighting: bool = False,
+        soft_target_temperature: float | None = None,
+        soft_target_confidence_floor: float | None = None,
     ) -> dict[str, Any]:
         """Train the Bradley-Terry model using batch-based training.
 
@@ -298,6 +544,10 @@ class PreferenceTrainer:
             weight_decay: Weight decay for regularization
             patience: Number of epochs to wait for validation improvement before early stopping
             use_mse_loss: Whether to use MSE loss instead of Bradley-Terry loss
+            standardized_mse_weight: Pointwise share of BT plus standardized-MSE loss
+            activity_difference_weighting: Weight BT pairs by their absolute label difference
+            soft_target_temperature: Temperature mapping standardized label gaps to BT targets
+            soft_target_confidence_floor: Optional minimum weight for ambiguous comparisons
             do_importance_sampling: Whether to use importance sampling / reweighting in BT loss
             val_embeddings: embeddings for validation set or None
             val_activity_labels: activity labels for validation set or None
@@ -311,6 +561,26 @@ class PreferenceTrainer:
         torch.manual_seed(self.random_state)
         random.seed(self.random_state)
         np.random.seed(self.random_state)
+
+        if use_mse_loss and standardized_mse_weight > 0.0:
+            raise ValueError("use_mse_loss cannot be combined with standardized_mse_weight")
+        if use_mse_loss and soft_target_temperature is not None:
+            raise ValueError("use_mse_loss cannot be combined with soft-target BT")
+        if not 0.0 <= standardized_mse_weight <= 1.0:
+            raise ValueError("standardized_mse_weight must be between 0 and 1")
+        if standardized_mse_weight > 0.0 and do_validation_with_pair_fraction is not None:
+            raise ValueError(
+                "standardized_mse_weight requires point-level holdout validation; "
+                "it cannot be combined with do_validation_with_pair_fraction"
+            )
+        standardized_target_mean = float(np.mean(train_activity_labels))
+        standardized_target_std = float(np.std(train_activity_labels))
+        _validate_soft_target_bt_options(
+            soft_target_temperature,
+            standardized_target_std,
+            soft_target_confidence_floor,
+            activity_difference_weighting,
+        )
 
         # Create datasets and dataloaders
         train_dataset = PreferenceDataset(
@@ -372,6 +642,12 @@ class PreferenceTrainer:
             importance_sampling_reweighting_strat,
             importance_sampling_temperature,
             batch_test_size,
+            activity_difference_weighting,
+            standardized_mse_weight,
+            standardized_target_mean,
+            standardized_target_std,
+            soft_target_temperature,
+            soft_target_confidence_floor,
         )
         metrics["train_loss"].append(np.inf)
         metrics["val_loss"].append(val_loss if val_loss is not None else np.nan)
@@ -402,24 +678,34 @@ class PreferenceTrainer:
                 batch_embeddings = batch_embeddings.to(self.device, non_blocking=True)
                 batch_activity_labels = batch_activity_labels.to(self.device, non_blocking=True)
 
-                optimizer.zero_grad()
+                optimizer.zero_grad(set_to_none=True)
 
-                # "Autocase" is the first part of automatic mixed precision training, which gives a speedup.
-                with autocast(enabled=self.use_amp):
+                # Autocast is the first part of automatic mixed precision training.
+                with torch.autocast(
+                    device_type=self.amp_device_type,
+                    enabled=self.use_amp,
+                ):
                     scores = self.model(batch_embeddings)
 
                     if use_mse_loss:
                         loss = F.mse_loss(scores.squeeze(-1), batch_activity_labels)
                     else:
-                        loss = batch_bradley_terry_loss(
+                        loss = batch_preference_loss(
                             scores,
                             batch_activity_labels,
                             train_mask,
                             importance_sampling_reweighting_strat,
                             importance_sampling_temperature,
+                            standardized_mse_weight=standardized_mse_weight,
+                            standardized_target_mean=standardized_target_mean,
+                            standardized_target_std=standardized_target_std,
+                            activity_difference_weighting=activity_difference_weighting,
+                            soft_target_temperature=soft_target_temperature,
+                            soft_target_confidence_floor=soft_target_confidence_floor,
                         )
 
-                    if loss.item() == 0:
+                    loss_value = loss.item()
+                    if loss_value == 0:
                         # logger.warning(f'Zero loss encountered in batch {batch_number} in epoch {epoch} with {len(batch_embeddings)} members.')
                         logger.warning(
                             f"Zero loss encountered in batch {batch_number} in epoch {epoch} with {len(batch_embeddings)} members. "
@@ -433,7 +719,7 @@ class PreferenceTrainer:
                 self.scaler.step(optimizer)
                 self.scaler.update()
 
-                train_loss += loss.item()
+                train_loss += loss_value
                 num_batches += 1
 
             if exponential_lr_schedule is not None:
@@ -456,6 +742,12 @@ class PreferenceTrainer:
                     importance_sampling_reweighting_strat,
                     importance_sampling_temperature,
                     batch_test_size,
+                    activity_difference_weighting,
+                    standardized_mse_weight,
+                    standardized_target_mean,
+                    standardized_target_std,
+                    soft_target_temperature,
+                    soft_target_confidence_floor,
                 )
                 metrics["val_loss"].append(val_loss if val_loss is not None else np.nan)
                 metrics["test_recall_1pct"].append(
@@ -495,6 +787,12 @@ class PreferenceTrainer:
         importance_sampling_reweighting_strat: str | None = None,
         importance_sampling_temperature: float | None = None,
         batch_test_size: int = 5000,
+        activity_difference_weighting: bool = False,
+        standardized_mse_weight: float = 0.0,
+        standardized_target_mean: float | None = None,
+        standardized_target_std: float | None = None,
+        soft_target_temperature: float | None = None,
+        soft_target_confidence_floor: float | None = None,
     ) -> tuple[float | None, float | None]:
         """Evaluate the model using batch-based evaluation without leaking GPU memory.
 
@@ -508,6 +806,23 @@ class PreferenceTrainer:
             corresponding dataset was not supplied.
         """
         self.model.eval()
+        if standardized_mse_weight > 0.0:
+            if standardized_target_mean is None or standardized_target_std is None:
+                raise ValueError(
+                    "Training-split statistics are required for standardized-MSE validation"
+                )
+        if soft_target_temperature is not None:
+            _validate_soft_target_bt_options(
+                soft_target_temperature,
+                standardized_target_std,
+                soft_target_confidence_floor,
+                activity_difference_weighting,
+            )
+        if standardized_mse_weight > 0.0:
+            if val_mask is not None:
+                raise ValueError(
+                    "standardized-MSE validation requires held-out samples, not held-out pairs"
+                )
 
         # Ensure we never build a computation graph and aggressively free intermediates.
         with torch.no_grad():
@@ -525,55 +840,54 @@ class PreferenceTrainer:
                 train_and_val_embeddings = torch.cat([train_embeddings, val_embeddings], dim=0)
                 train_and_val_scores = self.model(train_and_val_embeddings)
 
-                # Make a mask that ignores the block of training pairs in the loss calculation.
-                ignore_train_loss_mask = torch.ones(
-                    (train_and_val_scores.shape[0], train_and_val_scores.shape[0]),
-                    dtype=torch.int,
-                    device=self.device,
-                )
-                ignore_train_loss_mask[
-                    : train_dataset.embeddings.shape[0], : train_dataset.embeddings.shape[0]
-                ] = 0
-                ignore_train_loss_mask = ignore_train_loss_mask.triu(diagonal=1)
-
                 activity_labels = torch.cat(
                     [train_dataset.activity_labels, val_dataset.activity_labels], dim=0
                 ).to(self.device, non_blocking=True)
 
-                # Chunk the evaluation to avoid OOM with large datasets
-                total_samples = train_and_val_scores.shape[0]
-                chunk_losses = []
-                for start_idx in range(0, total_samples, batch_test_size):
-                    end_idx = min(start_idx + batch_test_size, total_samples)
-
-                    # Get chunks for this batch
-                    scores_chunk = train_and_val_scores[start_idx:end_idx]
-                    labels_chunk = activity_labels[start_idx:end_idx]
-                    mask_chunk = ignore_train_loss_mask[start_idx:end_idx, start_idx:end_idx]
-
-                    chunk_loss_tensor = batch_bradley_terry_loss(
-                        scores_chunk,
-                        labels_chunk,
-                        mask_chunk,
+                bt_val_loss = 0.0
+                if standardized_mse_weight < 1.0:
+                    # Evaluate every train-val and val-val pair in blocks. Numerators and
+                    # denominators are accumulated globally so block size cannot change loss.
+                    bt_val_loss_tensor = held_out_sample_bradley_terry_loss(
+                        train_and_val_scores,
+                        activity_labels,
+                        n_train=train_dataset.embeddings.shape[0],
+                        block_size=batch_test_size,
                         importance_sampling_reweighting_strat=importance_sampling_reweighting_strat,
                         importance_sampling_temperature=importance_sampling_temperature,
+                        activity_difference_weighting=activity_difference_weighting,
+                        soft_target_temperature=soft_target_temperature,
+                        soft_target_label_std=standardized_target_std,
+                        soft_target_confidence_floor=soft_target_confidence_floor,
                     )
-                    chunk_losses.append(float(chunk_loss_tensor.detach().cpu().item()))
-                    del chunk_loss_tensor
-                    torch.cuda.empty_cache()
-
-                # Average the losses across chunks
-                val_loss = float(np.mean(chunk_losses))
+                    bt_val_loss = float(bt_val_loss_tensor.detach().cpu().item())
+                    del bt_val_loss_tensor
+                if standardized_mse_weight > 0.0:
+                    assert standardized_target_mean is not None
+                    assert standardized_target_std is not None
+                    val_scores = train_and_val_scores[train_dataset.embeddings.shape[0] :]
+                    val_labels = val_dataset.activity_labels.to(self.device, non_blocking=True)
+                    mse_val_loss = standardized_mse_loss(
+                        val_scores,
+                        val_labels,
+                        standardized_target_mean,
+                        standardized_target_std,
+                    )
+                    val_loss = float(
+                        (1.0 - standardized_mse_weight) * bt_val_loss
+                        + standardized_mse_weight * mse_val_loss.detach().cpu().item()
+                    )
+                    del val_scores, val_labels, mse_val_loss
+                else:
+                    val_loss = bt_val_loss
 
                 del (
                     train_embeddings,
                     val_embeddings,
                     train_and_val_embeddings,
                     train_and_val_scores,
-                    ignore_train_loss_mask,
                     activity_labels,
                 )
-                torch.cuda.empty_cache()
             elif val_mask is not None:
                 train_embeddings = train_dataset.embeddings.to(self.device, non_blocking=True)
                 train_activity_labels = train_dataset.activity_labels.to(
@@ -587,10 +901,13 @@ class PreferenceTrainer:
                     val_mask,
                     importance_sampling_reweighting_strat=importance_sampling_reweighting_strat,
                     importance_sampling_temperature=importance_sampling_temperature,
+                    activity_difference_weighting=activity_difference_weighting,
+                    soft_target_temperature=soft_target_temperature,
+                    soft_target_label_std=standardized_target_std,
+                    soft_target_confidence_floor=soft_target_confidence_floor,
                 )
                 val_loss = float(val_loss_tensor.detach().cpu().item())
                 del train_embeddings, train_activity_labels, train_scores, val_loss_tensor
-                torch.cuda.empty_cache()
 
             if test_dataset is not None:
                 test_scores = self.predict_scores(
@@ -603,7 +920,6 @@ class PreferenceTrainer:
                     1.0,
                 )
                 del test_scores
-                torch.cuda.empty_cache()
 
         return val_loss, test_recall_1pct
 
