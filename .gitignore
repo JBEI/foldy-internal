@@ -158,3 +158,11 @@ CLAUDE_NOTES.md
 **/.claude/settings.local.json
 
 frontend/stats.html
+/folde/
+
+# Claude Code worktrees and local state
+.claude/worktrees/
+
+# FolDE eval artifacts and compiled Rust extension are built, not source.
+backend/folde/model_evals/**/*.npz
+backend/folde/rust_ext/*.so
